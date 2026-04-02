@@ -45,6 +45,18 @@ $is_logged_in = is_user_logged_in();
 $public_login_url = $portal_url . '#/login';
 $public_profile_url = $portal_url . '#/profile';
 $public_donate_url = $portal_url . '#/donate';
+$portal_ui_settings = $portal_plugin instanceof AAC_Member_Portal_Plugin ? $portal_plugin->get_portal_ui_settings() : [];
+$portal_design_settings = $portal_plugin instanceof AAC_Member_Portal_Plugin
+	? $portal_plugin->get_template_design_settings()
+	: [
+		'sidebar_background_url' => AAC_MEMBER_PORTAL_URL . 'app/sidebar-topo-v2.svg',
+		'sidebar_overlay_start' => '0.18',
+		'sidebar_overlay_end' => '0.30',
+		'sidebar_button_background' => '#000000',
+		'sidebar_button_hover_background' => '#111111',
+		'sidebar_button_active_background' => '#000000',
+		'sidebar_accent_color' => '#f8c235',
+	];
 
 if (!function_exists('aac_member_portal_sidebar_icon_svg')) {
 	function aac_member_portal_sidebar_icon_svg($icon) {
@@ -127,28 +139,9 @@ $top_nav = [
 	],
 ];
 
-$portal_sections = [
-	[
-		'title' => 'Your portal',
-		'items' => [
-			['label' => 'Member Profile', 'href' => $portal_url . '#/profile', 'icon' => 'user', 'active' => false],
-			['label' => 'Store', 'href' => $portal_url . '#/store', 'icon' => 'store', 'active' => false],
-			['label' => 'Rescue', 'href' => $portal_url . '#/rescue', 'icon' => 'shield', 'active' => false],
-			['label' => 'Account', 'href' => $portal_url . '#/account', 'icon' => 'settings', 'active' => false],
-		],
-	],
-	[
-		'title' => 'Explore',
-		'items' => [
-			['label' => 'Discounts', 'href' => $portal_url . '#/discounts', 'icon' => 'tag', 'active' => false],
-			['label' => 'Podcasts', 'href' => $portal_url . '#/podcasts', 'icon' => 'mic', 'active' => false],
-			['label' => 'Events', 'href' => $portal_url . '#/meetups', 'icon' => 'users', 'active' => false],
-			['label' => 'Lodging', 'href' => $portal_url . '#/lodging', 'icon' => 'bed', 'active' => false],
-			['label' => 'Grants', 'href' => $portal_url . '#/grants', 'icon' => 'scroll-text', 'active' => false],
-			['label' => 'Contact Us', 'href' => $portal_url . '#/contact', 'icon' => 'mail', 'active' => false],
-		],
-	],
-];
+$portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
+	? $portal_plugin->get_template_sidebar_sections($portal_url)
+	: [];
 
 $current_member = $is_logged_in ? wp_get_current_user() : null;
 $current_member_id = $current_member instanceof WP_User && $current_member->exists() ? (int) $current_member->ID : 0;
@@ -473,8 +466,8 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			border-right: 1px solid rgba(0, 0, 0, 0.08);
 			background-color: #030000;
 			background-image:
-				linear-gradient(180deg, rgba(5, 2, 2, 0.18), rgba(5, 2, 2, 0.3)),
-				url('<?php echo esc_url(AAC_MEMBER_PORTAL_URL . 'app/sidebar-topo-v2.svg'); ?>');
+				linear-gradient(180deg, rgba(5, 2, 2, <?php echo esc_attr($portal_design_settings['sidebar_overlay_start']); ?>), rgba(5, 2, 2, <?php echo esc_attr($portal_design_settings['sidebar_overlay_end']); ?>)),
+				url('<?php echo esc_url($portal_design_settings['sidebar_background_url']); ?>');
 			background-position: center center, center top;
 			background-repeat: no-repeat, no-repeat;
 			background-size: 100% 100%, cover;
@@ -521,7 +514,7 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			padding: 0.75rem;
 			border: 1px solid rgba(255, 255, 255, 0.1);
 			border-radius: 1.1rem;
-			background: rgba(0, 0, 0, 0.72);
+			background: <?php echo esc_html($portal_design_settings['sidebar_button_background']); ?>;
 			color: #fff;
 			font-size: 0.875rem;
 			font-weight: 500;
@@ -531,8 +524,8 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		}
 
 		.aac-managed-sidebar a:hover {
-			border-color: rgba(248, 194, 53, 0.35);
-			background: rgba(0, 0, 0, 0.84);
+			border-color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
+			background: <?php echo esc_html($portal_design_settings['sidebar_button_hover_background']); ?>;
 			color: #fff;
 		}
 
@@ -555,12 +548,12 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		}
 
 		.aac-managed-sidebar a[aria-current="page"] .aac-managed-sidebar__icon {
-			color: #f8c235;
+			color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
 		}
 
 		.aac-managed-sidebar a[aria-current="page"] {
-			border-color: rgba(248, 194, 53, 0.65);
-			background: rgba(0, 0, 0, 0.9);
+			border-color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
+			background: <?php echo esc_html($portal_design_settings['sidebar_button_active_background']); ?>;
 			box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
 			color: #fff;
 		}

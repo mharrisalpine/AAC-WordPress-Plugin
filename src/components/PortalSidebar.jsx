@@ -2,37 +2,37 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { User, Shield, Settings, Store, Tag, Mic2, Users, Mail, ScrollText, BedDouble, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
 export function PortalNavLinks({ onNavigate, className }) {
   const { pathname } = useLocation();
-  const portalSections = [
-    {
-      title: 'Your portal',
-      items: [
-        { to: '/profile', icon: User, label: 'Member Profile', match: (p) => p === '/' || p === '/profile' || p === '' },
-        {
-          to: '/store',
-          icon: Store,
-          label: 'Store',
-          match: (p) => p.startsWith('/store') || p.startsWith('/product'),
-        },
-        { to: '/rescue', icon: Shield, label: 'Rescue', match: (p) => p === '/rescue' },
-        { to: '/account', icon: Settings, label: 'Account', match: (p) => p === '/account' || p === '/change-password' },
-      ],
-    },
-    {
-      title: 'Explore',
-      items: [
-        { to: '/discounts', icon: Tag, label: 'Discounts', match: (p) => p === '/discounts' },
-        { to: '/podcasts', icon: Mic2, label: 'Podcasts', match: (p) => p === '/podcasts' },
-        { to: '/meetups', icon: Users, label: 'Events', match: (p) => p === '/meetups' },
-        { to: '/lodging', icon: BedDouble, label: 'Lodging', match: (p) => p === '/lodging' },
-        { to: '/grants', icon: ScrollText, label: 'Grants', match: (p) => p === '/grants' },
-        { to: '/contact', icon: Mail, label: 'Contact Us', match: (p) => p === '/contact' },
-      ],
-    },
-  ];
+  const portalSections = getPortalUiSettings().navigation.sidebarSections;
+  const iconRegistry = {
+    user: User,
+    store: Store,
+    shield: Shield,
+    settings: Settings,
+    tag: Tag,
+    mic: Mic2,
+    users: Users,
+    mail: Mail,
+    'scroll-text': ScrollText,
+    bed: BedDouble,
+  };
+
+  const isItemActive = (to, itemId) => {
+    if (itemId === 'member_profile') {
+      return pathname === '/' || pathname === '/profile' || pathname === '';
+    }
+    if (itemId === 'store') {
+      return pathname.startsWith('/store') || pathname.startsWith('/product');
+    }
+    if (itemId === 'account') {
+      return pathname === '/account' || pathname === '/change-password';
+    }
+    return pathname === to;
+  };
 
   return (
     <nav className={cn('flex flex-col gap-6 px-4 py-4', className)} aria-label="Member portal">
@@ -41,14 +41,13 @@ export function PortalNavLinks({ onNavigate, className }) {
           <p className="mb-2 px-3 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-white/80">{section.title}</p>
           <ul className="space-y-1">
             {section.items.map((item) => {
-              const active = item.match(pathname);
+              const active = isItemActive(item.to, item.id);
+              const Icon = iconRegistry[item.icon] || User;
               const itemClasses = cn(
-                'flex items-center gap-3 rounded-[1.1rem] border px-3 py-3 text-sm font-medium transition-all',
-                active
-                  ? 'border-[#f8c235]/65 bg-black/90 text-white shadow-[0_12px_28px_rgba(0,0,0,0.42)]'
-                  : 'border-white/10 bg-black/72 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)] hover:border-[#f8c235]/35 hover:bg-black/84 hover:text-white',
+                'portal-sidebar-link flex items-center gap-3 rounded-[1.1rem] border px-3 py-3 text-sm font-medium text-white transition-all',
+                active ? 'portal-sidebar-link--active shadow-[0_12px_28px_rgba(0,0,0,0.42)]' : 'shadow-[0_10px_24px_rgba(0,0,0,0.28)]',
               );
-              const icon = <item.icon className={cn('h-5 w-5 shrink-0', active ? 'text-[#f8c235]' : 'text-white')} />;
+              const icon = <Icon className={cn('h-5 w-5 shrink-0', active ? 'portal-sidebar-link__icon--active' : 'text-white')} />;
 
               if (item.href) {
                 return (
@@ -82,24 +81,20 @@ export function PortalNavLinks({ onNavigate, className }) {
 }
 
 const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
-  const runtimeApiBase =
-    typeof window !== 'undefined' ? window.AAC_MEMBER_PORTAL_CONFIG?.apiBase : '';
-  let sidebarTopoUrl = '/sidebar-topo-v2.svg';
-
-  if (runtimeApiBase) {
-    try {
-      sidebarTopoUrl = `${new URL(runtimeApiBase).origin}/wp-content/plugins/aac-member-portal/app/sidebar-topo-v2.svg`;
-    } catch (error) {
-      sidebarTopoUrl = '/sidebar-topo-v2.svg';
-    }
-  }
+  const portalUiSettings = getPortalUiSettings();
+  const design = portalUiSettings.design;
+  const sidebarTopoUrl = design.sidebarBackgroundUrl || '/sidebar-topo-v2.svg';
 
   const sidebarSurfaceStyle = {
     backgroundColor: '#030000',
-    backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, 0.18), rgba(5, 2, 2, 0.3)), url("${sidebarTopoUrl}")`,
+    backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, ${design.sidebarOverlayStart || '0.18'}), rgba(5, 2, 2, ${design.sidebarOverlayEnd || '0.30'})), url("${sidebarTopoUrl}")`,
     backgroundPosition: 'center center, center top',
     backgroundRepeat: 'no-repeat, no-repeat',
     backgroundSize: '100% 100%, cover',
+    '--portal-sidebar-button-bg': design.sidebarButtonBackground || '#000000',
+    '--portal-sidebar-button-hover-bg': design.sidebarButtonHoverBackground || '#111111',
+    '--portal-sidebar-button-active-bg': design.sidebarButtonActiveBackground || '#000000',
+    '--portal-sidebar-accent': design.sidebarAccentColor || '#f8c235',
   };
 
   return (

@@ -9,6 +9,7 @@ import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { formatGrantApplicationDate, grantStatusClassName, normalizeGrantApplications } from '@/lib/grants';
 import { getTierDisplayLabel } from '@/lib/membershipTiers';
 import { formatMagazineSubscriptions, normalizePrintDigitalPreference } from '@/lib/memberProfile';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 import { getMembershipStatus, isMembershipActive } from '@/lib/membershipStatus';
 import { cn } from '@/lib/utils';
 
@@ -90,6 +91,7 @@ const MemberProfilePage = () => {
   const navigate = useNavigate();
   const { profile, loading } = useAuth();
   const { openMembershipAction, getMembershipActionUrl } = useMembershipActions();
+  const portalContent = getPortalUiSettings().content;
 
   if (loading || !profile) {
     return <div className="pt-10 text-center text-stone-800">Loading member profile...</div>;
@@ -124,7 +126,7 @@ const MemberProfilePage = () => {
           <InfoCard
             icon={User}
             title="Profile Information"
-            description="Primary contact and profile information used across the AAC portal. You may update your details and preferences in Account Settings."
+            description={portalContent.profile_information_description}
           >
             <div className="space-y-1">
               <DetailRow label="Email" value={accountInfo.email} />
@@ -136,7 +138,7 @@ const MemberProfilePage = () => {
           <InfoCard
             icon={Shield}
             title="Membership Snapshot"
-            description="Live membership and benefit details coming from WordPress and Paid Memberships Pro."
+            description={portalContent.membership_snapshot_description}
           >
             <div className="space-y-1">
               <DetailRow label="Member ID" value={profileInfo.member_id} />
@@ -153,7 +155,7 @@ const MemberProfilePage = () => {
         <InfoCard
           icon={FileText}
           title="Member Details"
-          description="Members receive a free T-shirt and books with the purchase of their membership."
+          description={portalContent.member_details_description}
         >
           <div className="space-y-1">
             <DetailRow label="T-Shirt Size" value={accountInfo.size} />
@@ -250,7 +252,7 @@ const MemberProfilePage = () => {
         <InfoCard
           icon={FileText}
           title="Grant Applications"
-          description="Recent AAC grant submissions tied to your member record."
+          description={portalContent.grant_applications_description}
         >
           {grantApplications.length ? (
             <div className="space-y-3">

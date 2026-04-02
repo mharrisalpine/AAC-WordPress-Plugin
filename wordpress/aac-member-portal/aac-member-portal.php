@@ -17,6 +17,7 @@ define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
 
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-pmpro.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-api.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-admin.php';
 
 final class AAC_Member_Portal_Null_WP_Fusion_User {
 	public function push_user_meta(...$args) {
@@ -39,6 +40,7 @@ final class AAC_Member_Portal_Plugin {
 
 	public function __construct() {
 		new AAC_Member_Portal_API();
+		new AAC_Member_Portal_Admin();
 
 		add_shortcode(self::SHORTCODE, [$this, 'render_shortcode']);
 		add_action('plugins_loaded', [$this, 'maybe_disable_broken_wp_fusion_pmpro_hooks'], 100);
@@ -1338,7 +1340,155 @@ final class AAC_Member_Portal_Plugin {
 			'isLoggedIn' => is_user_logged_in(),
 			'portalPageUrl' => untrailingslashit($this->get_portal_page_url()),
 			'mainWebsiteBaseUrl' => untrailingslashit(home_url()),
+			'portalSettings' => $this->get_portal_ui_settings(),
 		];
+	}
+
+	public function get_portal_ui_settings() {
+		$settings = AAC_Member_Portal_Admin::get_settings();
+		$resolved_background_url = $this->get_resolved_sidebar_background_url($settings);
+
+		return [
+			'content' => $settings['content'],
+			'design' => [
+				'sidebarBackgroundUrl' => $resolved_background_url,
+				'sidebarOverlayStart' => $settings['design']['sidebar_overlay_start'],
+				'sidebarOverlayEnd' => $settings['design']['sidebar_overlay_end'],
+				'sidebarButtonBackground' => $settings['design']['sidebar_button_background'],
+				'sidebarButtonHoverBackground' => $settings['design']['sidebar_button_hover_background'],
+				'sidebarButtonActiveBackground' => $settings['design']['sidebar_button_active_background'],
+				'sidebarAccentColor' => $settings['design']['sidebar_accent_color'],
+			],
+			'navigation' => [
+				'sidebarSections' => $this->build_sidebar_sections_for_runtime($settings),
+			],
+		];
+	}
+
+	public function get_template_sidebar_sections($portal_url) {
+		$settings = AAC_Member_Portal_Admin::get_settings();
+		$registry = $this->get_sidebar_item_registry();
+		$sections = [];
+
+		foreach ($settings['components']['section_titles'] as $section_id => $section_title) {
+			$sections[$section_id] = [
+				'title' => $section_title,
+				'items' => [],
+			];
+		}
+
+		foreach ($settings['components']['sidebar_items'] as $item_id => $item_settings) {
+			if (empty($item_settings['visible']) || empty($registry[$item_id])) {
+				continue;
+			}
+
+			$section_id = $item_settings['section'];
+			if (!isset($sections[$section_id])) {
+				continue;
+			}
+
+			$href = untrailingslashit($portal_url) . '/#' . ltrim($registry[$item_id]['route'], '/');
+			$sections[$section_id]['items'][] = [
+				'id' => $item_id,
+				'label' => $item_settings['label'],
+				'href' => $href,
+				'icon' => $registry[$item_id]['icon'],
+				'order' => (int) $item_settings['order'],
+				'active' => false,
+			];
+		}
+
+		foreach ($sections as &$section) {
+			usort($section['items'], static function ($left, $right) {
+				return ($left['order'] ?? 0) <=> ($right['order'] ?? 0);
+			});
+		}
+		unset($section);
+
+		return array_values(array_filter($sections, static function ($section) {
+			return !empty($section['items']);
+		}));
+	}
+
+	public function get_template_design_settings() {
+		$settings = AAC_Member_Portal_Admin::get_settings();
+
+		return [
+			'sidebar_background_url' => $this->get_resolved_sidebar_background_url($settings),
+			'sidebar_overlay_start' => $settings['design']['sidebar_overlay_start'],
+			'sidebar_overlay_end' => $settings['design']['sidebar_overlay_end'],
+			'sidebar_button_background' => $settings['design']['sidebar_button_background'],
+			'sidebar_button_hover_background' => $settings['design']['sidebar_button_hover_background'],
+			'sidebar_button_active_background' => $settings['design']['sidebar_button_active_background'],
+			'sidebar_accent_color' => $settings['design']['sidebar_accent_color'],
+		];
+	}
+
+	private function build_sidebar_sections_for_runtime($settings) {
+		$registry = $this->get_sidebar_item_registry();
+		$sections = [];
+
+		foreach ($settings['components']['section_titles'] as $section_id => $section_title) {
+			$sections[$section_id] = [
+				'id' => $section_id,
+				'title' => $section_title,
+				'items' => [],
+			];
+		}
+
+		foreach ($settings['components']['sidebar_items'] as $item_id => $item_settings) {
+			if (empty($item_settings['visible']) || empty($registry[$item_id])) {
+				continue;
+			}
+
+			$section_id = $item_settings['section'];
+			if (!isset($sections[$section_id])) {
+				continue;
+			}
+
+			$sections[$section_id]['items'][] = [
+				'id' => $item_id,
+				'label' => $item_settings['label'],
+				'to' => $registry[$item_id]['route'],
+				'icon' => $registry[$item_id]['icon'],
+				'order' => (int) $item_settings['order'],
+			];
+		}
+
+		foreach ($sections as &$section) {
+			usort($section['items'], static function ($left, $right) {
+				return ($left['order'] ?? 0) <=> ($right['order'] ?? 0);
+			});
+		}
+		unset($section);
+
+		return array_values(array_filter($sections, static function ($section) {
+			return !empty($section['items']);
+		}));
+	}
+
+	private function get_sidebar_item_registry() {
+		return [
+			'member_profile' => ['icon' => 'user', 'route' => '/profile'],
+			'store' => ['icon' => 'store', 'route' => '/store'],
+			'rescue' => ['icon' => 'shield', 'route' => '/rescue'],
+			'account' => ['icon' => 'settings', 'route' => '/account'],
+			'discounts' => ['icon' => 'tag', 'route' => '/discounts'],
+			'podcasts' => ['icon' => 'mic', 'route' => '/podcasts'],
+			'events' => ['icon' => 'users', 'route' => '/meetups'],
+			'lodging' => ['icon' => 'bed', 'route' => '/lodging'],
+			'grants' => ['icon' => 'scroll-text', 'route' => '/grants'],
+			'contact' => ['icon' => 'mail', 'route' => '/contact'],
+		];
+	}
+
+	private function get_resolved_sidebar_background_url($settings) {
+		$custom_url = trim((string) ($settings['design']['sidebar_background_url'] ?? ''));
+		if ($custom_url !== '') {
+			return $custom_url;
+		}
+
+		return AAC_MEMBER_PORTAL_URL . 'app/sidebar-topo-v2.svg';
 	}
 
 	private function get_shortcode_post() {
