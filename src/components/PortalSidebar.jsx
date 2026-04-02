@@ -84,22 +84,22 @@ export function PortalNavLinks({ onNavigate, className }) {
 const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
   const runtimeApiBase =
     typeof window !== 'undefined' ? window.AAC_MEMBER_PORTAL_CONFIG?.apiBase : '';
-  let sidebarTopoUrl = '/sidebar-topo.svg';
+  let sidebarTopoUrl = '/sidebar-topo-v2.svg';
 
   if (runtimeApiBase) {
     try {
-      sidebarTopoUrl = `${new URL(runtimeApiBase).origin}/wp-content/plugins/aac-member-portal/app/sidebar-topo.svg`;
+      sidebarTopoUrl = `${new URL(runtimeApiBase).origin}/wp-content/plugins/aac-member-portal/app/sidebar-topo-v2.svg`;
     } catch (error) {
-      sidebarTopoUrl = '/sidebar-topo.svg';
+      sidebarTopoUrl = '/sidebar-topo-v2.svg';
     }
   }
 
   const sidebarSurfaceStyle = {
     backgroundColor: '#030000',
-    backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, 0.42), rgba(5, 2, 2, 0.56)), url("${sidebarTopoUrl}")`,
-    backgroundPosition: 'center center, 46% 0%',
+    backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, 0.18), rgba(5, 2, 2, 0.3)), url("${sidebarTopoUrl}")`,
+    backgroundPosition: 'center center, center top',
     backgroundRepeat: 'no-repeat, no-repeat',
-    backgroundSize: '100% 100%, 185% auto',
+    backgroundSize: '100% 100%, cover',
   };
 
   return (

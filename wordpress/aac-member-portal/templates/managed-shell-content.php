@@ -404,11 +404,11 @@ $portal_sections = [
 		border-right: 1px solid rgba(0, 0, 0, 0.08);
 		background-color: #030000;
 		background-image:
-			linear-gradient(180deg, rgba(5, 2, 2, 0.42), rgba(5, 2, 2, 0.56)),
-			url('<?php echo esc_url(AAC_MEMBER_PORTAL_URL . 'app/sidebar-topo.svg'); ?>');
-		background-position: center center, 46% 0;
+			linear-gradient(180deg, rgba(5, 2, 2, 0.18), rgba(5, 2, 2, 0.3)),
+			url('<?php echo esc_url(AAC_MEMBER_PORTAL_URL . 'app/sidebar-topo-v2.svg'); ?>');
+		background-position: center center, center top;
 		background-repeat: no-repeat, no-repeat;
-		background-size: 100% 100%, 185% auto;
+		background-size: 100% 100%, cover;
 		color: #fff;
 		padding: 1rem;
 		box-sizing: border-box;
