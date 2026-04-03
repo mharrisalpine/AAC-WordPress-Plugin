@@ -12,7 +12,6 @@ const buildEmbeddedCheckoutUrl = (tierId) => {
   const levelId = getPmproLevelIdForTier(normalizedTier);
   const query = new URLSearchParams({
     level: String(levelId),
-    aac_embed: '1',
   });
 
   return mainSiteHref(`/membership-checkout/?${query.toString()}`);
@@ -20,7 +19,7 @@ const buildEmbeddedCheckoutUrl = (tierId) => {
 
 const MemberJoinPage = () => {
   const [selectedTierId, setSelectedTierId] = useState('Partner');
-  const [embedHeight, setEmbedHeight] = useState(1440);
+  const [embedHeight, setEmbedHeight] = useState(2200);
 
   const selectedTier = useMemo(() => getTierById(selectedTierId), [selectedTierId]);
   const checkoutUrl = useMemo(() => buildEmbeddedCheckoutUrl(selectedTierId), [selectedTierId]);
