@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { formatGrantApplicationDate, grantStatusClassName, normalizeGrantApplications } from '@/lib/grants';
 import { getTierDisplayLabel } from '@/lib/membershipTiers';
-import { formatMagazineSubscriptions, normalizePrintDigitalPreference } from '@/lib/memberProfile';
+import { normalizePrintDigitalPreference } from '@/lib/memberProfile';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { getMembershipStatus, isMembershipActive } from '@/lib/membershipStatus';
 import { cn } from '@/lib/utils';
@@ -168,7 +168,6 @@ const MemberProfilePage = () => {
             <DetailRow label="T-Shirt Size" value={accountInfo.size} />
             <DetailRow label="Publication Preference" value={normalizePrintDigitalPreference(accountInfo.publication_pref)} />
             <DetailRow label="Guide Preference" value={normalizePrintDigitalPreference(accountInfo.guidebook_pref)} />
-            <DetailRow label="Magazine Subscriptions" value={formatMagazineSubscriptions(accountInfo.magazine_subscriptions)} />
           </div>
         </InfoCard>
 
