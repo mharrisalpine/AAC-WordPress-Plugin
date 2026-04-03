@@ -14,6 +14,7 @@ import { getMemberTransactions } from '@/lib/memberApi';
 import { getMembershipBenefits, formatDollars } from '@/lib/fakePaymentFlows';
 import { formatMagazineSubscriptions, getFullName, normalizeAccountInfo } from '@/lib/memberProfile';
 import { getMembershipStatus, isMembershipActive } from '@/lib/membershipStatus';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 import {
   listMemberTransactions,
@@ -181,6 +182,7 @@ const AccountTab = ({ profile }) => {
 
   const membershipStatus = getMembershipStatus(profile?.profile_info);
   const membershipActive = isMembershipActive(profile?.profile_info);
+  const portalContent = getPortalUiSettings().content;
 
   const transactionGroups = ['Membership', 'Donation', 'Merchandise', 'Events', 'Lodging'].map((kind) => ({
     kind,
@@ -197,7 +199,9 @@ const AccountTab = ({ profile }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h2 className="text-3xl font-bold mb-6 text-black">Account Settings</h2>
+          <h2 className="text-3xl font-bold mb-6 text-black">
+            {portalContent.account_settings_title || 'Account Settings'}
+          </h2>
 
           <div className="max-w-2xl mx-auto space-y-6">
             <div className="card-gradient rounded-2xl border border-stone-200 p-6">

@@ -12,7 +12,7 @@ import {
   MEMBERSHIP_PLAN_PRICES,
   formatDollars,
 } from '@/lib/fakePaymentFlows';
-import { normalizeTierId } from '@/lib/membershipTiers';
+import { isPublicMembershipTierId, normalizeTierId } from '@/lib/membershipTiers';
 
 const MembershipManagementPage = () => {
   const { profile } = useAuth();
@@ -22,7 +22,7 @@ const MembershipManagementPage = () => {
   const currentTier = rawTier ? normalizeTierId(rawTier) : '';
   const isActive = profile?.profile_info?.status === 'Active';
   const currentIndex = currentTier ? MEMBERSHIP_PLAN_ORDER.indexOf(currentTier) : -1;
-  const visiblePlanOrder = MEMBERSHIP_PLAN_ORDER.filter((tier) => tier !== 'Free');
+  const visiblePlanOrder = MEMBERSHIP_PLAN_ORDER.filter((tier) => isPublicMembershipTierId(tier));
 
   const getCardAction = (tier) => {
     if (!isActive || currentIndex === -1) {

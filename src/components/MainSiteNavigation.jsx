@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronDown } from 'lucide-react';
 import { AAC_MAIN_NAV, mainSiteHref, resolveNavChildHref } from '@/lib/mainWebsiteNav';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
 const desktopLinkBase =
@@ -26,10 +27,12 @@ function NavLink({ href, external, className, children }) {
  * Desktop + mobile navigation aligned with americanalpineclub.org (dark bar variant).
  */
 export function MainSiteNavigation({ className }) {
+  const navSections = getPortalUiSettings().navigation.topNavSections || AAC_MAIN_NAV;
+
   return (
     <nav className={cn('flex items-center', className)} aria-label="American Alpine Club website">
       <ul className="hidden flex-wrap items-center gap-7 xl:flex">
-        {AAC_MAIN_NAV.map((section) => {
+        {navSections.map((section) => {
           if (section.type === 'link') {
             return (
               <li key={section.label} className="flex items-center">
@@ -46,7 +49,7 @@ export function MainSiteNavigation({ className }) {
           return (
             <li key={section.label} className="group relative flex items-center">
               <a
-                href={mainSiteHref(section.path)}
+                href={section.href || mainSiteHref(section.path)}
                 className={cn(desktopLinkBase, 'relative')}
               >
                 <span className="relative pb-1">
@@ -72,7 +75,7 @@ export function MainSiteNavigation({ className }) {
                   <ul className="space-y-1">
                     <li>
                       <NavLink
-                        href={mainSiteHref(section.path)}
+                        href={section.href || mainSiteHref(section.path)}
                         className={cn(dropdownLink, 'font-semibold text-white')}
                       >
                         View all
@@ -80,11 +83,7 @@ export function MainSiteNavigation({ className }) {
                     </li>
                     {section.children.map((child) => (
                       <li key={child.label}>
-                        <NavLink
-                          href={resolveNavChildHref(child)}
-                          external={child.external}
-                          className={dropdownLink}
-                        >
+                        <NavLink href={child.href || resolveNavChildHref(child)} external={child.external} className={dropdownLink}>
                           {child.label}
                         </NavLink>
                       </li>
@@ -98,7 +97,7 @@ export function MainSiteNavigation({ className }) {
       </ul>
 
       <div className="flex w-full flex-col gap-2 xl:hidden">
-        {AAC_MAIN_NAV.map((section) => {
+        {navSections.map((section) => {
           if (section.type === 'link') {
             return (
               <NavLink
@@ -123,7 +122,7 @@ export function MainSiteNavigation({ className }) {
                 <ul className="space-y-1 border-t border-white/8 px-2 py-2">
                   <li>
                     <NavLink
-                      href={mainSiteHref(section.path)}
+                      href={section.href || mainSiteHref(section.path)}
                       className={cn(dropdownLink, 'font-semibold text-white')}
                     >
                       {section.label} overview
@@ -131,13 +130,9 @@ export function MainSiteNavigation({ className }) {
                   </li>
                   {section.children.map((child) => (
                     <li key={child.label}>
-                      <NavLink
-                        href={resolveNavChildHref(child)}
-                        external={child.external}
-                        className={dropdownLink}
-                      >
-                        {child.label}
-                      </NavLink>
+                        <NavLink href={child.href || resolveNavChildHref(child)} external={child.external} className={dropdownLink}>
+                          {child.label}
+                        </NavLink>
                     </li>
                   ))}
                 </ul>

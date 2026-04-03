@@ -4,11 +4,13 @@ export const MEMBERSHIP_PLAN_PRICES = {
   Free: 0,
   Supporter: 45,
   Partner: 95,
+  'Partner Family': 95,
   Leader: 150,
   Advocate: 500,
+  GRF: 0,
 };
 
-export const MEMBERSHIP_PLAN_ORDER = ['Free', 'Supporter', 'Partner', 'Leader', 'Advocate'];
+export const MEMBERSHIP_PLAN_ORDER = ['Free', 'Supporter', 'Partner', 'Partner Family', 'Leader', 'Advocate', 'GRF'];
 
 export const MEMBERSHIP_PLAN_DETAILS = {
   Free: {
@@ -41,6 +43,16 @@ export const MEMBERSHIP_PLAN_DETAILS = {
       'Eligible for AAC grants and awards (where applicable)',
     ],
   },
+  'Partner Family': {
+    summary: 'Partner-level benefits configured for households with connected family members.',
+    bullets: [
+      '$50,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      'Partner-level benefits with family add-ons',
+      'Supports an additional adult and up to three dependents',
+      'Child-account invite codes generated for connected family members',
+    ],
+  },
   Leader: {
     summary: 'Built for members who want stronger protection and premium club benefits.',
     bullets: [
@@ -62,6 +74,16 @@ export const MEMBERSHIP_PLAN_DETAILS = {
       'Advocate-level member recognition',
     ],
   },
+  GRF: {
+    summary: 'A manual donor tier for members who have contributed $1,500 within a single year.',
+    bullets: [
+      'Manual donor recognition tier',
+      '$100,000 in rescue coverage',
+      '$10,000 in medical coverage',
+      'Everything included in Advocate',
+      'Assigned by AAC staff only',
+    ],
+  },
 };
 
 export const getNextMembershipTier = (currentTier) => {
@@ -72,6 +94,7 @@ export const getNextMembershipTier = (currentTier) => {
     case 'Supporter':
       return 'Partner';
     case 'Partner':
+    case 'Partner Family':
       return 'Leader';
     case 'Leader':
       return 'Advocate';
@@ -86,8 +109,10 @@ export const getMembershipBenefits = (tier) => {
     Free: { rescue_amount: 0, medical_amount: 0 },
     Supporter: { rescue_amount: 0, medical_amount: 0 },
     Partner: { rescue_amount: 50000, medical_amount: 5000 },
+    'Partner Family': { rescue_amount: 50000, medical_amount: 5000 },
     Leader: { rescue_amount: 100000, medical_amount: 10000 },
     Advocate: { rescue_amount: 100000, medical_amount: 10000 },
+    GRF: { rescue_amount: 100000, medical_amount: 10000 },
   };
 
   return matrix[t] || matrix.Supporter;

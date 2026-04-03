@@ -16,9 +16,15 @@ class AAC_Member_Portal_Admin {
 	public static function get_defaults() {
 		return [
 			'content' => [
+				'account_settings_title' => 'Account Settings',
+				'contact_recipient_email' => 'mharris@americanalpineclub.org',
 				'profile_information_description' => 'Primary contact and profile information used across the AAC portal. You may update your details and preferences in Account Settings.',
 				'membership_snapshot_description' => 'Live membership and benefit details coming from WordPress and Paid Memberships Pro.',
 				'member_details_description' => 'Members receive a free T-shirt and books with the purchase of their membership.',
+				'portal_preferences_title' => 'Portal Preferences',
+				'portal_preferences_description' => 'Settings the portal is currently storing for your member record.',
+				'quick_actions_title' => 'Quick Actions',
+				'quick_actions_description' => 'Jump straight into the next member task.',
 				'grant_applications_description' => 'Recent AAC grant submissions tied to your member record.',
 			],
 			'design' => [
@@ -35,7 +41,43 @@ class AAC_Member_Portal_Admin {
 					'your_portal' => 'Your portal',
 					'explore' => 'Explore',
 				],
+				'top_nav_items' => self::get_default_top_nav_items(),
 				'sidebar_items' => self::get_default_sidebar_items(),
+			],
+		];
+	}
+
+	public static function get_default_top_nav_items() {
+		return [
+			'get_involved' => [
+				'label' => 'Get Involved',
+				'order' => 10,
+				'visible' => 1,
+			],
+			'membership' => [
+				'label' => 'Membership',
+				'order' => 20,
+				'visible' => 1,
+			],
+			'stories_news' => [
+				'label' => 'Stories & News',
+				'order' => 30,
+				'visible' => 1,
+			],
+			'lodging' => [
+				'label' => 'Lodging',
+				'order' => 40,
+				'visible' => 1,
+			],
+			'publications' => [
+				'label' => 'Publications',
+				'order' => 50,
+				'visible' => 1,
+			],
+			'our_work' => [
+				'label' => 'Our Work',
+				'order' => 60,
+				'visible' => 1,
 			],
 		];
 	}
@@ -112,6 +154,17 @@ class AAC_Member_Portal_Admin {
 		return self::merge_with_defaults(self::get_defaults(), $stored);
 	}
 
+	public static function get_contact_recipient_email() {
+		$settings = self::get_settings();
+		$recipient_email = sanitize_email($settings['content']['contact_recipient_email'] ?? '');
+
+		if ($recipient_email && is_email($recipient_email)) {
+			return $recipient_email;
+		}
+
+		return sanitize_email(get_option('admin_email'));
+	}
+
 	public function register_admin_page() {
 		add_menu_page(
 			'AAC Portal Settings',
@@ -138,9 +191,18 @@ class AAC_Member_Portal_Admin {
 
 		$settings = $defaults;
 
+		$settings['content']['account_settings_title'] = sanitize_text_field($input['content']['account_settings_title'] ?? $defaults['content']['account_settings_title']);
+		$contact_recipient_email = sanitize_email($input['content']['contact_recipient_email'] ?? $defaults['content']['contact_recipient_email']);
+		$settings['content']['contact_recipient_email'] = $contact_recipient_email && is_email($contact_recipient_email)
+			? $contact_recipient_email
+			: $defaults['content']['contact_recipient_email'];
 		$settings['content']['profile_information_description'] = sanitize_textarea_field($input['content']['profile_information_description'] ?? $defaults['content']['profile_information_description']);
 		$settings['content']['membership_snapshot_description'] = sanitize_textarea_field($input['content']['membership_snapshot_description'] ?? $defaults['content']['membership_snapshot_description']);
 		$settings['content']['member_details_description'] = sanitize_textarea_field($input['content']['member_details_description'] ?? $defaults['content']['member_details_description']);
+		$settings['content']['portal_preferences_title'] = sanitize_text_field($input['content']['portal_preferences_title'] ?? $defaults['content']['portal_preferences_title']);
+		$settings['content']['portal_preferences_description'] = sanitize_textarea_field($input['content']['portal_preferences_description'] ?? $defaults['content']['portal_preferences_description']);
+		$settings['content']['quick_actions_title'] = sanitize_text_field($input['content']['quick_actions_title'] ?? $defaults['content']['quick_actions_title']);
+		$settings['content']['quick_actions_description'] = sanitize_textarea_field($input['content']['quick_actions_description'] ?? $defaults['content']['quick_actions_description']);
 		$settings['content']['grant_applications_description'] = sanitize_textarea_field($input['content']['grant_applications_description'] ?? $defaults['content']['grant_applications_description']);
 
 		$settings['design']['sidebar_background_url'] = esc_url_raw($input['design']['sidebar_background_url'] ?? '');
@@ -154,6 +216,17 @@ class AAC_Member_Portal_Admin {
 		$section_titles = $input['components']['section_titles'] ?? [];
 		foreach ($defaults['components']['section_titles'] as $section_id => $default_title) {
 			$settings['components']['section_titles'][$section_id] = sanitize_text_field($section_titles[$section_id] ?? $default_title);
+		}
+
+		$top_nav_items = $input['components']['top_nav_items'] ?? [];
+		foreach ($defaults['components']['top_nav_items'] as $item_id => $item_defaults) {
+			$item_input = isset($top_nav_items[$item_id]) && is_array($top_nav_items[$item_id]) ? $top_nav_items[$item_id] : [];
+
+			$settings['components']['top_nav_items'][$item_id] = [
+				'label' => sanitize_text_field($item_input['label'] ?? $item_defaults['label']),
+				'order' => isset($item_input['order']) ? (int) $item_input['order'] : (int) $item_defaults['order'],
+				'visible' => empty($item_input['visible']) ? 0 : 1,
+			];
 		}
 
 		$sidebar_items = $input['components']['sidebar_items'] ?? [];
@@ -195,9 +268,15 @@ class AAC_Member_Portal_Admin {
 						<h2 style="margin-top:0;">Content</h2>
 						<table class="form-table" role="presentation">
 							<tbody>
+								<?php $this->render_input_row(self::OPTION_KEY . '[content][account_settings_title]', 'Account Settings title', $settings['content']['account_settings_title']); ?>
+								<?php $this->render_input_row(self::OPTION_KEY . '[content][contact_recipient_email]', 'Contact form recipient email', $settings['content']['contact_recipient_email'], 'email', 'Messages from the member app Contact form will be sent to this address.'); ?>
 								<?php $this->render_textarea_row(self::OPTION_KEY . '[content][profile_information_description]', 'Profile Information description', $settings['content']['profile_information_description']); ?>
 								<?php $this->render_textarea_row(self::OPTION_KEY . '[content][membership_snapshot_description]', 'Membership Snapshot description', $settings['content']['membership_snapshot_description']); ?>
 								<?php $this->render_textarea_row(self::OPTION_KEY . '[content][member_details_description]', 'Member Details description', $settings['content']['member_details_description']); ?>
+								<?php $this->render_input_row(self::OPTION_KEY . '[content][portal_preferences_title]', 'Portal Preferences title', $settings['content']['portal_preferences_title']); ?>
+								<?php $this->render_textarea_row(self::OPTION_KEY . '[content][portal_preferences_description]', 'Portal Preferences description', $settings['content']['portal_preferences_description']); ?>
+								<?php $this->render_input_row(self::OPTION_KEY . '[content][quick_actions_title]', 'Quick Actions title', $settings['content']['quick_actions_title']); ?>
+								<?php $this->render_textarea_row(self::OPTION_KEY . '[content][quick_actions_description]', 'Quick Actions description', $settings['content']['quick_actions_description']); ?>
 								<?php $this->render_textarea_row(self::OPTION_KEY . '[content][grant_applications_description]', 'Grant Applications description', $settings['content']['grant_applications_description']); ?>
 							</tbody>
 						</table>
@@ -226,6 +305,54 @@ class AAC_Member_Portal_Admin {
 							<tbody>
 								<?php foreach ($settings['components']['section_titles'] as $section_id => $title) : ?>
 									<?php $this->render_input_row(self::OPTION_KEY . '[components][section_titles][' . $section_id . ']', sprintf('Section title: %s', $defaults['components']['section_titles'][$section_id]), $title); ?>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+
+						<h3 style="margin:24px 0 12px;">Top Navigation</h3>
+						<p>Control the top AAC navigation labels, order, and visibility. Child links stay mapped to the current AAC destinations.</p>
+
+						<table class="widefat striped" style="margin-top:16px;">
+							<thead>
+								<tr>
+									<th>Section</th>
+									<th>Label</th>
+									<th>Order</th>
+									<th>Visible</th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php foreach ($settings['components']['top_nav_items'] as $item_id => $item_settings) : ?>
+									<tr>
+										<td><strong><?php echo esc_html($item_id); ?></strong></td>
+										<td>
+											<input
+												type="text"
+												class="regular-text"
+												name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][label]'); ?>"
+												value="<?php echo esc_attr($item_settings['label']); ?>"
+											/>
+										</td>
+										<td>
+											<input
+												type="number"
+												name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][order]'); ?>"
+												value="<?php echo esc_attr($item_settings['order']); ?>"
+												style="width:90px;"
+											/>
+										</td>
+										<td>
+											<label>
+												<input
+													type="checkbox"
+													name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][visible]'); ?>"
+													value="1"
+													<?php checked(!empty($item_settings['visible'])); ?>
+												/>
+												Visible
+											</label>
+										</td>
+									</tr>
 								<?php endforeach; ?>
 							</tbody>
 						</table>

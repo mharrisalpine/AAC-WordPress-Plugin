@@ -10,6 +10,10 @@ export const normalizePrintDigitalPreference = (value, fallback = 'Digital') => 
   return value === 'Print' ? 'Print' : value === 'Digital' ? 'Digital' : fallback;
 };
 
+export const normalizeMembershipDiscountType = (value) => {
+  return value === 'student' || value === 'military' ? value : '';
+};
+
 export const normalizeMagazineSubscriptions = (value) => {
   if (!Array.isArray(value)) {
     return [];
@@ -40,6 +44,7 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.publication_pref = normalizePrintDigitalPreference(normalized.publication_pref);
   normalized.guidebook_pref = normalizePrintDigitalPreference(normalized.guidebook_pref);
   normalized.magazine_subscriptions = normalizeMagazineSubscriptions(normalized.magazine_subscriptions);
+  normalized.membership_discount_type = normalizeMembershipDiscountType(normalized.membership_discount_type);
   normalized.auto_renew = Boolean(normalized.auto_renew);
   return normalized;
 };

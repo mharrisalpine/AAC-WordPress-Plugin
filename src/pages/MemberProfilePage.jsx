@@ -87,6 +87,11 @@ const formatMembershipDate = (value, fallback = 'Not scheduled') => {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toLocaleDateString();
 };
 
+const formatConnectedAccountPrice = (value) => {
+  const amount = Number(value || 0);
+  return amount > 0 ? `$${amount.toFixed(2)}/yr` : 'Included';
+};
+
 const MemberProfilePage = () => {
   const navigate = useNavigate();
   const { profile, loading } = useAuth();
@@ -101,6 +106,8 @@ const MemberProfilePage = () => {
   const profileInfo = profile.profile_info || {};
   const benefitsInfo = profile.benefits_info || {};
   const grantApplications = normalizeGrantApplications(profile.grant_applications);
+  const connectedAccounts = Array.isArray(profile.connected_accounts) ? profile.connected_accounts : [];
+  const familyMembership = profile.family_membership || { mode: '', additional_adult: false, dependent_count: 0 };
   const membershipStatus = getMembershipStatus(profileInfo);
   const membershipActive = isMembershipActive(profileInfo);
   const membershipTierLabel = getTierDisplayLabel(profileInfo.tier, 'Free');
@@ -165,11 +172,74 @@ const MemberProfilePage = () => {
           </div>
         </InfoCard>
 
+        {(familyMembership.mode === 'family' || connectedAccounts.length > 0) ? (
+          <InfoCard
+            icon={User}
+            title="Connected Accounts"
+            description="Family membership invitations and linked household accounts connected to the payer account."
+          >
+            <div className="space-y-1">
+              <DetailRow
+                label="Family Plan"
+                value={familyMembership.mode === 'family' ? 'Enabled' : 'Not enabled'}
+              />
+              <DetailRow
+                label="Additional Adult"
+                value={familyMembership.additional_adult ? 'Included' : 'Not included'}
+              />
+              <DetailRow
+                label="Dependents"
+                value={String(familyMembership.dependent_count || 0)}
+              />
+            </div>
+            {connectedAccounts.length ? (
+              <div className="mt-5 space-y-3">
+                {connectedAccounts.map((account) => (
+                  <div key={account.id} className="rounded-[20px] border border-stone-200 bg-stone-50/80 px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">
+                          {account.type === 'adult' ? 'Additional Adult' : 'Dependent'}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-stone-900">{account.label}</p>
+                        <p className="mt-1 text-sm text-stone-600">
+                          {account.child_name || 'Pending child account'}
+                          {account.child_email ? ` • ${account.child_email}` : ''}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em]',
+                          account.status === 'connected'
+                            ? 'bg-emerald-50 text-emerald-800'
+                            : 'bg-amber-50 text-amber-800',
+                        )}
+                      >
+                        {account.status}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 text-sm text-stone-700 sm:grid-cols-2">
+                      <div className="rounded-2xl bg-white px-4 py-3">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Invite Code</p>
+                        <p className="mt-1 font-mono text-sm text-stone-900">{account.invite_code || 'Pending'}</p>
+                      </div>
+                      <div className="rounded-2xl bg-white px-4 py-3">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Recurring Charge</p>
+                        <p className="mt-1 text-sm font-semibold text-stone-900">{formatConnectedAccountPrice(account.price)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </InfoCard>
+        ) : null}
+
         <div className="grid gap-6 xl:grid-cols-[1.15fr,0.85fr]">
           <InfoCard
             icon={MapPin}
-            title="Portal Preferences"
-            description="Settings the portal is currently storing for your member record."
+            title={portalContent.portal_preferences_title || 'Portal Preferences'}
+            description={portalContent.portal_preferences_description}
           >
             <div className="space-y-1">
               <DetailRow label="Auto Renew" value={accountInfo.auto_renew ? 'Enabled' : 'Disabled'} />
@@ -192,8 +262,8 @@ const MemberProfilePage = () => {
 
           <InfoCard
             icon={Receipt}
-            title="Quick Actions"
-            description="Jump straight into the next member task."
+            title={portalContent.quick_actions_title || 'Quick Actions'}
+            description={portalContent.quick_actions_description}
           >
             <div className="space-y-3">
               <Button

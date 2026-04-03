@@ -303,11 +303,10 @@ export const shouldUseFakeMemberDb = () => {
   if (import.meta.env.VITE_USE_FAKE_DB === 'true') {
     return true;
   }
-  if (typeof window !== 'undefined' && window.AAC_MEMBER_PORTAL_CONFIG) {
-    const cfg = window.AAC_MEMBER_PORTAL_CONFIG;
-    if (cfg.apiBase || cfg.restNonce) {
-      return false;
-    }
+
+  if (typeof window !== 'undefined' && window.AAC_MEMBER_PORTAL_CONFIG?.useFakeMemberDb) {
+    return true;
   }
-  return !import.meta.env.VITE_WORDPRESS_API_BASE;
+
+  return false;
 };

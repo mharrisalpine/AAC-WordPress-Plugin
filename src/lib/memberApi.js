@@ -2,37 +2,22 @@ import { apiRequest, setAuthToken, setRestNonce } from '@/lib/apiClient';
 import { AAC_CUTTING_EDGE_PODCASTS, normalizePodcastList } from '@/lib/aacPodcasts';
 import { fakeAuthDb, shouldUseFakeMemberDb } from '@/lib/fakeMemberDb';
 
-const withFallback = async (remoteCall, fallbackCall) => {
+const withOptionalFakeBackend = async (remoteCall, fallbackCall) => {
   if (shouldUseFakeMemberDb()) {
     return fallbackCall();
   }
 
-  try {
-    return await remoteCall();
-  } catch (error) {
-    const shouldFallback =
-      error?.status === 404 ||
-      error?.message === 'Failed to fetch' ||
-      error?.message?.includes('NetworkError') ||
-      error?.message?.includes('Load failed');
-
-    if (!shouldFallback) {
-      throw error;
-    }
-
-    console.warn('Falling back to fake member database:', error.message);
-    return fallbackCall();
-  }
+  return remoteCall();
 };
 
 export const getCurrentMember = () =>
-  withFallback(
+  withOptionalFakeBackend(
     () => apiRequest('/me'),
     () => fakeAuthDb.getCurrentMember()
   );
 
 export async function loginMember(email, password) {
-  const data = await withFallback(
+  const data = await withOptionalFakeBackend(
     () => apiRequest('/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
@@ -46,7 +31,7 @@ export async function loginMember(email, password) {
 }
 
 export async function registerMember(email, password, options = {}) {
-  const data = await withFallback(
+  const data = await withOptionalFakeBackend(
     () => apiRequest('/register', {
       method: 'POST',
       body: JSON.stringify({
@@ -66,7 +51,7 @@ export async function registerMember(email, password, options = {}) {
 
 export async function logoutMember() {
   try {
-    return await withFallback(
+    return await withOptionalFakeBackend(
       () => apiRequest('/logout', { method: 'POST' }),
       () => fakeAuthDb.logoutMember()
     );
@@ -77,7 +62,7 @@ export async function logoutMember() {
 }
 
 export const requestPasswordReset = (email) =>
-  withFallback(
+  withOptionalFakeBackend(
     () => apiRequest('/reset-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
@@ -86,7 +71,7 @@ export const requestPasswordReset = (email) =>
   );
 
 export async function changeMemberPassword(currentPassword, newPassword, confirmPassword) {
-  const data = await withFallback(
+  const data = await withOptionalFakeBackend(
     () => apiRequest('/change-password', {
       method: 'POST',
       body: JSON.stringify({
@@ -106,7 +91,7 @@ export async function changeMemberPassword(currentPassword, newPassword, confirm
 }
 
 export const updateMemberProfile = (updates) =>
-  withFallback(
+  withOptionalFakeBackend(
     () => apiRequest('/profile', {
       method: 'PATCH',
       body: JSON.stringify(updates),
@@ -115,7 +100,7 @@ export const updateMemberProfile = (updates) =>
   );
 
 export const submitContactMessage = ({ name, email, message }) =>
-  withFallback(
+  withOptionalFakeBackend(
     () => apiRequest('/contact', {
       method: 'POST',
       body: JSON.stringify({ name, email, message }),
@@ -148,7 +133,7 @@ export const getLatestPodcasts = async () => {
 };
 
 export const getMemberTransactions = () =>
-  withFallback(
+  withOptionalFakeBackend(
     () => apiRequest('/transactions'),
     () => fakeAuthDb.getMemberTransactions()
   );

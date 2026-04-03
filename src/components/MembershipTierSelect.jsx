@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check } from 'lucide-react';
-import { MEMBERSHIP_TIER_OPTIONS, isOneTimeMembershipTierId } from '@/lib/membershipTiers';
+import { MEMBERSHIP_TIER_OPTIONS, isOneTimeMembershipTierId, isPublicMembershipTierId } from '@/lib/membershipTiers';
 import { cn } from '@/lib/utils';
 
 function TierBenefitsList({ benefits, dense }) {
@@ -33,7 +33,7 @@ function TierBenefitsList({ benefits, dense }) {
  * @param {'compact' | 'full'} [props.variant]
  */
 export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact' }) {
-  const visibleTiers = MEMBERSHIP_TIER_OPTIONS.filter((tier) => tier.id !== 'Free');
+  const visibleTiers = MEMBERSHIP_TIER_OPTIONS.filter((tier) => isPublicMembershipTierId(tier.id));
 
   if (variant === 'full') {
     return (

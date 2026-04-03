@@ -62,3 +62,5 @@ With **Paid Memberships Pro** active, membership **tier / renewal / status** com
 Full install and hosting instructions:
 
 - `docs/wordpress-hosting.md`
+- `docs/codebase-reference.md`
+- `docs/family-membership.md`

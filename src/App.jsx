@@ -92,7 +92,7 @@ function App() {
   }, [user?.id, profile]);
 
   if (loading) {
-    return <div className="min-h-screen topo-lines flex items-center justify-center text-stone-800">Loading...</div>;
+    return <div className="min-h-screen member-app-surface flex items-center justify-center text-stone-800">Loading...</div>;
   }
 
   const publicOutletPaths = new Set(['/donate', '/payment', '/success', '/login']);
@@ -131,7 +131,7 @@ function App() {
         <meta name="description" content="Access your AAC membership card, rescue insurance, partner discounts, merchandise store, and account settings." />
       </Helmet>
       
-      <div className="topo-lines flex min-h-screen flex-col">
+      <div className="member-app-surface flex min-h-screen flex-col">
         {showHeader ? (
           <>
             <Header

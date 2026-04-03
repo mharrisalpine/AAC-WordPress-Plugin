@@ -38,7 +38,7 @@ export function PortalNavLinks({ onNavigate, className }) {
     <nav className={cn('flex flex-col gap-6 px-4 py-4', className)} aria-label="Member portal">
       {portalSections.map((section) => (
         <div key={section.title}>
-          <p className="mb-2 px-3 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-white/80">{section.title}</p>
+          <p className="mb-2 px-3 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-white/85">{section.title}</p>
           <ul className="space-y-1">
             {section.items.map((item) => {
               const active = isItemActive(item.to, item.id);
@@ -89,8 +89,8 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
     backgroundColor: '#030000',
     backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, ${design.sidebarOverlayStart || '0.18'}), rgba(5, 2, 2, ${design.sidebarOverlayEnd || '0.30'})), url("${sidebarTopoUrl}")`,
     backgroundPosition: 'center center, center top',
-    backgroundRepeat: 'no-repeat, no-repeat',
-    backgroundSize: '100% 100%, cover',
+    backgroundRepeat: 'no-repeat, repeat-y',
+    backgroundSize: '100% 100%, 100% auto',
     '--portal-sidebar-button-bg': design.sidebarButtonBackground || '#000000',
     '--portal-sidebar-button-hover-bg': design.sidebarButtonHoverBackground || '#111111',
     '--portal-sidebar-button-active-bg': design.sidebarButtonActiveBackground || '#000000',

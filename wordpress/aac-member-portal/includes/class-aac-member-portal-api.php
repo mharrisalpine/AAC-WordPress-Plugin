@@ -91,6 +91,12 @@ class AAC_Member_Portal_API {
 	public function login(WP_REST_Request $request) {
 		$email = sanitize_email($request->get_param('email'));
 		$password = (string) $request->get_param('password');
+
+		$rate_limit = $this->consume_rate_limit('login', $this->build_rate_limit_identity($request, $email), 8, 15 * MINUTE_IN_SECONDS);
+		if (is_wp_error($rate_limit)) {
+			return $rate_limit;
+		}
+
 		$user = get_user_by('email', $email);
 
 		if (!$user) {
@@ -133,8 +139,21 @@ class AAC_Member_Portal_API {
 		$last_name = sanitize_text_field($request->get_param('last_name'));
 		$username = sanitize_user($request->get_param('username'), true);
 
+		$rate_limit = $this->consume_rate_limit('register', $this->build_rate_limit_identity($request, $email), 5, HOUR_IN_SECONDS);
+		if (is_wp_error($rate_limit)) {
+			return $rate_limit;
+		}
+
 		if (!$email || !$password) {
 			return new WP_Error('invalid_input', 'Email and password are required.', ['status' => 400]);
+		}
+
+		if (!is_email($email)) {
+			return new WP_Error('invalid_input', 'Please enter a valid email address.', ['status' => 400]);
+		}
+
+		if (strlen($password) < 8) {
+			return new WP_Error('invalid_input', 'Password must be at least 8 characters long.', ['status' => 400]);
 		}
 
 		if (!$username) {
@@ -181,24 +200,30 @@ class AAC_Member_Portal_API {
 
 	public function reset_password(WP_REST_Request $request) {
 		$email = sanitize_email($request->get_param('email'));
+
+		$rate_limit = $this->consume_rate_limit('reset_password', $this->build_rate_limit_identity($request, $email), 5, 15 * MINUTE_IN_SECONDS);
+		if (is_wp_error($rate_limit)) {
+			return $rate_limit;
+		}
+
+		if (!$email || !is_email($email)) {
+			return rest_ensure_response(['success' => true]);
+		}
+
 		$user = get_user_by('email', $email);
 
-		if (!$user) {
-			return new WP_Error('not_found', 'No user found for that email.', ['status' => 404]);
+		if ($user) {
+			$key = get_password_reset_key($user);
+			if (!is_wp_error($key)) {
+				$reset_url = network_site_url("wp-login.php?action=rp&key={$key}&login=" . rawurlencode($user->user_login), 'login');
+
+				wp_mail(
+					$user->user_email,
+					'Password Reset',
+					"Use this link to reset your password:\n\n{$reset_url}"
+				);
+			}
 		}
-
-		$key = get_password_reset_key($user);
-		if (is_wp_error($key)) {
-			return $key;
-		}
-
-		$reset_url = network_site_url("wp-login.php?action=rp&key={$key}&login=" . rawurlencode($user->user_login), 'login');
-
-		wp_mail(
-			$user->user_email,
-			'Password Reset',
-			"Use this link to reset your password:\n\n{$reset_url}"
-		);
 
 		return rest_ensure_response(['success' => true]);
 	}
@@ -274,9 +299,13 @@ class AAC_Member_Portal_API {
 
 		if (is_array($account_info)) {
 			$sanitized_account_info = $this->sanitize_account_info($account_info);
-			update_user_meta($user_id, 'aac_account_info', $sanitized_account_info);
-			$this->sync_wp_user_from_account_info($user_id, $sanitized_account_info);
-			$this->sync_reportable_member_fields($user_id, $sanitized_account_info);
+			$synced_account_info = $this->sync_wp_user_from_account_info($user_id, $sanitized_account_info);
+			if (is_wp_error($synced_account_info)) {
+				return $synced_account_info;
+			}
+
+			update_user_meta($user_id, 'aac_account_info', $synced_account_info);
+			$this->sync_reportable_member_fields($user_id, $synced_account_info);
 		}
 
 		if (is_array($profile_info)) {
@@ -288,7 +317,7 @@ class AAC_Member_Portal_API {
 		}
 
 		if (is_array($grant_applications)) {
-			update_user_meta($user_id, 'aac_grant_applications', $this->sanitize_grant_applications($grant_applications));
+			update_user_meta($user_id, 'aac_grant_applications', $this->sanitize_member_editable_grant_applications($grant_applications));
 		}
 
 		$profile = $this->build_profile($user_id);
@@ -303,21 +332,32 @@ class AAC_Member_Portal_API {
 	public function contact(WP_REST_Request $request) {
 		$current_user = wp_get_current_user();
 		$message = sanitize_textarea_field($request->get_param('message'));
+		$sender_name = sanitize_text_field($request->get_param('name'));
+		$sender_email = sanitize_email($request->get_param('email')) ?: $current_user->user_email;
 
 		if (!$message) {
 			return new WP_Error('invalid_input', 'Message is required.', ['status' => 400]);
 		}
 
-		$admin_email = get_option('admin_email');
+		$recipient_email = AAC_Member_Portal_Admin::get_contact_recipient_email();
 		$subject = 'AAC Member Portal Contact Message';
 		$body = sprintf(
 			"Name: %s\nEmail: %s\n\n%s",
-			sanitize_text_field($request->get_param('name')),
-			sanitize_email($request->get_param('email')) ?: $current_user->user_email,
+			$sender_name,
+			$sender_email,
 			$message
 		);
 
-		wp_mail($admin_email, $subject, $body);
+		$headers = [];
+		$from_email = sanitize_email(get_option('admin_email'));
+		if ($from_email && is_email($from_email)) {
+			$headers[] = sprintf('From: Member Request Message <%s>', $from_email);
+		}
+		if ($sender_email && is_email($sender_email)) {
+			$headers[] = sprintf('Reply-To: %s <%s>', $sender_name ?: $sender_email, $sender_email);
+		}
+
+		wp_mail($recipient_email, $subject, $body, $headers);
 
 		return rest_ensure_response(['success' => true]);
 	}
@@ -446,11 +486,13 @@ class AAC_Member_Portal_API {
 			'phone_type' => '',
 			'guidebook_pref' => 'Digital',
 			'magazine_subscriptions' => [],
+			'membership_discount_type' => '',
 			'auto_renew' => false,
 			'payment_method' => '',
 		], $account_info);
 
 		$account_info['magazine_subscriptions'] = $this->get_member_magazine_subscription_labels($user_id);
+		$account_info['membership_discount_type'] = sanitize_key(get_user_meta($user_id, 'aac_membership_discount_type', true));
 
 		$membership_actions = $this->build_membership_actions($user_id, $profile_info);
 
@@ -467,12 +509,24 @@ class AAC_Member_Portal_API {
 			? $this->sanitize_grant_applications($grant_applications)
 			: [];
 
+		$connected_accounts = get_user_meta($user_id, 'aac_connected_accounts', true);
+		$connected_accounts = is_array($connected_accounts)
+			? $this->sanitize_connected_accounts($connected_accounts)
+			: [];
+
+		$family_membership = get_user_meta($user_id, 'aac_partner_family_config', true);
+		$family_membership = is_array($family_membership)
+			? $this->sanitize_family_membership($family_membership)
+			: ['mode' => '', 'additional_adult' => false, 'dependent_count' => 0];
+
 		$profile = [
 			'account_info' => $account_info,
 			'profile_info' => $profile_info,
 			'benefits_info' => $benefits_info,
 			'membership_actions' => $membership_actions,
 			'grant_applications' => $grant_applications,
+			'connected_accounts' => $connected_accounts,
+			'family_membership' => $family_membership,
 		];
 
 		return apply_filters('aac_member_portal_profile', $profile, $user_id, $user);
@@ -514,8 +568,10 @@ class AAC_Member_Portal_API {
 			'Free' => ['rescue_amount' => 0, 'medical_amount' => 0],
 			'Supporter' => ['rescue_amount' => 0, 'medical_amount' => 0],
 			'Partner' => ['rescue_amount' => 50000, 'medical_amount' => 5000],
+			'Partner Family' => ['rescue_amount' => 50000, 'medical_amount' => 5000],
 			'Leader' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
 			'Advocate' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
+			'GRF' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
 			'Lifetime' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
 			'' => ['rescue_amount' => 0, 'medical_amount' => 0],
 		];
@@ -577,6 +633,11 @@ class AAC_Member_Portal_API {
 			$publication_pref = 'Digital';
 		}
 
+		$membership_discount_type = sanitize_key($account_info['membership_discount_type'] ?? '');
+		if (!in_array($membership_discount_type, ['student', 'military'], true)) {
+			$membership_discount_type = '';
+		}
+
 		return [
 			'first_name' => $first_name,
 			'last_name' => $last_name,
@@ -595,6 +656,7 @@ class AAC_Member_Portal_API {
 			'publication_pref' => $publication_pref,
 			'guidebook_pref' => $guidebook_pref,
 			'magazine_subscriptions' => array_values(array_filter(array_map('sanitize_text_field', (array) ($account_info['magazine_subscriptions'] ?? [])))),
+			'membership_discount_type' => $membership_discount_type,
 			'auto_renew' => !empty($account_info['auto_renew']),
 			'payment_method' => sanitize_text_field($account_info['payment_method'] ?? ''),
 		];
@@ -654,7 +716,63 @@ class AAC_Member_Portal_API {
 		}, $grant_applications)));
 	}
 
+	private function sanitize_family_membership($family_membership) {
+		if (!is_array($family_membership)) {
+			return ['mode' => '', 'additional_adult' => false, 'dependent_count' => 0];
+		}
+
+		$mode = sanitize_key($family_membership['mode'] ?? '');
+		if ($mode !== 'family') {
+			$mode = '';
+		}
+
+		return [
+			'mode' => $mode,
+			'additional_adult' => !empty($family_membership['additional_adult']) && $mode === 'family',
+			'dependent_count' => $mode === 'family' ? max(0, min(3, (int) ($family_membership['dependent_count'] ?? 0))) : 0,
+		];
+	}
+
+	private function sanitize_connected_accounts($connected_accounts) {
+		if (!is_array($connected_accounts)) {
+			return [];
+		}
+
+		return array_values(array_filter(array_map(function ($account) {
+			if (!is_array($account)) {
+				return null;
+			}
+
+			$type = sanitize_key($account['type'] ?? '');
+			if (!in_array($type, ['adult', 'dependent'], true)) {
+				$type = 'dependent';
+			}
+
+			$status = sanitize_key($account['status'] ?? 'pending');
+			if (!in_array($status, ['pending', 'connected'], true)) {
+				$status = 'pending';
+			}
+
+			return [
+				'id' => sanitize_text_field($account['id'] ?? wp_generate_uuid4()),
+				'type' => $type,
+				'label' => sanitize_text_field($account['label'] ?? 'Family member'),
+				'status' => $status,
+				'invite_code' => sanitize_text_field($account['invite_code'] ?? ''),
+				'child_user_id' => absint($account['child_user_id'] ?? 0),
+				'child_name' => sanitize_text_field($account['child_name'] ?? ''),
+				'child_email' => sanitize_email($account['child_email'] ?? ''),
+				'price' => round((float) ($account['price'] ?? 0), 2),
+			];
+		}, $connected_accounts)));
+	}
+
 	private function sync_wp_user_from_account_info($user_id, $account_info) {
+		$user = get_user_by('id', $user_id);
+		if (!$user instanceof WP_User) {
+			return new WP_Error('invalid_user', 'Unable to update this member account right now.', ['status' => 400]);
+		}
+
 		$first_name = $account_info['first_name'] ?? '';
 		$last_name = $account_info['last_name'] ?? '';
 		$display_name = $account_info['name'] ?? trim($first_name . ' ' . $last_name);
@@ -671,7 +789,22 @@ class AAC_Member_Portal_API {
 			$user_update['user_email'] = $email;
 		}
 
-		wp_update_user($user_update);
+		$result = wp_update_user($user_update);
+		if (is_wp_error($result)) {
+			return new WP_Error('profile_update_failed', $result->get_error_message(), ['status' => 400]);
+		}
+
+		$refreshed_user = get_user_by('id', $user_id);
+		if (!$refreshed_user instanceof WP_User) {
+			return new WP_Error('profile_update_failed', 'Unable to refresh account information after saving.', ['status' => 500]);
+		}
+
+		return array_merge($account_info, [
+			'first_name' => $refreshed_user->first_name,
+			'last_name' => $refreshed_user->last_name,
+			'name' => $refreshed_user->display_name,
+			'email' => $refreshed_user->user_email,
+		]);
 	}
 
 	private function sync_reportable_member_fields($user_id, $account_info) {
@@ -711,5 +844,56 @@ class AAC_Member_Portal_API {
 		return array_values(array_filter(array_map(function ($slug) use ($labels_by_slug) {
 			return $labels_by_slug[$slug] ?? null;
 		}, $this->get_member_magazine_subscription_slugs($user_id))));
+	}
+
+	private function sanitize_member_editable_grant_applications($grant_applications) {
+		$grant_applications = $this->sanitize_grant_applications($grant_applications);
+
+		return array_values(array_map(static function ($application) {
+			$application['status'] = 'Pending review';
+			return $application;
+		}, $grant_applications));
+	}
+
+	private function consume_rate_limit($action, $identity, $limit, $window_seconds) {
+		$key = 'aac_rate_limit_' . md5($action . '|' . $identity);
+		$state = get_transient($key);
+		$state = is_array($state) ? $state : ['count' => 0];
+		$state['count'] = isset($state['count']) ? (int) $state['count'] + 1 : 1;
+
+		set_transient($key, $state, (int) $window_seconds);
+
+		if ($state['count'] > (int) $limit) {
+			return new WP_Error(
+				'rate_limited',
+				'Too many attempts. Please wait a few minutes and try again.',
+				['status' => 429]
+			);
+		}
+
+		return true;
+	}
+
+	private function build_rate_limit_identity(WP_REST_Request $request, $email = '') {
+		$email = strtolower(trim((string) $email));
+		$ip_address = '';
+
+		if (method_exists($request, 'get_header')) {
+			$forwarded = $request->get_header('x_forwarded_for');
+			if ($forwarded) {
+				$parts = array_map('trim', explode(',', $forwarded));
+				$ip_address = (string) ($parts[0] ?? '');
+			}
+
+			if ($ip_address === '') {
+				$ip_address = (string) $request->get_header('x_real_ip');
+			}
+		}
+
+		if ($ip_address === '' && !empty($_SERVER['REMOTE_ADDR'])) {
+			$ip_address = sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']));
+		}
+
+		return $email !== '' ? $ip_address . '|' . $email : $ip_address;
 	}
 }

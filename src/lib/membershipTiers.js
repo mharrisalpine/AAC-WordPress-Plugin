@@ -7,6 +7,8 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     id: 'Free',
     label: 'Free',
     pmproLevelId: 1,
+    publicSelectable: false,
+    manualOnly: false,
     blurb: 'Create an account, preview the portal, and receive promotional offers.',
     priceCents: 0,
     benefits: [
@@ -21,6 +23,8 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     id: 'Supporter',
     label: 'Supporter',
     pmproLevelId: 2,
+    publicSelectable: true,
+    manualOnly: false,
     blurb: 'Core member benefits and community access.',
     priceCents: 4500,
     benefits: [
@@ -36,6 +40,8 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     id: 'Partner',
     label: 'Partner',
     pmproLevelId: 3,
+    publicSelectable: true,
+    manualOnly: false,
     blurb: 'Enhanced rescue & medical benefit levels.',
     priceCents: 9500,
     benefits: [
@@ -48,9 +54,26 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     ],
   },
   {
+    id: 'Partner Family',
+    label: 'Partner Family',
+    pmproLevelId: 6,
+    publicSelectable: false,
+    manualOnly: false,
+    blurb: 'Partner-level membership configured for families and household add-ons.',
+    benefits: [
+      '$50,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      'Partner-level benefits with family add-ons',
+      'Optional additional adult and dependent seats',
+      'Managed through the Partner checkout flow',
+    ],
+  },
+  {
     id: 'Leader',
     label: 'Leader',
     pmproLevelId: 4,
+    publicSelectable: true,
+    manualOnly: false,
     blurb: 'Highest published annual-tier benefit limits.',
     priceCents: 15000,
     benefits: [
@@ -66,6 +89,8 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     id: 'Advocate',
     label: 'Advocate',
     pmproLevelId: 5,
+    publicSelectable: true,
+    manualOnly: false,
     blurb: 'Highest tier of annual member support.',
     priceCents: 50000,
     benefits: [
@@ -75,6 +100,22 @@ export const MEMBERSHIP_TIER_OPTIONS = [
       'Everything included in Leader',
       'Expanded support for the AAC mission and climbing community',
       'Recognition as an Advocate-level member',
+    ],
+  },
+  {
+    id: 'GRF',
+    label: 'GRF',
+    pmproLevelId: null,
+    publicSelectable: false,
+    manualOnly: true,
+    blurb: 'Manual donor tier for members who have contributed $1,500 within a single year.',
+    benefits: [
+      'Manual donor recognition tier',
+      '$100,000 in rescue coverage',
+      '$10,000 in medical coverage',
+      'Everything included in Advocate',
+      'Reserved for members added manually by AAC staff',
+      'Not available through public checkout or self-service upgrades',
     ],
   },
 ];
@@ -128,6 +169,14 @@ export function getTierDisplayLabel(id, fallback = 'Free') {
 
 export function getPmproLevelIdForTier(id) {
   return getTierById(id).pmproLevelId;
+}
+
+export function isPublicMembershipTierId(id) {
+  return Boolean(getTierById(id).publicSelectable);
+}
+
+export function isManualOnlyMembershipTierId(id) {
+  return Boolean(getTierById(id).manualOnly);
 }
 
 export function isOneTimeMembershipTierId(id) {
