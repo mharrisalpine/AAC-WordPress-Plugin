@@ -2519,6 +2519,60 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			}
 		};
 
+		const bindToggleableMembershipDiscounts = () => {
+			document.querySelectorAll('input[name="aac_membership_discount"][data-aac-toggleable-radio="true"]').forEach((input) => {
+				if (input.dataset.aacToggleableBound === 'true') {
+					return;
+				}
+
+				const rememberState = (event) => {
+					if (event.type === 'keydown' && event.key !== ' ' && event.key !== 'Enter') {
+						return;
+					}
+
+					input.dataset.aacWasChecked = input.checked ? 'true' : 'false';
+				};
+
+				input.addEventListener('pointerdown', rememberState);
+				input.addEventListener('keydown', rememberState);
+				input.addEventListener('click', () => {
+					const wasChecked = input.dataset.aacWasChecked === 'true';
+					delete input.dataset.aacWasChecked;
+
+					if (wasChecked) {
+						input.checked = false;
+						input.removeAttribute('checked');
+					} else {
+						document.querySelectorAll(`input[name="${input.name}"]`).forEach((candidate) => {
+							if (candidate !== input) {
+								candidate.checked = false;
+								candidate.removeAttribute('checked');
+							}
+						});
+						input.setAttribute('checked', 'checked');
+					}
+
+					syncMagazineAddonSummary();
+				});
+
+				input.addEventListener('change', () => {
+					if (input.checked) {
+						document.querySelectorAll(`input[name="${input.name}"]`).forEach((candidate) => {
+							if (candidate === input) {
+								candidate.setAttribute('checked', 'checked');
+							} else {
+								candidate.removeAttribute('checked');
+							}
+						});
+					}
+
+					syncMagazineAddonSummary();
+				});
+
+				input.dataset.aacToggleableBound = 'true';
+			});
+		};
+
 		const syncPmproStateDropdown = () => {
 			const countryField = document.getElementById('bcountry');
 			const stateField = document.getElementById('bstate');
@@ -2842,6 +2896,7 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 				syncPmproUsernameFromEmail();
 				enhancePmproProfileInformation();
 				enhancePmproDonationFieldset();
+				bindToggleableMembershipDiscounts();
 				syncMagazineAddonSummary();
 				syncPmproStateDropdown();
 				replacePmproLoggedInAccountUsername();
@@ -2851,6 +2906,7 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			syncPmproUsernameFromEmail();
 			enhancePmproProfileInformation();
 			enhancePmproDonationFieldset();
+			bindToggleableMembershipDiscounts();
 			syncMagazineAddonSummary();
 			syncPmproStateDropdown();
 			replacePmproLoggedInAccountUsername();
@@ -2860,6 +2916,7 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		window.addEventListener('load', syncPmproUsernameFromEmail);
 		window.addEventListener('load', enhancePmproProfileInformation);
 		window.addEventListener('load', enhancePmproDonationFieldset);
+		window.addEventListener('load', bindToggleableMembershipDiscounts);
 		window.addEventListener('load', syncMagazineAddonSummary);
 		window.addEventListener('load', syncPmproStateDropdown);
 		window.addEventListener('load', replacePmproLoggedInAccountUsername);

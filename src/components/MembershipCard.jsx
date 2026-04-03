@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { createMembershipPaymentIntent, formatDollars } from '@/lib/fakePaymentFlows';
 import { downloadMembershipConfirmationLetter } from '@/lib/membershipConfirmationLetter';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
-import { getFullName, normalizeMembershipDiscountType } from '@/lib/memberProfile';
+import { getFullName, normalizeAccountInfo, normalizeMembershipDiscountType } from '@/lib/memberProfile';
 import { getMembershipStatus } from '@/lib/membershipStatus';
 import { getTierById, getTierDisplayLabel, isManualOnlyMembershipTierId } from '@/lib/membershipTiers';
 import { useNavigate } from 'react-router-dom';
@@ -27,22 +27,23 @@ const MembershipCard = ({ profile }) => {
   const { openMembershipAction } = useMembershipActions();
   const navigate = useNavigate();
 
-  const { account_info, profile_info } = profile;
+  const accountInfo = normalizeAccountInfo(profile?.account_info || {});
+  const profileInfo = profile?.profile_info || {};
 
-  const status = getMembershipStatus(profile_info);
+  const status = getMembershipStatus(profileInfo);
   const isMemberActive = status === 'Active';
-  const discountType = normalizeMembershipDiscountType(account_info?.membership_discount_type);
+  const discountType = normalizeMembershipDiscountType(accountInfo.membership_discount_type);
   const discountBadge = discountType ? DISCOUNT_BADGE_CONTENT[discountType] : null;
   const DiscountBadgeIcon = discountBadge?.Icon;
-  const isManualOnlyTier = isManualOnlyMembershipTierId(profile_info?.tier);
-  const canManageMembership = isMemberActive && Boolean(profile_info?.tier);
-  const membershipTierLabel = getTierDisplayLabel(profile_info?.tier, 'Free');
-  const membershipDateLabel = account_info?.auto_renew ? 'RENEWS ON' : 'EXPIRES ON';
-  const membershipDateValue = profile_info?.renewal_date || profile_info?.expiration_date;
+  const isManualOnlyTier = isManualOnlyMembershipTierId(profileInfo?.tier);
+  const canManageMembership = isMemberActive && Boolean(profileInfo?.tier);
+  const membershipTierLabel = getTierDisplayLabel(profileInfo?.tier, 'Free');
+  const membershipDateLabel = accountInfo.auto_renew ? 'RENEWS ON' : 'EXPIRES ON';
+  const membershipDateValue = profileInfo?.renewal_date || profileInfo?.expiration_date;
 
   const handleJoinRenew = () => {
     const type = status === 'Active' ? 'renew' : 'join';
-    const targetTier = profile_info?.tier || 'Partner';
+    const targetTier = profileInfo?.tier || 'Partner';
     void openMembershipAction(type, { targetTier });
   };
 
@@ -67,12 +68,12 @@ const MembershipCard = ({ profile }) => {
         transition={{ duration: 0.45 }}
       >
         <div className="space-y-6">
-          <div className="flex items-start justify-between gap-4">
+          <div className="relative flex items-start justify-between gap-4 pr-24 sm:pr-28">
             <div className="flex items-start gap-4">
-              {account_info?.photo_url ? (
+              {accountInfo.photo_url ? (
                 <img
-                  src={account_info.photo_url}
-                  alt={getFullName(account_info)}
+                  src={accountInfo.photo_url}
+                  alt={getFullName(accountInfo)}
                   className="w-20 h-20 shrink-0 rounded-full border-2 border-[#B71C1C] object-cover"
                 />
               ) : (
@@ -84,7 +85,7 @@ const MembershipCard = ({ profile }) => {
                 </div>
               )}
               <div>
-                <h2 className="text-xl md:text-2xl font-bold text-stone-900">{getFullName(account_info)}</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-stone-900">{getFullName(accountInfo)}</h2>
                 <span
                   className={cn(
                     'mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold',
@@ -102,7 +103,7 @@ const MembershipCard = ({ profile }) => {
               </div>
             </div>
             {discountBadge ? (
-              <div className="flex shrink-0 flex-col items-center rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-center shadow-sm">
+              <div className="absolute right-0 top-0 flex shrink-0 flex-col items-center rounded-2xl border border-stone-200 bg-white px-3 py-2 text-center shadow-sm">
                 {DiscountBadgeIcon ? <DiscountBadgeIcon className="h-5 w-5 text-[#8f1515]" strokeWidth={2.1} /> : null}
                 <span className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-700">
                   {discountBadge.label}
@@ -116,7 +117,7 @@ const MembershipCard = ({ profile }) => {
               <User className="w-4 h-4 text-stone-500" />
               <div>
                 <p className="text-stone-500 text-xs">MEMBER ID</p>
-                <p className="text-stone-900 font-semibold">{profile_info?.member_id || 'N/A'}</p>
+                <p className="text-stone-900 font-semibold">{profileInfo?.member_id || 'N/A'}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -140,8 +141,8 @@ const MembershipCard = ({ profile }) => {
           <div className="mt-4 space-y-2">
             {status !== 'Active' && !isManualOnlyTier && (
               <Button onClick={handleJoinRenew} className="w-full bg-[#b71c1c] text-white hover:bg-[#8f1515]">
-                {profile_info?.tier
-                  ? `Renew ${getTierById(profile_info.tier).label} • ${formatDollars(createMembershipPaymentIntent({ type: 'renew', currentTier: profile_info?.tier, targetTier: profile_info?.tier }).amount)}`
+                {profileInfo?.tier
+                  ? `Renew ${getTierById(profileInfo.tier).label} • ${formatDollars(createMembershipPaymentIntent({ type: 'renew', currentTier: profileInfo?.tier, targetTier: profileInfo?.tier }).amount)}`
                   : `Join Membership • ${formatDollars(createMembershipPaymentIntent({ type: 'join', targetTier: 'Partner' }).amount)}`}
               </Button>
             )}

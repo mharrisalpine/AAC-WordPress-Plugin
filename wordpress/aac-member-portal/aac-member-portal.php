@@ -430,8 +430,9 @@ final class AAC_Member_Portal_Plugin {
 			return;
 		}
 
-		$current_user_id = get_current_user_id();
-		$selected_discount = $this->get_effective_membership_discount_type($current_user_id);
+		$selected_discount = $this->has_membership_discount_request()
+			? $this->get_requested_membership_discount_type()
+			: '';
 		$checkout_level = $this->get_level_at_checkout();
 		$base_level_total = max(0, $this->get_level_recurring_total($checkout_level));
 		?>
@@ -448,19 +449,9 @@ final class AAC_Member_Portal_Plugin {
 					<div class="pmpro_form_fields">
 						<input type="hidden" name="aac_membership_discount_present" value="1" />
 						<p class="aac-membership-discounts__intro">
-							<?php esc_html_e('Select one discount type if it applies to this membership. Only one discount can be used at a time.', 'aac-member-portal'); ?>
+							<?php esc_html_e('Select one discount type if it applies to this membership. Click it again to remove it. Only one discount can be used at a time.', 'aac-member-portal'); ?>
 						</p>
-						<div class="aac-membership-discounts__picker" role="radiogroup" aria-label="<?php esc_attr_e('Membership discount selection', 'aac-member-portal'); ?>">
-							<label class="aac-membership-discounts__none" for="aac_membership_discount_none">
-								<input
-									id="aac_membership_discount_none"
-									type="radio"
-									name="aac_membership_discount"
-									value=""
-									<?php checked($selected_discount, ''); ?>
-								/>
-								<span><?php esc_html_e('No discount', 'aac-member-portal'); ?></span>
-							</label>
+						<div class="aac-membership-discounts__picker" role="group" aria-label="<?php esc_attr_e('Membership discount selection', 'aac-member-portal'); ?>">
 							<div class="aac-membership-discounts__grid">
 								<?php foreach ($discount_options as $slug => $discount) : ?>
 									<div class="pmpro_form_field pmpro_form_field-radio aac-membership-discounts__field">
@@ -473,6 +464,7 @@ final class AAC_Member_Portal_Plugin {
 												value="<?php echo esc_attr($slug); ?>"
 												data-aac-membership-discount-rate="<?php echo esc_attr(number_format((float) $discount['rate'], 2, '.', '')); ?>"
 												data-aac-membership-discount-label="<?php echo esc_attr($discount['label']); ?>"
+												data-aac-toggleable-radio="true"
 												<?php checked($selected_discount, $slug); ?>
 											/>
 											<span class="aac-membership-discounts__card">
