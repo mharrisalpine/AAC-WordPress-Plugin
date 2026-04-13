@@ -6,12 +6,19 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_API {
 	const ROUTE_NAMESPACE = 'aac/v1';
+	private static $instance = null;
 
 	public function __construct() {
+		self::$instance = $this;
 		add_action('rest_api_init', [$this, 'register_routes']);
 	}
 
+	public static function get_instance() {
+		return self::$instance;
+	}
+
 	public function register_routes() {
+		// Public auth + recovery routes.
 		register_rest_route(self::ROUTE_NAMESPACE, '/login', [
 			'methods' => 'POST',
 			'callback' => [$this, 'login'],
@@ -30,10 +37,35 @@ class AAC_Member_Portal_API {
 			'permission_callback' => '__return_true',
 		]);
 
+		register_rest_route(self::ROUTE_NAMESPACE, '/email-availability', [
+			'methods' => 'GET',
+			'callback' => [$this, 'email_availability'],
+			'permission_callback' => '__return_true',
+		]);
+
 		register_rest_route(self::ROUTE_NAMESPACE, '/reset-password', [
 			'methods' => 'POST',
 			'callback' => [$this, 'reset_password'],
 			'permission_callback' => '__return_true',
+		]);
+
+		register_rest_route(self::ROUTE_NAMESPACE, '/invite-code', [
+			'methods' => 'GET',
+			'callback' => [$this, 'validate_invite_code'],
+			'permission_callback' => '__return_true',
+		]);
+
+		register_rest_route(self::ROUTE_NAMESPACE, '/redeem-invite', [
+			'methods' => 'POST',
+			'callback' => [$this, 'redeem_invite_code'],
+			'permission_callback' => '__return_true',
+		]);
+
+		// Authenticated member account routes.
+		register_rest_route(self::ROUTE_NAMESPACE, '/linked-accounts/remove', [
+			'methods' => 'POST',
+			'callback' => [$this, 'schedule_linked_account_removal'],
+			'permission_callback' => [$this, 'is_logged_in'],
 		]);
 
 		register_rest_route(self::ROUTE_NAMESPACE, '/change-password', [
@@ -72,6 +104,7 @@ class AAC_Member_Portal_API {
 			'permission_callback' => [$this, 'is_logged_in'],
 		]);
 
+		// Admin-only diagnostics.
 		register_rest_route(self::ROUTE_NAMESPACE, '/debug/last-fatal', [
 			'methods' => 'GET',
 			'callback' => [$this, 'debug_last_fatal'],
@@ -100,7 +133,7 @@ class AAC_Member_Portal_API {
 		$user = get_user_by('email', $email);
 
 		if (!$user) {
-			return new WP_Error('invalid_credentials', 'Invalid email or password.', ['status' => 401]);
+			return new WP_Error('invalid_credentials', 'Incorrect password. Please try again.', ['status' => 401]);
 		}
 
 		$signon = wp_signon([
@@ -110,14 +143,14 @@ class AAC_Member_Portal_API {
 		], is_ssl());
 
 		if (is_wp_error($signon)) {
-			return new WP_Error('invalid_credentials', 'Invalid email or password.', ['status' => 401]);
+			return new WP_Error('invalid_credentials', 'Incorrect password. Please try again.', ['status' => 401]);
 		}
 
-		wp_set_current_user($signon->ID);
+		$rest_nonce = $this->establish_fresh_auth_session($signon->ID);
 
 		do_action('aac_member_portal_member_logged_in', $signon->ID, $request);
 
-		return $this->build_auth_response($signon);
+		return $this->build_auth_response($signon, $rest_nonce);
 	}
 
 	public function logout() {
@@ -150,6 +183,10 @@ class AAC_Member_Portal_API {
 
 		if (!is_email($email)) {
 			return new WP_Error('invalid_input', 'Please enter a valid email address.', ['status' => 400]);
+		}
+
+		if (email_exists($email)) {
+			return new WP_Error('email_exists', 'An account with that email already exists.', ['status' => 409]);
 		}
 
 		if (strlen($password) < 8) {
@@ -187,15 +224,36 @@ class AAC_Member_Portal_API {
 			'email' => $email,
 		]);
 
-		wp_set_current_user($user_id);
-		wp_set_auth_cookie($user_id, true);
+		$rest_nonce = $this->establish_fresh_auth_session($user_id);
 
 		do_action('aac_member_portal_member_registered', $user_id, $request);
 
 		return rest_ensure_response(array_merge(
 			['requires_email_verification' => false],
-			$this->build_auth_response(get_user_by('id', $user_id))
+			$this->build_auth_response(get_user_by('id', $user_id), $rest_nonce)
 		));
+	}
+
+	public function email_availability(WP_REST_Request $request) {
+		$email = sanitize_email($request->get_param('email'));
+
+		if (!$email || !is_email($email)) {
+			return rest_ensure_response([
+				'valid' => false,
+				'available' => false,
+				'message' => 'Enter a valid email address.',
+			]);
+		}
+
+		$exists = (bool) email_exists($email);
+
+		return rest_ensure_response([
+			'valid' => true,
+			'available' => !$exists,
+			'message' => $exists
+				? 'An account with this email already exists.'
+				: 'Email address is available.',
+		]);
 	}
 
 	public function reset_password(WP_REST_Request $request) {
@@ -226,6 +284,252 @@ class AAC_Member_Portal_API {
 		}
 
 		return rest_ensure_response(['success' => true]);
+	}
+
+	public function validate_invite_code(WP_REST_Request $request) {
+		$invite_code = $this->normalize_invite_code($request->get_param('code'));
+
+		if ($invite_code === '') {
+			return new WP_Error('invalid_invite', 'Enter a valid invite code.', ['status' => 400]);
+		}
+
+		$rate_limit = $this->consume_rate_limit('invite_lookup', $this->build_rate_limit_identity($request, $invite_code), 20, 15 * MINUTE_IN_SECONDS);
+		if (is_wp_error($rate_limit)) {
+			return $rate_limit;
+		}
+
+		$match = $this->find_connected_account_slot_by_invite_code($invite_code);
+		if (!$match) {
+			return new WP_Error('invalid_invite', 'Invite code not found.', ['status' => 404]);
+		}
+
+		return rest_ensure_response([
+			'success' => true,
+			'invite' => $this->build_linked_account_invite_payload($match),
+		]);
+	}
+
+	public function redeem_invite_code(WP_REST_Request $request) {
+		$invite_code = $this->normalize_invite_code($request->get_param('invite_code'));
+		if ($invite_code === '') {
+			return new WP_Error('invalid_invite', 'Invite code is required.', ['status' => 400]);
+		}
+
+		$rate_limit_identity = $this->build_rate_limit_identity($request, sanitize_email($request->get_param('email')) ?: $invite_code);
+		$rate_limit = $this->consume_rate_limit('invite_redeem', $rate_limit_identity, 10, 15 * MINUTE_IN_SECONDS);
+		if (is_wp_error($rate_limit)) {
+			return $rate_limit;
+		}
+
+		$match = $this->find_connected_account_slot_by_invite_code($invite_code);
+		if (!$match) {
+			return new WP_Error('invalid_invite', 'Invite code not found.', ['status' => 404]);
+		}
+
+		$parent_user_id = (int) $match['parent_user_id'];
+		$slot = $match['account'];
+
+		$current_user = wp_get_current_user();
+		$child_user = null;
+		$created_user_id = 0;
+
+		if ($current_user instanceof WP_User && $current_user->exists()) {
+			$child_user = $current_user;
+		} else {
+			$email = sanitize_email($request->get_param('email'));
+			$password = (string) $request->get_param('password');
+			$first_name = sanitize_text_field($request->get_param('first_name'));
+			$last_name = sanitize_text_field($request->get_param('last_name'));
+
+			if (!$email || !is_email($email)) {
+				return new WP_Error('invalid_input', 'Enter a valid email address to redeem this invite.', ['status' => 400]);
+			}
+
+			if ($password === '') {
+				return new WP_Error('invalid_input', 'Password is required to redeem this invite.', ['status' => 400]);
+			}
+
+			$existing_user = get_user_by('email', $email);
+			if ($existing_user instanceof WP_User) {
+				$signon = wp_signon([
+					'user_login' => $existing_user->user_login,
+					'user_password' => $password,
+					'remember' => true,
+				], is_ssl());
+
+				if (is_wp_error($signon)) {
+					return new WP_Error('invalid_credentials', 'Incorrect password. Please try again.', ['status' => 401]);
+				}
+
+				$child_user = $signon;
+			} else {
+				if (strlen($password) < 8) {
+					return new WP_Error('invalid_input', 'Password must be at least 8 characters long.', ['status' => 400]);
+				}
+
+				$username = $this->generate_unique_username_from_email($email);
+				$created_user_id = wp_create_user($username, $password, $email);
+				if (is_wp_error($created_user_id)) {
+					return $created_user_id;
+				}
+
+				wp_update_user([
+					'ID' => $created_user_id,
+					'first_name' => $first_name,
+					'last_name' => $last_name,
+					'display_name' => trim($first_name . ' ' . $last_name) ?: $email,
+				]);
+
+				update_user_meta($created_user_id, 'aac_account_info', [
+					'first_name' => $first_name,
+					'last_name' => $last_name,
+					'name' => trim($first_name . ' ' . $last_name),
+					'email' => $email,
+					'size' => 'none',
+				]);
+				update_user_meta($created_user_id, 'aac_tshirt_size', 'none');
+
+				$child_user = get_user_by('id', $created_user_id);
+			}
+		}
+
+		if (!$child_user instanceof WP_User || !$child_user->exists()) {
+			return new WP_Error('invite_redeem_failed', 'Unable to redeem this invite right now.', ['status' => 500]);
+		}
+
+		if ((int) $child_user->ID === $parent_user_id) {
+			return new WP_Error('invalid_invite', 'The parent account cannot redeem its own invite code.', ['status' => 400]);
+		}
+
+		$existing_parent_link = absint(get_user_meta($child_user->ID, 'aac_linked_parent_user_id', true));
+		if ($existing_parent_link > 0 && $existing_parent_link !== $parent_user_id) {
+			return new WP_Error('invite_redeem_failed', 'This account is already linked to another family membership.', ['status' => 409]);
+		}
+
+		if (($slot['status'] ?? '') === 'connected' && absint($slot['child_user_id'] ?? 0) > 0 && absint($slot['child_user_id']) !== (int) $child_user->ID) {
+			return new WP_Error('invite_redeem_failed', 'This invite code has already been redeemed.', ['status' => 409]);
+		}
+
+		$parent_accounts = $match['accounts'];
+		$parent_accounts[$match['account_index']] = array_merge($slot, [
+			'status' => 'connected',
+			'child_user_id' => (int) $child_user->ID,
+			'child_name' => trim($child_user->first_name . ' ' . $child_user->last_name) ?: $child_user->display_name,
+			'child_email' => $child_user->user_email,
+		]);
+		update_user_meta($parent_user_id, 'aac_connected_accounts', array_values($parent_accounts));
+
+		update_user_meta($child_user->ID, 'aac_linked_parent_user_id', $parent_user_id);
+		update_user_meta($child_user->ID, 'aac_linked_account_slot_id', sanitize_text_field($slot['id'] ?? ''));
+		update_user_meta($child_user->ID, 'aac_linked_account_invite_code', $invite_code);
+		update_user_meta($child_user->ID, 'aac_linked_account_type', sanitize_key($slot['type'] ?? 'dependent'));
+		update_user_meta($child_user->ID, 'aac_linked_account_label', sanitize_text_field($slot['label'] ?? 'Family member'));
+		update_user_meta($parent_user_id, 'aac_family_account_role', 'Parent');
+		update_user_meta($child_user->ID, 'aac_family_account_role', 'Child');
+		delete_user_meta($child_user->ID, 'aac_family_membership_access_until');
+		delete_user_meta($child_user->ID, 'aac_family_membership_pending_removal');
+
+		$rest_nonce = $this->establish_fresh_auth_session($child_user->ID);
+
+		return rest_ensure_response(array_merge(
+			[
+				'success' => true,
+				'invite' => $this->build_linked_account_invite_payload($this->find_connected_account_slot_by_invite_code($invite_code)),
+				'linked_parent_account' => $this->build_linked_parent_account($child_user->ID),
+			],
+			$this->build_auth_response($child_user, $rest_nonce)
+		));
+	}
+
+	public function schedule_linked_account_removal(WP_REST_Request $request) {
+		$parent_user_id = get_current_user_id();
+		if ($parent_user_id <= 0) {
+			return new WP_Error('not_authenticated', 'You must be signed in to manage linked accounts.', ['status' => 401]);
+		}
+
+		$slot_id = sanitize_text_field((string) $request->get_param('slot_id'));
+		if ($slot_id === '') {
+			return new WP_Error('invalid_input', 'A linked account selection is required.', ['status' => 400]);
+		}
+
+		$accounts = get_user_meta($parent_user_id, 'aac_connected_accounts', true);
+		$accounts = is_array($accounts) ? $this->sanitize_connected_accounts($accounts) : [];
+		if (empty($accounts)) {
+			return new WP_Error('not_found', 'No linked accounts were found for this member.', ['status' => 404]);
+		}
+
+		$account_index = null;
+		foreach ($accounts as $index => $account) {
+			if (($account['id'] ?? '') === $slot_id) {
+				$account_index = $index;
+				break;
+			}
+		}
+
+		if ($account_index === null) {
+			return new WP_Error('not_found', 'That linked account could not be found.', ['status' => 404]);
+		}
+
+		$account = $accounts[$account_index];
+		$child_user_id = absint($account['child_user_id'] ?? 0);
+		$family_config = get_user_meta($parent_user_id, 'aac_partner_family_config', true);
+		$family_config = is_array($family_config) ? $family_config : ['mode' => '', 'additional_adult' => false, 'dependent_count' => 0];
+		if (($account['status'] ?? '') === 'removal_pending') {
+			return rest_ensure_response([
+				'success' => true,
+				'profile' => $this->build_profile($parent_user_id),
+			]);
+		}
+
+		if ($child_user_id <= 0) {
+			unset($accounts[$account_index]);
+			update_user_meta($parent_user_id, 'aac_connected_accounts', array_values($accounts));
+			if (($account['type'] ?? '') === 'adult') {
+				$family_config['additional_adult'] = false;
+			} elseif (($account['type'] ?? '') === 'dependent') {
+				$family_config['dependent_count'] = max(0, ((int) ($family_config['dependent_count'] ?? 0)) - 1);
+			}
+			if (empty($family_config['additional_adult']) && empty($family_config['dependent_count'])) {
+				$family_config['mode'] = '';
+			}
+			update_user_meta($parent_user_id, 'aac_partner_family_config', $family_config);
+
+			return rest_ensure_response([
+				'success' => true,
+				'profile' => $this->build_profile($parent_user_id),
+			]);
+		}
+
+		$access_until = $this->get_family_membership_term_end_date($parent_user_id);
+		if ($access_until === '') {
+			return new WP_Error(
+				'invalid_membership_state',
+				'We could not determine the family plan renewal date for this linked account.',
+				['status' => 409]
+			);
+		}
+
+		$accounts[$account_index]['status'] = 'removal_pending';
+		$accounts[$account_index]['scheduled_removal_date'] = $access_until;
+		update_user_meta($parent_user_id, 'aac_connected_accounts', array_values($accounts));
+		if (($account['type'] ?? '') === 'adult') {
+			$family_config['additional_adult'] = false;
+		} elseif (($account['type'] ?? '') === 'dependent') {
+			$family_config['dependent_count'] = max(0, ((int) ($family_config['dependent_count'] ?? 0)) - 1);
+		}
+		if (empty($family_config['additional_adult']) && empty($family_config['dependent_count'])) {
+			$family_config['mode'] = '';
+		}
+		update_user_meta($parent_user_id, 'aac_partner_family_config', $family_config);
+
+		update_user_meta($child_user_id, 'aac_family_membership_access_until', $access_until);
+		update_user_meta($child_user_id, 'aac_family_membership_pending_removal', '1');
+		update_user_meta($child_user_id, 'aac_family_account_role', 'Child');
+
+		return rest_ensure_response([
+			'success' => true,
+			'profile' => $this->build_profile($parent_user_id),
+		]);
 	}
 
 	public function change_password(WP_REST_Request $request) {
@@ -404,7 +708,16 @@ class AAC_Member_Portal_API {
 		]);
 	}
 
-	private function build_auth_response($user) {
+	public function get_profile_for_user($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return [];
+		}
+
+		return $this->build_profile($user_id);
+	}
+
+	private function build_auth_response($user, $rest_nonce = null) {
 		return [
 			'session' => [
 				'user' => [
@@ -417,7 +730,7 @@ class AAC_Member_Portal_API {
 				'email' => $user->user_email,
 			],
 			'profile' => $this->build_profile($user->ID),
-			'restNonce' => wp_create_nonce('wp_rest'),
+			'restNonce' => $rest_nonce ?: wp_create_nonce('wp_rest'),
 		];
 	}
 
@@ -447,12 +760,17 @@ class AAC_Member_Portal_API {
 	}
 
 	private function build_profile($user_id) {
+		$this->prune_expired_connected_accounts($user_id);
+		$this->expire_scheduled_family_access_if_needed($user_id);
+
 		$user = get_user_by('id', $user_id);
+		$linked_parent_user_id = $this->get_linked_parent_user_id($user_id);
+		$membership_owner_user_id = $linked_parent_user_id ?: $user_id;
 		$account_info = get_user_meta($user_id, 'aac_account_info', true);
 		$account_info = is_array($account_info) ? $account_info : [];
 		$stored_profile_info = get_user_meta($user_id, 'aac_profile_info', true);
 		$stored_profile_info = is_array($stored_profile_info) ? $stored_profile_info : [];
-		$computed_profile_info = $this->build_profile_info($user_id);
+		$computed_profile_info = $this->build_profile_info($user_id, $membership_owner_user_id);
 		if ($this->has_managed_membership_plugin()) {
 			$profile_info = array_merge($stored_profile_info, $computed_profile_info);
 		} else {
@@ -483,25 +801,32 @@ class AAC_Member_Portal_API {
 			'country' => '',
 			'size' => 'M',
 			'publication_pref' => 'Digital',
+			'aaj_pref' => 'Digital',
+			'anac_pref' => 'Digital',
+			'acj_pref' => 'Digital',
 			'phone_type' => '',
 			'guidebook_pref' => 'Digital',
 			'magazine_subscriptions' => [],
 			'membership_discount_type' => '',
 			'auto_renew' => false,
 			'payment_method' => '',
-		], $account_info);
+		], $account_info, $this->get_normalized_publication_preferences($account_info));
 
 		$account_info['magazine_subscriptions'] = $this->get_member_magazine_subscription_labels($user_id);
 		$account_info['membership_discount_type'] = sanitize_key(get_user_meta($user_id, 'aac_membership_discount_type', true));
 
-		$membership_actions = $this->build_membership_actions($user_id, $profile_info);
+		$membership_actions = $this->build_membership_actions($membership_owner_user_id, $profile_info);
 
 		if ($this->has_managed_membership_plugin()) {
-			$account_info['payment_method'] = AAC_Member_Portal_PMPro::get_payment_method_summary($user_id);
+			$account_info['payment_method'] = AAC_Member_Portal_PMPro::get_payment_method_summary($membership_owner_user_id);
 			$account_info['auto_renew'] = AAC_Member_Portal_PMPro::has_active_auto_renewal(
-				$user_id,
+				$membership_owner_user_id,
 				$membership_actions['current_level_id'] ?? null
 			);
+		}
+
+		if ($linked_parent_user_id > 0 && $this->is_family_membership_pending_removal($user_id)) {
+			$account_info['auto_renew'] = false;
 		}
 
 		$grant_applications = get_user_meta($user_id, 'aac_grant_applications', true);
@@ -513,6 +838,8 @@ class AAC_Member_Portal_API {
 		$connected_accounts = is_array($connected_accounts)
 			? $this->sanitize_connected_accounts($connected_accounts)
 			: [];
+
+		$linked_parent_account = $this->build_linked_parent_account($user_id);
 
 		$family_membership = get_user_meta($user_id, 'aac_partner_family_config', true);
 		$family_membership = is_array($family_membership)
@@ -527,24 +854,46 @@ class AAC_Member_Portal_API {
 			'grant_applications' => $grant_applications,
 			'connected_accounts' => $connected_accounts,
 			'family_membership' => $family_membership,
+			'linked_parent_account' => $linked_parent_account,
 		];
 
 		return apply_filters('aac_member_portal_profile', $profile, $user_id, $user);
 	}
 
-	private function build_profile_info($user_id) {
+	private function build_profile_info($user_id, $membership_owner_user_id = null) {
 		$member_id = get_user_meta($user_id, 'aac_member_id', true);
+		$membership_owner_user_id = $membership_owner_user_id ? (int) $membership_owner_user_id : (int) $user_id;
+		$is_linked_child_account = $membership_owner_user_id > 0 && $membership_owner_user_id !== (int) $user_id;
+		$family_membership_access_until = $is_linked_child_account
+			? $this->get_family_membership_access_until($user_id)
+			: '';
+		$family_membership_pending_removal = $is_linked_child_account && $this->is_family_membership_pending_removal($user_id);
+		$family_membership_active_until = $family_membership_pending_removal
+			? $this->normalize_family_membership_access_date($family_membership_access_until)
+			: '';
+		$is_child_membership_expired = $family_membership_pending_removal
+			&& !$this->is_family_membership_active_through($family_membership_active_until);
 
-		if (AAC_Member_Portal_PMPro::is_available()) {
-			$primary = AAC_Member_Portal_PMPro::get_primary_membership($user_id);
+		if (AAC_Member_Portal_PMPro::is_available() && !$is_child_membership_expired) {
+			// Child/family-linked accounts inherit the parent membership timing and
+			// status, but are surfaced as Partner in the portal experience.
+			$primary = AAC_Member_Portal_PMPro::get_primary_membership($membership_owner_user_id);
 			if ($primary) {
-				$status_reference_date = $primary['expiration_date'] ?: $primary['renewal_date'];
+				$status_reference_date = $family_membership_pending_removal
+					? $family_membership_active_until
+					: ($primary['expiration_date'] ?: $primary['renewal_date']);
+				$primary_tier = $is_linked_child_account
+					? 'Partner'
+					: (isset($primary['tier']) && $primary['tier'] === 'Partner Family'
+						? 'Partner'
+						: $primary['tier']);
 
 				return [
 					'member_id' => $member_id ?: sprintf('AAC-%d', $user_id),
-					'tier' => $primary['tier'],
-					'renewal_date' => $primary['renewal_date'],
-					'expiration_date' => $primary['expiration_date'],
+					'tier' => $primary_tier,
+					'renewal_date' => $family_membership_pending_removal ? '' : $primary['renewal_date'],
+					'expiration_date' => $family_membership_pending_removal ? $family_membership_active_until : $primary['expiration_date'],
+					'joined_date' => $primary['joined_date'] ?? '',
 					'status' => $this->membership_status_pmpro($status_reference_date),
 				];
 			}
@@ -555,28 +904,67 @@ class AAC_Member_Portal_API {
 			'tier' => 'Free',
 			'renewal_date' => '',
 			'expiration_date' => '',
+			'joined_date' => '',
 			'status' => 'Inactive',
 		];
 	}
 
 	private function build_benefits_info($tier, $status = 'Active') {
 		if ($status !== 'Active') {
-			return ['rescue_amount' => 0, 'medical_amount' => 0];
+			return [
+				'rescue_amount' => 0,
+				'medical_amount' => 0,
+				'mortal_remains_amount' => 0,
+				'rescue_reimbursement_process' => false,
+			];
 		}
 
-		$matrix = [
-			'Free' => ['rescue_amount' => 0, 'medical_amount' => 0],
-			'Supporter' => ['rescue_amount' => 0, 'medical_amount' => 0],
-			'Partner' => ['rescue_amount' => 50000, 'medical_amount' => 5000],
-			'Partner Family' => ['rescue_amount' => 50000, 'medical_amount' => 5000],
-			'Leader' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
-			'Advocate' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
-			'GRF' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
-			'Lifetime' => ['rescue_amount' => 100000, 'medical_amount' => 10000],
-			'' => ['rescue_amount' => 0, 'medical_amount' => 0],
+		// Rescue benefit values now come from the admin-managed matrix so staff can
+		// update coverage without editing PHP every time a level changes.
+		$settings = AAC_Member_Portal_Admin::get_settings();
+		$rescue_levels = isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels'])
+			? $settings['content']['rescue_levels']
+			: AAC_Member_Portal_Admin::get_default_rescue_levels();
+
+		$matrix = [];
+		foreach ($rescue_levels as $level) {
+			if (!is_array($level)) {
+				continue;
+			}
+
+			$level_name = sanitize_text_field($level['level_name'] ?? '');
+			if ($level_name === '') {
+				continue;
+			}
+
+			$matrix[strtolower($level_name)] = [
+				'rescue_amount' => max(0, (int) ($level['rescue_amount'] ?? 0)),
+				'medical_amount' => max(0, (int) ($level['medical_amount'] ?? 0)),
+				'mortal_remains_amount' => max(0, (int) ($level['mortal_remains_amount'] ?? 0)),
+				'rescue_reimbursement_process' => !empty($level['rescue_reimbursement_process']),
+			];
+		}
+
+		$fallback = $matrix['free'] ?? [
+			'rescue_amount' => 0,
+			'medical_amount' => 0,
+			'mortal_remains_amount' => 0,
+			'rescue_reimbursement_process' => false,
 		];
 
-		return $matrix[$tier] ?? $matrix['Free'];
+		$normalized_tier = strtolower(trim((string) $tier));
+		// Family/linked-account helper tiers should resolve to the same rescue
+		// values as their parent published level.
+		$tier_aliases = [
+			'partner family' => 'partner',
+			'partner adult' => 'partner',
+			'partner dependent' => 'partner',
+		];
+		if (isset($tier_aliases[$normalized_tier])) {
+			$normalized_tier = $tier_aliases[$normalized_tier];
+		}
+
+		return $matrix[$normalized_tier] ?? $fallback;
 	}
 
 	private function build_membership_actions($user_id, $profile_info) {
@@ -610,6 +998,24 @@ class AAC_Member_Portal_API {
 		return AAC_Member_Portal_PMPro::is_available();
 	}
 
+	private function get_normalized_publication_preferences($values) {
+		$values = is_array($values) ? $values : [];
+		$legacy_publication_pref = $this->normalize_print_digital_value($values['publication_pref'] ?? 'Digital');
+		$guidebook_pref = $this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Digital');
+
+		return [
+			'publication_pref' => $legacy_publication_pref,
+			'aaj_pref' => $this->normalize_print_digital_value($values['aaj_pref'] ?? $legacy_publication_pref),
+			'anac_pref' => $this->normalize_print_digital_value($values['anac_pref'] ?? $legacy_publication_pref),
+			'acj_pref' => $this->normalize_print_digital_value($values['acj_pref'] ?? $legacy_publication_pref),
+			'guidebook_pref' => $guidebook_pref,
+		];
+	}
+
+	private function normalize_print_digital_value($value, $fallback = 'Digital') {
+		return $value === 'Print' ? 'Print' : ($value === 'Digital' ? 'Digital' : $fallback);
+	}
+
 	private function sanitize_account_info($account_info) {
 		$first_name = sanitize_text_field($account_info['first_name'] ?? '');
 		$last_name = sanitize_text_field($account_info['last_name'] ?? '');
@@ -623,15 +1029,7 @@ class AAC_Member_Portal_API {
 			$phone_type = 'mobile';
 		}
 
-		$guidebook_pref = sanitize_text_field($account_info['guidebook_pref'] ?? 'Digital');
-		if (!in_array($guidebook_pref, ['Digital', 'Print'], true)) {
-			$guidebook_pref = 'Digital';
-		}
-
-		$publication_pref = sanitize_text_field($account_info['publication_pref'] ?? 'Digital');
-		if (!in_array($publication_pref, ['Digital', 'Print'], true)) {
-			$publication_pref = 'Digital';
-		}
+		$publication_preferences = $this->get_normalized_publication_preferences($account_info);
 
 		$membership_discount_type = sanitize_key($account_info['membership_discount_type'] ?? '');
 		if (!in_array($membership_discount_type, ['student', 'military'], true)) {
@@ -653,8 +1051,11 @@ class AAC_Member_Portal_API {
 			'zip' => sanitize_text_field($account_info['zip'] ?? ''),
 			'country' => sanitize_text_field($account_info['country'] ?? ''),
 			'size' => sanitize_text_field($account_info['size'] ?? 'M'),
-			'publication_pref' => $publication_pref,
-			'guidebook_pref' => $guidebook_pref,
+			'publication_pref' => $publication_preferences['publication_pref'],
+			'aaj_pref' => $publication_preferences['aaj_pref'],
+			'anac_pref' => $publication_preferences['anac_pref'],
+			'acj_pref' => $publication_preferences['acj_pref'],
+			'guidebook_pref' => $publication_preferences['guidebook_pref'],
 			'magazine_subscriptions' => array_values(array_filter(array_map('sanitize_text_field', (array) ($account_info['magazine_subscriptions'] ?? [])))),
 			'membership_discount_type' => $membership_discount_type,
 			'auto_renew' => !empty($account_info['auto_renew']),
@@ -668,6 +1069,7 @@ class AAC_Member_Portal_API {
 			'tier' => sanitize_text_field($profile_info['tier'] ?? ''),
 			'renewal_date' => sanitize_text_field($profile_info['renewal_date'] ?? ''),
 			'expiration_date' => sanitize_text_field($profile_info['expiration_date'] ?? ''),
+			'joined_date' => sanitize_text_field($profile_info['joined_date'] ?? ''),
 			'status' => sanitize_text_field($profile_info['status'] ?? ''),
 		];
 	}
@@ -676,6 +1078,8 @@ class AAC_Member_Portal_API {
 		return [
 			'rescue_amount' => intval($benefits_info['rescue_amount'] ?? 0),
 			'medical_amount' => intval($benefits_info['medical_amount'] ?? 0),
+			'mortal_remains_amount' => intval($benefits_info['mortal_remains_amount'] ?? 0),
+			'rescue_reimbursement_process' => !empty($benefits_info['rescue_reimbursement_process']),
 		];
 	}
 
@@ -749,7 +1153,7 @@ class AAC_Member_Portal_API {
 			}
 
 			$status = sanitize_key($account['status'] ?? 'pending');
-			if (!in_array($status, ['pending', 'connected'], true)) {
+			if (!in_array($status, ['pending', 'connected', 'removal_pending'], true)) {
 				$status = 'pending';
 			}
 
@@ -763,8 +1167,133 @@ class AAC_Member_Portal_API {
 				'child_name' => sanitize_text_field($account['child_name'] ?? ''),
 				'child_email' => sanitize_email($account['child_email'] ?? ''),
 				'price' => round((float) ($account['price'] ?? 0), 2),
+				'scheduled_removal_date' => $this->normalize_family_membership_access_date($account['scheduled_removal_date'] ?? ''),
 			];
 		}, $connected_accounts)));
+	}
+
+	private function sanitize_linked_parent_account($linked_parent_account) {
+		if (!is_array($linked_parent_account)) {
+			return null;
+		}
+
+		return [
+			'parent_user_id' => absint($linked_parent_account['parent_user_id'] ?? 0),
+			'parent_name' => sanitize_text_field($linked_parent_account['parent_name'] ?? ''),
+			'parent_email' => sanitize_email($linked_parent_account['parent_email'] ?? ''),
+			'invite_code' => sanitize_text_field($linked_parent_account['invite_code'] ?? ''),
+			'type' => sanitize_key($linked_parent_account['type'] ?? ''),
+			'label' => sanitize_text_field($linked_parent_account['label'] ?? ''),
+			'status' => sanitize_key($linked_parent_account['status'] ?? 'connected'),
+			'scheduled_removal_date' => $this->normalize_family_membership_access_date($linked_parent_account['scheduled_removal_date'] ?? ''),
+		];
+	}
+
+	private function build_linked_parent_account($user_id) {
+		$parent_user_id = $this->get_linked_parent_user_id($user_id);
+		if ($parent_user_id <= 0) {
+			return null;
+		}
+
+		$parent_user = get_user_by('id', $parent_user_id);
+		if (!$parent_user instanceof WP_User) {
+			return null;
+		}
+
+		$slot_label = sanitize_text_field(get_user_meta($user_id, 'aac_linked_account_label', true));
+		$slot_type = sanitize_key(get_user_meta($user_id, 'aac_linked_account_type', true));
+		$invite_code = sanitize_text_field(get_user_meta($user_id, 'aac_linked_account_invite_code', true));
+		$slot_status = $this->is_family_membership_pending_removal($user_id) ? 'removal_pending' : 'connected';
+		$scheduled_removal_date = $this->get_family_membership_access_until($user_id);
+
+		return $this->sanitize_linked_parent_account([
+			'parent_user_id' => $parent_user_id,
+			'parent_name' => trim($parent_user->first_name . ' ' . $parent_user->last_name) ?: $parent_user->display_name,
+			'parent_email' => $parent_user->user_email,
+			'invite_code' => $invite_code,
+			'type' => $slot_type,
+			'label' => $slot_label ?: 'Family member',
+			'status' => $slot_status,
+			'scheduled_removal_date' => $scheduled_removal_date,
+		]);
+	}
+
+	private function get_linked_parent_user_id($user_id) {
+		return absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
+	}
+
+	private function normalize_invite_code($invite_code) {
+		$invite_code = strtoupper(sanitize_text_field((string) $invite_code));
+		return preg_replace('/[^A-Z0-9\-]/', '', $invite_code);
+	}
+
+	private function find_connected_account_slot_by_invite_code($invite_code) {
+		$invite_code = $this->normalize_invite_code($invite_code);
+		if ($invite_code === '') {
+			return null;
+		}
+
+		$users = get_users([
+			'meta_key' => 'aac_connected_accounts',
+			'number' => -1,
+			'fields' => ['ID', 'display_name', 'user_email'],
+		]);
+
+		foreach ($users as $user) {
+			$accounts = get_user_meta($user->ID, 'aac_connected_accounts', true);
+			$accounts = is_array($accounts) ? $this->sanitize_connected_accounts($accounts) : [];
+
+			foreach ($accounts as $index => $account) {
+				if ($this->normalize_invite_code($account['invite_code'] ?? '') !== $invite_code) {
+					continue;
+				}
+
+				return [
+					'parent_user_id' => (int) $user->ID,
+					'parent_user' => $user,
+					'accounts' => $accounts,
+					'account' => $account,
+					'account_index' => $index,
+				];
+			}
+		}
+
+		return null;
+	}
+
+	private function build_linked_account_invite_payload($match) {
+		if (!is_array($match) || empty($match['account']) || empty($match['parent_user'])) {
+			return null;
+		}
+
+		$parent_user = $match['parent_user'];
+		$account = $match['account'];
+
+		return [
+			'code' => sanitize_text_field($account['invite_code'] ?? ''),
+			'label' => sanitize_text_field($account['label'] ?? 'Family member'),
+			'type' => sanitize_key($account['type'] ?? 'dependent'),
+			'status' => sanitize_key($account['status'] ?? 'pending'),
+			'price' => round((float) ($account['price'] ?? 0), 2),
+			'parent_name' => trim(($parent_user->first_name ?? '') . ' ' . ($parent_user->last_name ?? '')) ?: $parent_user->display_name,
+		];
+	}
+
+	private function generate_unique_username_from_email($email) {
+		$email_parts = explode('@', (string) $email);
+		$username = sanitize_user($email_parts[0] ?? 'aacmember', true);
+		if (!$username) {
+			$username = 'aacmember';
+		}
+
+		$base_username = $username;
+		$suffix = 1;
+		while (username_exists($username)) {
+			$username = sprintf('%s%d', $base_username, $suffix);
+			$suffix++;
+		}
+
+		return $username;
 	}
 
 	private function sync_wp_user_from_account_info($user_id, $account_info) {
@@ -813,9 +1342,13 @@ class AAC_Member_Portal_API {
 			return;
 		}
 
+		$publication_preferences = $this->get_normalized_publication_preferences($account_info);
 		update_user_meta($user_id, 'aac_tshirt_size', sanitize_text_field($account_info['size'] ?? ''));
-		update_user_meta($user_id, 'aac_publication_pref', sanitize_text_field($account_info['publication_pref'] ?? 'Digital'));
-		update_user_meta($user_id, 'aac_guidebook_pref', sanitize_text_field($account_info['guidebook_pref'] ?? 'Digital'));
+		update_user_meta($user_id, 'aac_publication_pref', sanitize_text_field($publication_preferences['publication_pref']));
+		update_user_meta($user_id, 'aac_aaj_pref', sanitize_text_field($publication_preferences['aaj_pref']));
+		update_user_meta($user_id, 'aac_anac_pref', sanitize_text_field($publication_preferences['anac_pref']));
+		update_user_meta($user_id, 'aac_acj_pref', sanitize_text_field($publication_preferences['acj_pref']));
+		update_user_meta($user_id, 'aac_guidebook_pref', sanitize_text_field($publication_preferences['guidebook_pref']));
 
 		$selected_addons = $this->get_member_magazine_subscription_slugs($user_id);
 		$labels = $this->get_member_magazine_subscription_labels($user_id);
@@ -823,6 +1356,146 @@ class AAC_Member_Portal_API {
 		update_user_meta($user_id, 'aac_magazine_subscription_labels', implode(', ', $labels));
 		update_user_meta($user_id, 'aac_has_alpinist_subscription', in_array('alpinist', $selected_addons, true) ? '1' : '0');
 		update_user_meta($user_id, 'aac_has_backcountry_subscription', in_array('backcountry', $selected_addons, true) ? '1' : '0');
+		update_user_meta($user_id, 'aac_family_account_role', $this->get_family_account_role($user_id));
+	}
+
+	private function get_family_account_role($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return '';
+		}
+
+		if ($this->get_linked_parent_user_id($user_id) > 0) {
+			return 'Child';
+		}
+
+		$connected_accounts = get_user_meta($user_id, 'aac_connected_accounts', true);
+		if (is_array($connected_accounts) && !empty($connected_accounts)) {
+			return 'Parent';
+		}
+
+		return '';
+	}
+
+	private function get_family_membership_term_end_date($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !AAC_Member_Portal_PMPro::is_available()) {
+			return '';
+		}
+
+		$primary = AAC_Member_Portal_PMPro::get_primary_membership($user_id);
+		if (!is_array($primary) || empty($primary)) {
+			return '';
+		}
+
+		return $this->normalize_family_membership_access_date($primary['renewal_date'] ?: $primary['expiration_date']);
+	}
+
+	private function get_family_membership_access_until($user_id) {
+		return $this->normalize_family_membership_access_date(get_user_meta((int) $user_id, 'aac_family_membership_access_until', true));
+	}
+
+	private function is_family_membership_pending_removal($user_id) {
+		return get_user_meta((int) $user_id, 'aac_family_membership_pending_removal', true) === '1';
+	}
+
+	private function normalize_family_membership_access_date($value) {
+		$value = sanitize_text_field((string) $value);
+		if ($value === '') {
+			return '';
+		}
+
+		$timestamp = strtotime($value);
+		if (!$timestamp) {
+			return '';
+		}
+
+		return gmdate('Y-m-d', $timestamp);
+	}
+
+	private function is_family_membership_active_through($value) {
+		$normalized = $this->normalize_family_membership_access_date($value);
+		if ($normalized === '') {
+			return false;
+		}
+
+		return strtotime($normalized . ' 23:59:59') >= current_time('timestamp');
+	}
+
+	private function clear_family_child_linkage($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return;
+		}
+
+		delete_user_meta($user_id, 'aac_linked_parent_user_id');
+		delete_user_meta($user_id, 'aac_linked_account_slot_id');
+		delete_user_meta($user_id, 'aac_linked_account_invite_code');
+		delete_user_meta($user_id, 'aac_linked_account_type');
+		delete_user_meta($user_id, 'aac_linked_account_label');
+		delete_user_meta($user_id, 'aac_family_membership_access_until');
+		delete_user_meta($user_id, 'aac_family_membership_pending_removal');
+		update_user_meta($user_id, 'aac_family_account_role', '');
+	}
+
+	private function prune_expired_connected_accounts($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return;
+		}
+
+		$accounts = get_user_meta($user_id, 'aac_connected_accounts', true);
+		$accounts = is_array($accounts) ? $this->sanitize_connected_accounts($accounts) : [];
+		if (empty($accounts)) {
+			return;
+		}
+
+		$did_prune = false;
+		$accounts = array_values(array_filter($accounts, function ($account) use (&$did_prune) {
+			$scheduled_removal_date = $this->normalize_family_membership_access_date($account['scheduled_removal_date'] ?? '');
+			if (($account['status'] ?? '') !== 'removal_pending' || $this->is_family_membership_active_through($scheduled_removal_date)) {
+				return true;
+			}
+
+			$this->clear_family_child_linkage(absint($account['child_user_id'] ?? 0));
+			$did_prune = true;
+			return false;
+		}));
+
+		if ($did_prune) {
+			if (empty($accounts)) {
+				delete_user_meta($user_id, 'aac_connected_accounts');
+			} else {
+				update_user_meta($user_id, 'aac_connected_accounts', $accounts);
+			}
+		}
+	}
+
+	private function expire_scheduled_family_access_if_needed($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !$this->is_family_membership_pending_removal($user_id)) {
+			return;
+		}
+
+		$access_until = $this->get_family_membership_access_until($user_id);
+		if ($this->is_family_membership_active_through($access_until)) {
+			return;
+		}
+
+		$parent_user_id = $this->get_linked_parent_user_id($user_id);
+		$slot_id = sanitize_text_field(get_user_meta($user_id, 'aac_linked_account_slot_id', true));
+		if ($parent_user_id > 0) {
+			$accounts = get_user_meta($parent_user_id, 'aac_connected_accounts', true);
+			$accounts = is_array($accounts) ? $this->sanitize_connected_accounts($accounts) : [];
+			$accounts = array_values(array_filter($accounts, static function ($account) use ($slot_id, $user_id) {
+				$account_child_user_id = absint($account['child_user_id'] ?? 0);
+				$account_id = sanitize_text_field($account['id'] ?? '');
+				return $account_child_user_id !== (int) $user_id && ($slot_id === '' || $account_id !== $slot_id);
+			}));
+			update_user_meta($parent_user_id, 'aac_connected_accounts', $accounts);
+		}
+
+		$this->clear_family_child_linkage($user_id);
 	}
 
 	private function get_member_magazine_subscription_slugs($user_id) {

@@ -36,13 +36,22 @@ $portal_design_settings = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		'sidebar_button_hover_background' => '#111111',
 		'sidebar_button_active_background' => '#000000',
 		'sidebar_accent_color' => '#f8c235',
+		'publication_tile_images' => [
+			'aaj' => '',
+			'anac' => '',
+			'acj' => '',
+			'guidebook' => '',
+		],
 	];
 $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	? $portal_plugin->get_pmpro_checkout_profile_defaults()
 	: [
-		'publication_pref' => 'Digital',
-		'guidebook_pref' => 'Digital',
-		'size' => 'M',
+		'publication_pref' => 'Print',
+		'aaj_pref' => 'Print',
+		'anac_pref' => 'Print',
+		'acj_pref' => 'Print',
+		'guidebook_pref' => 'Print',
+		'size' => 'none',
 	];
 $is_logged_in = is_user_logged_in();
 $current_member = $is_logged_in ? wp_get_current_user() : null;
@@ -72,6 +81,8 @@ if (!function_exists('aac_member_portal_sidebar_icon_svg')) {
 			'store' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><path d="M9 20v-6h6v6"/></svg>',
 			'shield' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3Z"/></svg>',
 			'settings' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.54-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.54 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c0 .67.39 1.28 1 1.54.18.08.37.13.57.13H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.54 1Z"/></svg>',
+			'pen' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+			'book' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18.5A2.5 2.5 0 0 1 5.5 16H12v5H5.5A2.5 2.5 0 0 1 3 18.5Z"/><path d="M21 18.5a2.5 2.5 0 0 0-2.5-2.5H12v5h6.5A2.5 2.5 0 0 0 21 18.5Z"/><path d="M5.5 16V5a2 2 0 0 1 2-2H12v13H5.5Z"/><path d="M18.5 16V5a2 2 0 0 0-2-2H12v13h6.5Z"/></svg>',
 			'credit-card' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h2"/><path d="M10 15h4"/></svg>',
 			'receipt' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h16v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>',
 			'tag' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>',
@@ -119,9 +130,11 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-shell {
-		width: 100vw;
-		margin-left: calc(50% - 50vw);
+		width: 100%;
+		max-width: 100%;
+		margin-left: 0;
 		min-height: 100vh;
+		overflow-x: clip;
 		background:
 			linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(246, 241, 232, 0.74)),
 			radial-gradient(circle at 16% 10%, rgba(248, 194, 53, 0.12), transparent 24%),
@@ -171,7 +184,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-topnav {
-		justify-content: center;
+		justify-content: flex-end;
 		padding-top: 1rem;
 	}
 
@@ -190,9 +203,9 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	.aac-managed-topnav__trigger {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.55rem;
 		color: rgba(255, 255, 255, 0.84);
-		font-size: 0.72rem;
+		font-size: 0.84rem;
 		font-weight: 600;
 		letter-spacing: 0.22em;
 		text-transform: uppercase;
@@ -200,15 +213,15 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-topnav__caret {
-		font-size: 0.95rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1rem;
+		color: #f8c235;
+		font-size: 1.35rem;
+		font-weight: 500;
 		line-height: 1;
-		opacity: 0.8;
-		transition: transform 0.2s ease;
-	}
-
-	.aac-managed-topnav__item:hover .aac-managed-topnav__caret,
-	.aac-managed-topnav__item:focus-within .aac-managed-topnav__caret {
-		transform: rotate(180deg);
+		opacity: 0.92;
 	}
 
 	.aac-managed-topnav__trigger:hover,
@@ -237,7 +250,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	.aac-managed-topnav__panel-inner {
 		border: 1px solid rgba(255, 255, 255, 0.12);
-		border-radius: 1.75rem;
+		border-radius: 0;
 		background: rgba(11, 9, 8, 0.95);
 		padding: 1.25rem;
 		box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
@@ -292,11 +305,24 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: center;
 		min-height: 2.75rem;
 		padding: 0 1.2rem;
-		border-radius: 999px;
+		border-radius: 0;
 		font-size: 0.82rem;
 		font-weight: 700;
 		letter-spacing: 0.14em;
 		text-transform: uppercase;
+	}
+
+	.aac-managed-shell button,
+	.aac-managed-shell input[type="submit"],
+	.aac-managed-shell input[type="button"],
+	.aac-managed-shell input[type="reset"],
+	.aac-managed-shell .button,
+	.aac-managed-shell .pmpro_btn,
+	.aac-managed-shell .pmpro_btn-submit,
+	.aac-managed-shell .pmpro_btn-select,
+	.aac-managed-shell .wp-block-button__link,
+	.aac-managed-shell .wp-element-button {
+		border-radius: 0 !important;
 	}
 
 	.aac-managed-pill--ghost {
@@ -329,6 +355,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-layout {
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: flex-start;
+		gap: 0;
 		min-height: calc(100vh - 132px);
 	}
 
@@ -337,7 +367,8 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		top: calc(env(safe-area-inset-top, 0px) + 6.75rem);
 		align-self: flex-start;
 		width: 18.5rem;
-		height: calc(100vh - 6.75rem);
+		height: calc(100vh - (env(safe-area-inset-top, 0px) + 6.75rem));
+		max-height: calc(100vh - (env(safe-area-inset-top, 0px) + 6.75rem));
 		overflow-y: auto;
 		border-right: 1px solid rgba(0, 0, 0, 0.08);
 		background-color: #030000;
@@ -685,6 +716,25 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		right: 0.65rem;
 	}
 
+	body.pmpro-checkout .aac-managed-card .aac-email-availability {
+		margin: 0.45rem 0 0;
+		font-size: 0.9rem;
+		line-height: 1.45;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="available"] {
+		color: #166534;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="unavailable"] {
+		color: #8f1515;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="checking"],
+	body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="idle"] {
+		color: #57534e;
+	}
+
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__intro {
 		margin: 0 0 0.2rem;
 		color: #57534e;
@@ -712,16 +762,18 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__grid {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 1rem;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__field {
 		margin: 0;
+		height: 100%;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label {
 		display: block;
+		height: 100%;
 		margin: 0;
 		cursor: pointer;
 	}
@@ -733,11 +785,13 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 0.9rem;
+		display: flex;
+		flex-direction: column;
 		align-items: center;
+		justify-content: flex-start;
+		gap: 1rem;
 		height: 100%;
+		min-height: 16.5rem;
 		padding: 1rem 1.05rem;
 		border: 1px solid rgba(12, 10, 9, 0.1);
 		border-radius: 1.1rem;
@@ -766,33 +820,43 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 3rem;
-		height: 3rem;
+		width: 4.5rem;
+		height: 4.5rem;
 		border-radius: 999px;
 		background: rgba(143, 21, 21, 0.08);
 		color: #8f1515;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon svg {
-		width: 1.45rem;
-		height: 1.45rem;
+		width: 2rem;
+		height: 2rem;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__body {
-		display: grid;
-		gap: 0.4rem;
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		gap: 0.7rem;
+		width: 100%;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__copy {
 		display: grid;
-		gap: 0.22rem;
+		gap: 0.32rem;
 		color: #57534e;
+		text-align: center;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__copy strong {
 		color: #0c0a09;
-		font-size: 1rem;
+		font-size: 1.02rem;
 		line-height: 1.2;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__footer {
+		margin-top: auto;
+		display: flex;
+		justify-content: center;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__price {
@@ -808,6 +872,152 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__intro {
+		margin: 1rem 0 0;
+		color: #57534e;
+		line-height: 1.7;
+		text-align: center;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 1rem;
+		margin-top: 1.5rem;
+		align-items: stretch;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		min-height: 23rem;
+		padding: 0;
+		border-radius: 1.3rem;
+		overflow: hidden;
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		box-shadow: 0 18px 42px rgba(12, 10, 9, 0.16);
+		color: #fff;
+		background: linear-gradient(180deg, #1c1714 0%, #0f0c0a 100%);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background:
+			radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.18), transparent 34%),
+			radial-gradient(circle at 80% 18%, rgba(255, 255, 255, 0.1), transparent 28%),
+			linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 36%);
+		pointer-events: none;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card > * {
+		position: relative;
+		z-index: 1;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__art {
+		min-height: 13.25rem;
+		background:
+			linear-gradient(160deg, rgba(247, 241, 228, 0.96), rgba(226, 214, 192, 0.92));
+		background-repeat: no-repeat;
+		background-position: center center;
+		background-size: contain;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__content {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		gap: 0.85rem;
+		padding: 1rem;
+		background: linear-gradient(180deg, rgba(16, 12, 10, 0.88), rgba(10, 8, 7, 0.96));
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card--journal {
+		background: linear-gradient(180deg, #223041 0%, #111111 100%);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card--accidents {
+		background: linear-gradient(180deg, #4d2020 0%, #111111 100%);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card--guidebook {
+		background: linear-gradient(180deg, #5a4431 0%, #111111 100%);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__title-block {
+		padding: 0.85rem 0.95rem;
+		border-radius: 1rem;
+		background: rgba(0, 0, 0, 0.52);
+		backdrop-filter: blur(4px);
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__eyebrow {
+		display: inline-flex;
+		width: fit-content;
+		padding: 0.3rem 0.65rem;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.14);
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: #fff;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__title {
+		margin: 0.7rem 0 0;
+		font-size: 1.55rem;
+		line-height: 1.08;
+		font-weight: 800;
+		letter-spacing: 0.01em;
+		color: #fff;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__description {
+		margin: 0;
+		color: rgba(255, 255, 255, 0.82);
+		font-size: 0.95rem;
+		line-height: 1.5;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choices {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.65rem;
+		margin-top: auto;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 3rem;
+		padding: 0.7rem 0.9rem;
+		border-radius: 0;
+		border: 1px solid rgba(255, 255, 255, 0.38);
+		background: rgba(12, 10, 9, 0.18);
+		color: rgba(255, 255, 255, 0.92);
+		font-weight: 700;
+		cursor: pointer;
+		transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, color 160ms ease;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice:hover {
+		transform: translateY(-1px);
+		border-color: rgba(248, 194, 53, 0.68);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice.is-active {
+		background: rgba(248, 194, 53, 0.96);
+		border-color: rgba(248, 194, 53, 0.96);
+		color: #0c0a09;
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-magazine-addons .pmpro_form_fields {
@@ -1095,6 +1305,89 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		font-size: 0.92rem;
 	}
 
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo {
+		margin: 0 0 0.85rem;
+		padding: 1rem;
+		border: 1px solid rgba(12, 10, 9, 0.08);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.7);
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-copy {
+		display: grid;
+		gap: 0.2rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-label {
+		margin: 0;
+		font-size: 0.82rem;
+		font-weight: 700;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: #0c0a09;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-copy p {
+		margin: 0;
+		font-size: 0.92rem;
+		color: #57534e;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-form {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.7rem;
+		align-items: center;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-input {
+		width: 100%;
+		min-height: 48px;
+		padding: 0.8rem 1rem;
+		border-radius: 0;
+		border: 1px solid rgba(12, 10, 9, 0.14);
+		background: #fff;
+		color: #0c0a09;
+		font: inherit;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-button {
+		min-height: 48px;
+		padding: 0.8rem 1.2rem;
+		border: 0;
+		border-radius: 0;
+		background: #000;
+		color: #fff;
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-button:hover {
+		background: #171717;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-applied {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem;
+		font-size: 0.92rem;
+		color: #57534e;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-clear {
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: #8f1515;
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-rows {
 		display: grid;
 		gap: 0.5rem;
@@ -1133,6 +1426,12 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		color: #8f1515;
 	}
 
+	@media (max-width: 720px) {
+		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-form {
+			grid-template-columns: 1fr;
+		}
+	}
+
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__pricing-note {
 		margin: 0;
 		padding: 0.9rem 1rem;
@@ -1140,6 +1439,36 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		background: rgba(143, 21, 21, 0.06);
 		color: #6b1010;
 		font-weight: 600;
+	}
+
+	body.pmpro-checkout .aac-managed-card #pmpro_autorenewal_checkbox .pmpro_form_fields {
+		display: block;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-checkout-autorenew {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1rem 1.05rem;
+		border: 1px solid rgba(12, 10, 9, 0.08);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.92);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-checkout-autorenew__copy {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-checkout-autorenew__copy strong {
+		color: #0c0a09;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-checkout-autorenew__copy span {
+		color: #57534e;
+		font-size: 0.92rem;
+		line-height: 1.45;
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-donation .pmpro_form_fields-inline {
@@ -1162,10 +1491,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		align-items: center;
 		justify-content: center;
 		min-height: 3rem;
-		border: 1px solid rgba(12, 10, 9, 0.12);
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.82);
-		color: #292524;
+		border: 1px solid rgba(143, 21, 21, 0.78);
+		border-radius: 0;
+		background: #b71c1c;
+		color: #fff;
 		font-size: 0.92rem;
 		font-weight: 700;
 		letter-spacing: 0.01em;
@@ -1176,13 +1505,14 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-option:hover {
 		transform: translateY(-1px);
-		background: rgba(12, 10, 9, 0.05);
+		background: #8f1515;
+		border-color: #8f1515;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-option[data-selected="true"] {
-		border-color: #f8c235;
-		background: #f8c235;
-		color: #030000;
+		border-color: #6f1010;
+		background: #6f1010;
+		color: #fff;
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-donation #pmprodon_donation_input {
@@ -1280,6 +1610,20 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__grid {
 			grid-template-columns: minmax(0, 1fr);
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
+	@media (max-width: 1100px) {
+		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 
@@ -1434,7 +1778,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: center;
 		min-height: 2.85rem;
 		border: 0;
-		border-radius: 999px;
+		border-radius: 0;
 		background: #b71c1c;
 		color: #fff;
 		font-weight: 700;
@@ -1481,14 +1825,14 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	<header class="aac-managed-header">
 		<div class="aac-managed-header__inner">
 			<div class="aac-managed-header__row">
-				<a class="aac-managed-logo" href="<?php echo esc_url($portal_url); ?>">
+				<a class="aac-managed-logo" href="<?php echo esc_url($portal_url . '#/home'); ?>">
 					<img src="https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/light-header-logo.svg" alt="American Alpine Club Logo">
 				</a>
 
 				<div class="aac-managed-actions">
 					<a class="aac-managed-pill aac-managed-pill--danger" href="<?php echo esc_url($portal_url . '#/donate'); ?>">Donate</a>
 					<a class="aac-managed-pill aac-managed-pill--ghost" href="<?php echo esc_url($portal_url . '#/profile'); ?>">Member Profile</a>
-					<a class="aac-managed-pill aac-managed-pill--primary" href="<?php echo esc_url(wp_logout_url(get_permalink())); ?>">Log Out</a>
+					<a class="aac-managed-pill aac-managed-pill--primary" href="<?php echo esc_url(wp_logout_url($portal_url . '#/login')); ?>">Log Out</a>
 				</div>
 			</div>
 
@@ -1497,7 +1841,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 					<div class="aac-managed-topnav__item">
 						<a class="aac-managed-topnav__trigger" href="<?php echo esc_url($item['href']); ?>">
 							<span><?php echo esc_html($item['label']); ?></span>
-							<span class="aac-managed-topnav__caret" aria-hidden="true">▾</span>
+							<span class="aac-managed-topnav__caret" aria-hidden="true">+</span>
 						</a>
 						<div class="aac-managed-topnav__panel">
 							<div class="aac-managed-topnav__panel-inner">
@@ -1550,12 +1894,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 						<h1><?php echo esc_html($page_title); ?></h1>
 						<p><?php echo esc_html($page_description); ?></p>
 						<div class="aac-managed-actions-row">
-							<a class="aac-managed-pill aac-managed-pill--ghost" href="<?php echo esc_url($portal_url . '#/account'); ?>">Edit Profile</a>
 							<a class="aac-managed-pill <?php echo !empty($is_account_page) ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($account_url); ?>">Account</a>
 							<a class="aac-managed-pill <?php echo $is_billing_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($billing_url); ?>">Billing</a>
 							<a class="aac-managed-pill <?php echo $is_orders_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($orders_url); ?>">Orders</a>
 							<a class="aac-managed-pill <?php echo $is_cancel_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($cancel_url); ?>">Cancel</a>
-							<a class="aac-managed-pill <?php echo $is_checkout_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($checkout_url); ?>">Checkout</a>
 							<a class="aac-managed-pill <?php echo $is_confirmation_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($confirmation_url); ?>">Confirmation</a>
 						</div>
 					</section>
@@ -1564,7 +1906,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 					<section class="aac-managed-account-summary">
 						<div class="aac-managed-account-summary__grid">
 							<div class="aac-managed-account-summary__item">
-								<span class="aac-managed-account-summary__label">Tier</span>
+								<span class="aac-managed-account-summary__label">Membership Level</span>
 								<span class="aac-managed-account-summary__value"><?php echo esc_html($current_primary_membership['tier'] ?: 'Free'); ?></span>
 							</div>
 							<div class="aac-managed-account-summary__item">
@@ -1622,6 +1964,19 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 <script>
 	(function () {
 		const currentUserEmail = <?php echo wp_json_encode($is_logged_in ? wp_get_current_user()->user_email : ''); ?>;
+		const currentUserDisplayName = <?php
+			if ($is_logged_in) {
+				$current_user = wp_get_current_user();
+				$display_name = trim(($current_user->first_name ?? '') . ' ' . ($current_user->last_name ?? ''));
+				if ($display_name === '') {
+					$display_name = $current_user->display_name ?: $current_user->user_email;
+				}
+				echo wp_json_encode($display_name);
+			} else {
+				echo wp_json_encode('');
+			}
+		?>;
+		const emailAvailabilityEndpoint = new URL('/wp-json/aac/v1/email-availability', window.location.origin).toString();
 
 		const buildUsernameFromEmail = (value) => {
 			const normalized = String(value || '')
@@ -1634,16 +1989,444 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			return normalized || 'aac_member';
 		};
 
-		const formatUsd = (value) => new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: 'USD',
-			minimumFractionDigits: 2,
-			maximumFractionDigits: 2,
-		}).format(Number.isFinite(value) ? value : 0);
+const formatUsd = (value) => new Intl.NumberFormat('en-US', {
+	style: 'currency',
+	currency: 'USD',
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 2,
+}).format(Number.isFinite(value) ? value : 0);
+const checkoutProfileDefaults = <?php echo wp_json_encode($checkout_profile_defaults); ?>;
+const publicationCardImages = <?php echo wp_json_encode($portal_design_settings['publication_tile_images'] ?? []); ?>;
+
+	const escapeHtml = (value) => String(value ?? '')
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+
+	const parseCurrencyValue = (value) => {
+		const match = String(value || '').match(/\$([\d,]+(?:\.\d{2})?)/);
+		if (!match) {
+			return null;
+		}
+
+		const parsed = Number.parseFloat(match[1].replace(/,/g, ''));
+		return Number.isFinite(parsed) ? parsed : null;
+	};
+
+	const getNativeDiscountCodeInputs = () => Array.from(document.querySelectorAll('#pmpro_discount_code, #pmpro_other_discount_code'));
+
+	const getNativeDiscountCodeButton = () =>
+		document.getElementById('discount_code_button')
+		|| document.getElementById('other_discount_code_button');
+
+	const getNativeDiscountCodeMessage = () => document.getElementById('discount_code_message');
+
+	const getDiscountCodeState = () => {
+		const populatedInput = getNativeDiscountCodeInputs().find((input) => (input?.value || '').trim() !== '');
+		if (populatedInput) {
+			return (populatedInput.value || '').trim();
+		}
+
+		const summaryInput = document.querySelector('[data-aac-discount-code-form] input[name="discount_code"]');
+		if (summaryInput && (summaryInput.value || '').trim() !== '') {
+			return summaryInput.value.trim();
+		}
+
+		return String(window.__aacAppliedDiscountCode || '').trim();
+	};
+
+	const getPmproMembershipAmount = (fallbackAmount) => {
+		const codeLevel = window.pmpropbc?.code_level || null;
+		const nocodeLevel = window.pmpropbc?.nocode_level || null;
+		const nocodeInitialPayment = Number.parseFloat(nocodeLevel?.initial_payment ?? '');
+		const codeInitialPayment = Number.parseFloat(codeLevel?.initial_payment ?? '');
+		if (
+			Number.isFinite(codeInitialPayment)
+			&& codeInitialPayment >= 0
+			&& Number.isFinite(nocodeInitialPayment)
+			&& Math.abs(codeInitialPayment - nocodeInitialPayment) >= 0.01
+		) {
+			return codeInitialPayment;
+		}
+
+		const nocodeBillingAmount = Number.parseFloat(nocodeLevel?.billing_amount ?? '');
+		const codeBillingAmount = Number.parseFloat(codeLevel?.billing_amount ?? '');
+		if (
+			Number.isFinite(codeBillingAmount)
+			&& codeBillingAmount >= 0
+			&& Number.isFinite(nocodeBillingAmount)
+			&& Math.abs(codeBillingAmount - nocodeBillingAmount) >= 0.01
+		) {
+			return codeBillingAmount;
+		}
+
+		const priceText = document.querySelector('#pmpro_level_cost .pmpro_level_cost_text strong')?.textContent
+			|| document.querySelector('#pmpro_level_cost')?.textContent
+			|| '';
+		return parseCurrencyValue(priceText) ?? fallbackAmount;
+	};
+
+	const buildDiscountCodeMarkup = () => {
+		const appliedCode = getDiscountCodeState();
+		return `
+			<div class="aac-magazine-addons__promo" data-aac-discount-code>
+				<div class="aac-magazine-addons__promo-copy">
+					<p class="aac-magazine-addons__promo-label">Promo or Discount Code</p>
+					<p>Apply a PMPro-generated discount code before payment.</p>
+				</div>
+				<div class="aac-magazine-addons__promo-form" data-aac-discount-code-form>
+					<input
+						type="text"
+						name="discount_code"
+						class="aac-magazine-addons__promo-input"
+						placeholder="Enter code"
+						value="${escapeHtml(appliedCode)}"
+						autocomplete="off"
+					/>
+					<button type="button" class="aac-magazine-addons__promo-button" data-aac-discount-code-apply>Apply Code</button>
+				</div>
+				<p class="pmpro_message" data-aac-discount-code-message style="display: none;"></p>
+				${appliedCode ? `
+					<div class="aac-magazine-addons__promo-applied">
+						<span>Applied code: <strong>${escapeHtml(appliedCode)}</strong></span>
+						<button type="button" class="aac-magazine-addons__promo-clear" data-aac-discount-code-clear>Remove code</button>
+					</div>
+				` : ''}
+			</div>
+		`;
+	};
+
+	const bindDiscountCodeForm = (summary) => {
+		const wrapper = summary?.querySelector('[data-aac-discount-code-form]');
+		if (wrapper && wrapper.dataset.aacBound !== 'true') {
+			const applyDiscountCode = () => {
+				const nextCode = (wrapper.querySelector('input[name="discount_code"]')?.value || '').trim();
+				window.__aacAppliedDiscountCode = nextCode;
+				getNativeDiscountCodeInputs().forEach((input) => {
+					input.value = nextCode;
+				});
+				getNativeDiscountCodeButton()?.click();
+				window.setTimeout(syncMagazineAddonSummary, 250);
+				window.setTimeout(syncMagazineAddonSummary, 900);
+			};
+
+			wrapper.querySelector('[data-aac-discount-code-apply]')?.addEventListener('click', applyDiscountCode);
+			wrapper.querySelector('input[name="discount_code"]')?.addEventListener('keydown', (event) => {
+				if (event.key !== 'Enter') {
+					return;
+				}
+
+				event.preventDefault();
+				applyDiscountCode();
+			});
+			wrapper.dataset.aacBound = 'true';
+		}
+
+			const clearButton = summary?.querySelector('[data-aac-discount-code-clear]');
+			if (clearButton && clearButton.dataset.aacBound !== 'true') {
+				clearButton.addEventListener('click', () => {
+					window.__aacAppliedDiscountCode = '';
+					getNativeDiscountCodeInputs().forEach((input) => {
+						input.value = '';
+					});
+				window.location.reload();
+			});
+			clearButton.dataset.aacBound = 'true';
+		}
+
+		const summaryMessage = summary?.querySelector('[data-aac-discount-code-message]');
+		const nativeMessage = getNativeDiscountCodeMessage();
+		if (summaryMessage && nativeMessage) {
+			const messageText = (nativeMessage.textContent || '').trim();
+			summaryMessage.textContent = messageText;
+			summaryMessage.className = nativeMessage.className ? `pmpro_message ${nativeMessage.className}` : 'pmpro_message';
+			summaryMessage.style.display = messageText ? '' : 'none';
+		}
+	};
+
+	const getCurrentCheckoutLevelId = () => Number.parseInt(document.getElementById('pmpro_level')?.value || '0', 10) || 0;
+
+	const getCurrentCheckoutLevelName = () => {
+		const levelId = getCurrentCheckoutLevelId();
+		const levels = window.pmpro?.all_levels || window.pmpro?.all_levels_formatted_text || {};
+		const preferredName =
+			window.pmpropbc?.nocode_level?.name?.trim()
+			|| levels[String(levelId)]?.name?.trim()
+			|| document.querySelector('.pmpro_level_name_text strong')?.textContent?.trim()
+			|| '';
+		return preferredName && !/^membership$/i.test(preferredName) ? preferredName : 'Membership';
+	};
+
+	const currentLevelSupportsDiscountTiers = () => {
+		const levelName = String(getCurrentCheckoutLevelName() || '').trim().toLowerCase();
+		if (!levelName || levelName === 'membership') {
+			return false;
+		}
+
+		return levelName === 'partner';
+	};
+
+	const getCurrentCheckoutBasePrice = () => {
+		const datasetBasePrice = [
+			document.getElementById('pmpro_form_fieldset-membership-discounts')?.dataset?.aacMembershipBasePrice,
+			document.getElementById('pmpro_form_fieldset-partner-family')?.dataset?.aacPartnerFamilyBasePrice,
+			document.getElementById('pmpro_form_fieldset-magazine-addons')?.dataset?.aacMagazineBasePrice,
+		]
+			.map((value) => Number.parseFloat(value || ''))
+			.find((value) => Number.isFinite(value) && value >= 0);
+		if (Number.isFinite(datasetBasePrice)) {
+			return datasetBasePrice;
+		}
+
+		const levelId = getCurrentCheckoutLevelId();
+		const levels = window.pmpro?.all_levels || window.pmpro?.all_levels_formatted_text || {};
+		const level = levels[String(levelId)] || null;
+		const initialPayment = Number.parseFloat(level?.initial_payment ?? '');
+		if (Number.isFinite(initialPayment) && initialPayment >= 0) {
+			return initialPayment;
+		}
+
+		const billingAmount = Number.parseFloat(level?.billing_amount ?? '');
+		if (Number.isFinite(billingAmount) && billingAmount >= 0) {
+			return billingAmount;
+		}
+
+		return null;
+	};
+
+	const buildMembershipLineItemLabel = (membershipName) => {
+		const normalized = String(membershipName || '')
+			.replace(/\s+membership(?:\s+membership)+$/i, ' Membership')
+			.trim();
+		if (!normalized || /^membership$/i.test(normalized)) {
+			return 'Membership';
+		}
+
+		return /membership$/i.test(normalized) ? normalized : `${normalized} Membership`;
+	};
+
+	const getProratedMembershipSummaryLabel = (membershipName) => {
+		const membershipLabel = buildMembershipLineItemLabel(membershipName);
+		return isCurrentCheckoutProrated()
+			? `${membershipLabel} (prorated amount due today)`
+			: membershipLabel;
+	};
+
+	const isCurrentCheckoutProrated = () => {
+		const levelId = getCurrentCheckoutLevelId();
+		const levels = window.pmpro?.all_levels || window.pmpro?.all_levels_formatted_text || {};
+		const level = levels[String(levelId)] || null;
+		const initialPayment = Number.parseFloat(level?.initial_payment ?? '');
+		const billingAmount = Number.parseFloat(level?.billing_amount ?? '');
+		return Number.isFinite(initialPayment) && Number.isFinite(billingAmount) && Math.abs(initialPayment - billingAmount) >= 0.01;
+	};
+
+	const ensureHiddenPreferenceInput = (form, name, value) => {
+		if (!form) {
+			return null;
+		}
+
+		let input = form.querySelector(`input[name="${name}"]`);
+		if (!input) {
+			input = document.createElement('input');
+			input.type = 'hidden';
+			input.name = name;
+			form.appendChild(input);
+		}
+
+		input.value = value;
+		return input;
+	};
+
+	const buildMemberPreferenceCards = (fieldset, currentLevelId) => {
+		if (!fieldset) {
+			return;
+		}
+
+		const form = fieldset.closest('form');
+		const tshirtField = document.getElementById('t_shirt_div');
+		const publicationField =
+			document.getElementById('publications_preference_div') ||
+			fieldset.querySelector('.pmpro_form_field-publications_preference');
+		const guidebookField =
+			document.getElementById('guidebook_preferences_div') ||
+			fieldset.querySelector('.pmpro_form_field-guidebook_preferences');
+
+		if (!tshirtField) {
+			return;
+		}
+
+		const showTshirtPreference = currentLevelId >= 2;
+		const showPublicationPreferences = currentLevelId > 2;
+		let intro = fieldset.querySelector('.aac-member-preferences__intro');
+		if (!intro) {
+			intro = document.createElement('p');
+			intro.className = 'aac-member-preferences__intro';
+			intro.textContent = 'Choose how you would like to receive each AAC publication. Print keeps the mailed edition on your membership, while digital keeps the experience paperless.';
+		}
+
+		let cardsGrid = fieldset.querySelector('.aac-member-preferences__grid');
+		if (!cardsGrid) {
+			cardsGrid = document.createElement('div');
+			cardsGrid.className = 'aac-member-preferences__grid';
+		}
+
+		const hideOriginalField = (field) => {
+			if (!field) {
+				return;
+			}
+			field.hidden = true;
+			field.style.display = 'none';
+		};
+
+		hideOriginalField(publicationField);
+		hideOriginalField(guidebookField);
+
+		if (tshirtField) {
+			tshirtField.hidden = !showTshirtPreference;
+			tshirtField.style.display = showTshirtPreference ? '' : 'none';
+		}
+
+		if (!showPublicationPreferences) {
+			intro.remove();
+			cardsGrid.remove();
+			return;
+		}
+
+		const readPreferenceValue = (name, fallback) => {
+			const existingValue = form?.querySelector(`input[name="${name}"]`)?.value;
+			return existingValue === 'Print' || existingValue === 'Digital' ? existingValue : fallback;
+		};
+
+		const publicationSelect = publicationField?.querySelector('select');
+		const guidebookSelect = guidebookField?.querySelector('select');
+		const legacyPublicationValue = checkoutProfileDefaults.publication_pref || publicationSelect?.value || 'Print';
+		const aajHiddenInput = ensureHiddenPreferenceInput(form, 'aac_aaj_pref', readPreferenceValue('aac_aaj_pref', checkoutProfileDefaults.aaj_pref || legacyPublicationValue));
+		const anacHiddenInput = ensureHiddenPreferenceInput(form, 'aac_anac_pref', readPreferenceValue('aac_anac_pref', checkoutProfileDefaults.anac_pref || legacyPublicationValue));
+		const acjHiddenInput = ensureHiddenPreferenceInput(form, 'aac_acj_pref', readPreferenceValue('aac_acj_pref', checkoutProfileDefaults.acj_pref || legacyPublicationValue));
+		const guidebookHiddenInput = ensureHiddenPreferenceInput(form, 'aac_guidebook_pref', readPreferenceValue('aac_guidebook_pref', checkoutProfileDefaults.guidebook_pref || guidebookSelect?.value || 'Print'));
+		const legacyPublicationHiddenInput = ensureHiddenPreferenceInput(form, 'aac_publication_pref', readPreferenceValue('aac_publication_pref', legacyPublicationValue));
+
+		if (!intro.parentNode) {
+			if (tshirtField) {
+				tshirtField.insertAdjacentElement('afterend', intro);
+			} else {
+				fieldset.querySelector('.pmpro_form_fields')?.prepend(intro);
+			}
+		}
+
+		if (!cardsGrid.parentNode) {
+			intro.insertAdjacentElement('afterend', cardsGrid);
+		}
+
+		const createPreferenceCard = ({ themeClass, eyebrow, title, description, hiddenInput, imageUrl, legacySelect, onChange }) => {
+			if (!hiddenInput) {
+				return null;
+			}
+
+			const card = document.createElement('article');
+			card.className = `aac-member-preferences__card ${themeClass}`;
+			card.dataset.aacPrefSource = hiddenInput.name;
+			if (imageUrl) {
+				card.style.setProperty('--aac-member-pref-image', `url("${String(imageUrl).replace(/"/g, '&quot;')}")`);
+			}
+			card.innerHTML = `
+				<div class="aac-member-preferences__art" style="${imageUrl ? `background-image: var(--aac-member-pref-image);` : ''}"></div>
+				<div class="aac-member-preferences__content">
+					<div class="aac-member-preferences__title-block">
+						<span class="aac-member-preferences__eyebrow">${eyebrow}</span>
+						<h3 class="aac-member-preferences__title">${title}</h3>
+					</div>
+					<p class="aac-member-preferences__description">${description}</p>
+					<div class="aac-member-preferences__choices">
+						<button type="button" class="aac-member-preferences__choice" data-value="Print">Print</button>
+						<button type="button" class="aac-member-preferences__choice" data-value="Digital">Digital</button>
+					</div>
+				</div>
+			`;
+
+			const syncCardState = () => {
+				const nextValue = (hiddenInput.value || 'Digital').trim() === 'Print' ? 'Print' : 'Digital';
+				hiddenInput.value = nextValue;
+				if (legacySelect) {
+					legacySelect.value = nextValue;
+				}
+				card.querySelectorAll('.aac-member-preferences__choice').forEach((choice) => {
+					choice.classList.toggle('is-active', choice.dataset.value === nextValue);
+				});
+			};
+
+			card.querySelectorAll('.aac-member-preferences__choice').forEach((choice) => {
+				choice.addEventListener('click', () => {
+					hiddenInput.value = choice.dataset.value;
+					if (legacySelect) {
+						legacySelect.value = choice.dataset.value;
+						legacySelect.dispatchEvent(new Event('change', { bubbles: true }));
+					}
+					if (typeof onChange === 'function') {
+						onChange(choice.dataset.value);
+					}
+					syncMagazineAddonSummary();
+					document.querySelectorAll(`[data-aac-pref-source="${hiddenInput.name}"]`).forEach((node) => {
+						node.dispatchEvent(new CustomEvent('aac:sync-card-state'));
+					});
+				});
+			});
+
+			card.addEventListener('aac:sync-card-state', syncCardState);
+			syncCardState();
+
+			return card;
+		};
+
+		cardsGrid.innerHTML = '';
+		[
+			createPreferenceCard({
+				themeClass: 'aac-member-preferences__card--journal',
+				eyebrow: 'Annual',
+				title: 'American Alpine Journal',
+				description: 'Annual climbing journal. Choose print delivery or digital-only access.',
+				hiddenInput: aajHiddenInput,
+				imageUrl: publicationCardImages.aaj,
+				legacySelect: publicationSelect,
+				onChange: (value) => {
+					legacyPublicationHiddenInput.value = value;
+				},
+			}),
+			createPreferenceCard({
+				themeClass: 'aac-member-preferences__card--accidents',
+				eyebrow: 'Annual',
+				title: 'Accidents in North American Climbing',
+				description: 'Annual accident review. Choose print delivery or digital-only access.',
+				hiddenInput: anacHiddenInput,
+				imageUrl: publicationCardImages.anac,
+			}),
+			createPreferenceCard({
+				themeClass: 'aac-member-preferences__card--journal',
+				eyebrow: 'Journal',
+				title: 'American Climbing Journal',
+				description: 'Member stories and club updates. Choose print delivery or digital-only access.',
+				hiddenInput: acjHiddenInput,
+				imageUrl: publicationCardImages.acj,
+			}),
+			createPreferenceCard({
+				themeClass: 'aac-member-preferences__card--guidebook',
+				eyebrow: 'Quarterly',
+				title: 'Guidebook to Membership',
+				description: 'Quarterly member publication. Choose print delivery or digital-only access.',
+				hiddenInput: guidebookHiddenInput,
+				imageUrl: publicationCardImages.guidebook,
+				legacySelect: guidebookSelect,
+			}),
+		].filter(Boolean).forEach((card) => cardsGrid.appendChild(card));
+	};
 
 		const enhancePmproProfileInformation = () => {
 			const socialLoginFieldset = document.getElementById('pmpro_social_login');
 			const socialLoginActions = document.getElementById('pmpro_card_actions-social_login');
+			const pricingFieldset = document.getElementById('pmpro_pricing_fields');
 			const userFieldsFieldset = document.getElementById('pmpro_user_fields');
 			const billingFieldset = document.getElementById('pmpro_billing_address_fields');
 			if (!billingFieldset || billingFieldset.dataset.aacProfileEnhanced === 'true') {
@@ -1676,9 +2459,28 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 				socialLoginFieldset.remove();
 			}
 
+			if (pricingFieldset) {
+				pricingFieldset.hidden = true;
+				pricingFieldset.style.display = 'none';
+			}
+
+			const accountHeading = userFieldsFieldset?.querySelector('.pmpro_form_heading');
+			if (accountHeading) {
+				accountHeading.textContent = 'Create Account';
+			}
+
+			const accountFields = userFieldsFieldset?.querySelector('.pmpro_form_fields');
+			const emailInput = userFieldsFieldset?.querySelector('input[name="bemail"]');
+			const passwordInput = userFieldsFieldset?.querySelector('input[name="password"]');
+			const emailRow = emailInput?.closest('.pmpro_cols-2');
+			const passwordRow = passwordInput?.closest('.pmpro_cols-2');
+			if (accountFields && emailRow && passwordRow && emailRow !== passwordRow) {
+				accountFields.insertBefore(emailRow, passwordRow);
+			}
+
 			const billingHeading = billingFieldset.querySelector('.pmpro_form_heading');
 			if (billingHeading) {
-				billingHeading.textContent = 'Profile Information';
+				billingHeading.textContent = 'Contact Information';
 			}
 
 			const memberPreferencesFieldset =
@@ -1707,38 +2509,68 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 				moreInformationFieldset.remove();
 			}
 
+		const discountFieldset = document.getElementById('pmpro_form_fieldset-membership-discounts');
+		if (discountFieldset?.parentNode && billingFieldset.parentNode === discountFieldset.parentNode) {
+			discountFieldset.parentNode.insertBefore(discountFieldset, billingFieldset);
+		}
+
+		const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
+		if (familyFieldset?.parentNode && billingFieldset.parentNode === familyFieldset.parentNode) {
+			familyFieldset.parentNode.insertBefore(familyFieldset, billingFieldset);
+		}
+
 		if (memberPreferencesFieldset?.parentNode && billingFieldset.parentNode === memberPreferencesFieldset.parentNode) {
 			billingFieldset.parentNode.insertBefore(memberPreferencesFieldset, billingFieldset.nextSibling);
 		}
 
-		const discountFieldset = document.getElementById('pmpro_form_fieldset-membership-discounts');
-		if (discountFieldset?.parentNode && memberPreferencesFieldset?.parentNode === discountFieldset.parentNode) {
-			discountFieldset.parentNode.insertBefore(discountFieldset, memberPreferencesFieldset.nextSibling);
-		}
-
-		const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
-		if (familyFieldset?.parentNode && discountFieldset?.parentNode === familyFieldset.parentNode) {
-			familyFieldset.parentNode.insertBefore(familyFieldset, discountFieldset.nextSibling);
-		}
-
 		const magazineFieldset = document.getElementById('pmpro_form_fieldset-magazine-addons');
-		if (magazineFieldset?.parentNode && familyFieldset?.parentNode === magazineFieldset.parentNode) {
-			magazineFieldset.parentNode.insertBefore(magazineFieldset, familyFieldset.nextSibling);
-		} else if (magazineFieldset?.parentNode && discountFieldset?.parentNode === magazineFieldset.parentNode) {
-			magazineFieldset.parentNode.insertBefore(magazineFieldset, discountFieldset.nextSibling);
-		} else if (magazineFieldset?.parentNode && memberPreferencesFieldset?.parentNode === magazineFieldset.parentNode) {
-			magazineFieldset.parentNode.insertBefore(magazineFieldset, memberPreferencesFieldset.nextSibling);
+		if (magazineFieldset) {
+			magazineFieldset.hidden = true;
+			magazineFieldset.style.display = 'none';
 		}
+
+		const levelInput = document.getElementById('pmpro_level');
+		const currentLevelId = Number.parseInt(levelInput?.value || '0', 10) || 0;
+			if (discountFieldset) {
+				const showMembershipDiscounts = currentLevelSupportsDiscountTiers();
+				discountFieldset.hidden = !showMembershipDiscounts;
+				discountFieldset.style.display = showMembershipDiscounts ? '' : 'none';
+			if (!showMembershipDiscounts) {
+				discountFieldset.querySelectorAll('input[name="aac_membership_discount"]').forEach((input) => {
+					input.checked = false;
+					input.removeAttribute('checked');
+				});
+			}
+		}
+
+		const familyAccountFieldset = document.getElementById('pmprogroupacct_parent_fields');
+		if (familyAccountFieldset) {
+			familyAccountFieldset.hidden = true;
+			familyAccountFieldset.style.display = 'none';
+		}
+
+		buildMemberPreferenceCards(memberPreferencesFieldset, currentLevelId);
 
 			const donationFieldset = document.getElementById('pmpro_form_fieldset-donation');
 			const autoRenewFieldset = document.getElementById('pmpro_autorenewal_checkbox');
 			const paymentInformationFieldset = document.getElementById('pmpro_payment_information_fields');
 			const checkoutSummary = document.querySelector('[data-aac-magazine-summary]');
 			const autoRenewHeading = autoRenewFieldset?.querySelector('.pmpro_form_heading');
+			const nativeDiscountCodePrompt = document.getElementById('other_discount_code_p');
+			const nativeDiscountCodeFields = document.getElementById('other_discount_code_fields');
+			const nativeDiscountCodePaymentField = document.querySelector('.pmpro_payment-discount-code')?.closest('.pmpro_cols-2') || document.querySelector('.pmpro_payment-discount-code');
 
 			if (autoRenewHeading) {
 				autoRenewHeading.textContent = 'Automatic Renewals';
 			}
+
+			[nativeDiscountCodePrompt, nativeDiscountCodeFields, nativeDiscountCodePaymentField].forEach((node) => {
+				if (!node) {
+					return;
+				}
+				node.hidden = true;
+				node.style.display = 'none';
+			});
 
 			if (paymentInformationFieldset?.parentNode) {
 				const checkoutSectionParent = paymentInformationFieldset.parentNode;
@@ -1774,7 +2606,8 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 				return;
 			}
 
-			const basePrice = Number.parseFloat(fieldset.dataset.aacMagazineBasePrice || '0') || 0;
+		const basePrice = getCurrentCheckoutBasePrice()
+			?? (Number.parseFloat(fieldset.dataset.aacMagazineBasePrice || '0') || 0);
 			const addonTotal = checkboxInputs.reduce((total, input) => {
 				if (!input.checked) {
 					return total;
@@ -1783,9 +2616,14 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 				return total + (Number.parseFloat(input.dataset.aacMagazinePrice || '0') || 0);
 			}, 0);
 		const summary = document.querySelector('[data-aac-magazine-summary]');
-		const membershipName = document.querySelector('#pmpro_level_name_text strong')?.textContent?.trim() || 'Membership';
-		const familyModeInput = document.querySelector('input[name="aac_partner_family_mode"]:checked');
-		const familyMode = familyModeInput?.value === 'family' ? 'family' : '';
+		const currentLevelId = getCurrentCheckoutLevelId();
+		const membershipName = getCurrentCheckoutLevelName();
+		const familyModeValue = String(
+			document.querySelector('input[name="aac_partner_family_mode"]')?.value ||
+			document.querySelector('input[name="aac_partner_family_mode"]:checked')?.value ||
+			''
+		).trim();
+		const familyMode = familyModeValue === 'family' ? 'family' : '';
 		const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
 		const familyAdultInput = document.getElementById('aac_partner_family_additional_adult');
 		const familyDependentsInput = document.getElementById('aac_partner_family_dependents');
@@ -1798,31 +2636,55 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		const discountRate = Number.parseFloat(selectedDiscountInput?.dataset.aacMembershipDiscountRate || '0') || 0;
 		const discountAmount = Math.round(basePrice * discountRate * 100) / 100;
 		const discountLabel = selectedDiscountInput?.dataset.aacMembershipDiscountLabel
-			? `${selectedDiscountInput.dataset.aacMembershipDiscountLabel} (15%)`
+			? `${selectedDiscountInput.dataset.aacMembershipDiscountLabel} (35%)`
 			: '';
 		const donationAmount = Math.max(0, Number.parseFloat(document.getElementById('donation')?.value || '0') || 0);
+		const readPublicationPreferenceValue = (inputName, fallbackSelector) => {
+			const hiddenValue = (document.querySelector(`input[name="${inputName}"]`)?.value || '').trim();
+			if (hiddenValue === 'Print' || hiddenValue === 'Digital') {
+				return hiddenValue;
+			}
+
+			const fallbackValue = (document.querySelector(fallbackSelector)?.value || '').trim();
+			return fallbackValue === 'Print' ? 'Print' : 'Digital';
+		};
+		const countryValue = String(document.getElementById('bcountry')?.value || 'US').trim().toUpperCase();
+		const isInternationalCountry = !['', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(countryValue);
+		const hasPrintPublicationSelection = [
+			readPublicationPreferenceValue('aac_aaj_pref', '#publications_preference_div select'),
+			readPublicationPreferenceValue('aac_anac_pref', '#publications_preference_div select'),
+			readPublicationPreferenceValue('aac_acj_pref', '#publications_preference_div select'),
+			readPublicationPreferenceValue('aac_guidebook_pref', '#guidebook_preferences_div select'),
+		].includes('Print');
+		const internationalSurcharge = currentLevelId === 3 && isInternationalCountry && hasPrintPublicationSelection ? 30 : 0;
 		const selectedAddons = checkboxInputs
 			.filter((input) => input.checked)
 				.map((input) => ({
 					label: input.closest('.aac-magazine-addons__card')?.querySelector('.aac-magazine-addons__copy strong')?.textContent?.trim() || 'Magazine subscription',
 					amount: Number.parseFloat(input.dataset.aacMagazinePrice || '0') || 0,
 				}));
-		const membershipLabel = familyMode === 'family' ? 'Partner Family membership' : `${membershipName} membership`;
+		const pmproMembershipAmount = getPmproMembershipAmount(basePrice);
+		const promoDiscountAmount = Math.max(0, Math.round((basePrice - pmproMembershipAmount) * 100) / 100);
+		const promoDiscountCode = getDiscountCodeState();
+		const membershipSummaryLabel = getProratedMembershipSummaryLabel(membershipName);
 		const lineItems = [
-			{ label: membershipLabel, amount: basePrice },
+			{ label: membershipSummaryLabel, amount: basePrice },
+			...(promoDiscountAmount > 0 ? [{ label: promoDiscountCode ? `Promo code (${promoDiscountCode})` : 'Promo code discount', amount: 0 - promoDiscountAmount, isDiscount: true }] : []),
 			...(discountAmount > 0 && discountLabel ? [{ label: discountLabel, amount: 0 - discountAmount, isDiscount: true }] : []),
 			...(familyAdultAmount > 0 ? [{ label: 'Additional adult', amount: familyAdultAmount }] : []),
 			...(familyDependentsAmount > 0 ? [{ label: `${familyDependentCount} ${familyDependentCount === 1 ? 'dependent' : 'dependents'}`, amount: familyDependentsAmount }] : []),
+			...(internationalSurcharge > 0 ? [{ label: 'International surcharge for print copies', amount: internationalSurcharge }] : []),
 			...(donationAmount > 0 ? [{ label: 'Donation', amount: donationAmount }] : []),
 			...selectedAddons,
 		];
-		const grandTotal = basePrice - discountAmount + familyAdultAmount + familyDependentsAmount + addonTotal + donationAmount;
+		const grandTotal = lineItems.reduce((total, item) => total + (Number.isFinite(item.amount) ? item.amount : 0), 0);
 		if (summary) {
 			summary.innerHTML = `
 				<div class="aac-magazine-addons__summary-header">
 					<p class="aac-magazine-addons__summary-title">Order summary</p>
 					<p class="aac-magazine-addons__summary-caption">Review everything included before entering payment details.</p>
 				</div>
+				${buildDiscountCodeMarkup()}
 				<div class="aac-magazine-addons__summary-rows">
 					${lineItems.map((item) => `
 						<div class="aac-magazine-addons__summary-row${item.isDiscount ? ' aac-magazine-addons__summary-row--discount' : ''}">
@@ -1833,10 +2695,11 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 						<div class="aac-magazine-addons__summary-row aac-magazine-addons__summary-row--total">
 							<span>Grand total</span>
 							<strong>${formatUsd(grandTotal)}</strong>
-						</div>
 					</div>
-				`;
-			}
+				</div>
+			`;
+			bindDiscountCodeForm(summary);
+		}
 
 			const priceText = document.querySelector('#pmpro_level_cost .pmpro_level-price');
 			if (priceText) {
@@ -1845,10 +2708,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 					priceText.dataset.aacBaseText = baseText;
 				}
 
-				const moneyMatches = baseText.match(/\$[0-9,]+(?:\.[0-9]{2})?/g) || [];
-				if (moneyMatches.length === 1) {
-					priceText.textContent = baseText.replace(moneyMatches[0], formatUsd(grandTotal));
-				}
+				priceText.textContent = baseText;
 
 				let note = document.getElementById('aac-magazine-total-note');
 				if (note) {
@@ -1874,15 +2734,6 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			input.dataset.aacMembershipDiscountBound = 'true';
 		});
 
-		document.querySelectorAll('input[name="aac_partner_family_mode"]').forEach((input) => {
-			if (input.dataset.aacPartnerFamilyBound === 'true') {
-				return;
-			}
-
-			input.addEventListener('change', syncMagazineAddonSummary);
-			input.dataset.aacPartnerFamilyBound = 'true';
-		});
-
 		if (familyAdultInput && familyAdultInput.dataset.aacPartnerFamilyBound !== 'true') {
 			familyAdultInput.addEventListener('change', syncMagazineAddonSummary);
 			familyAdultInput.dataset.aacPartnerFamilyBound = 'true';
@@ -1892,43 +2743,53 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			familyDependentsInput.addEventListener('change', syncMagazineAddonSummary);
 			familyDependentsInput.dataset.aacPartnerFamilyBound = 'true';
 		}
-	};
 
-	const bindToggleableMembershipDiscounts = () => {
-		document.querySelectorAll('input[name="aac_membership_discount"][data-aac-toggleable-radio="true"]').forEach((input) => {
-			if (input.dataset.aacToggleableBound === 'true') {
+		const countryField = document.getElementById('bcountry');
+		if (countryField && countryField.dataset.aacOrderSummaryBound !== 'true') {
+			countryField.addEventListener('change', syncMagazineAddonSummary);
+			countryField.dataset.aacOrderSummaryBound = 'true';
+		}
+
+		document.querySelectorAll('#publications_preference_div select, #guidebook_preferences_div select').forEach((select) => {
+			if (select.dataset.aacOrderSummaryBound === 'true') {
 				return;
 			}
 
-			const rememberState = (event) => {
-				if (event.type === 'keydown' && event.key !== ' ' && event.key !== 'Enter') {
-					return;
-				}
+			select.addEventListener('change', syncMagazineAddonSummary);
+			select.dataset.aacOrderSummaryBound = 'true';
+		});
 
-				input.dataset.aacWasChecked = input.checked ? 'true' : 'false';
-			};
-
-			input.addEventListener('pointerdown', rememberState);
-			input.addEventListener('keydown', rememberState);
-			input.addEventListener('click', () => {
-				const wasChecked = input.dataset.aacWasChecked === 'true';
-				delete input.dataset.aacWasChecked;
-
-				if (wasChecked) {
-					input.checked = false;
-					input.removeAttribute('checked');
-				} else {
-					document.querySelectorAll(`input[name="${input.name}"]`).forEach((candidate) => {
-						if (candidate !== input) {
-							candidate.checked = false;
-							candidate.removeAttribute('checked');
-						}
-					});
-					input.setAttribute('checked', 'checked');
-				}
-
-				syncMagazineAddonSummary();
+		const nativeDiscountMessage = getNativeDiscountCodeMessage();
+		if (nativeDiscountMessage && nativeDiscountMessage.dataset.aacSummaryObserved !== 'true') {
+			new MutationObserver(() => {
+				window.setTimeout(syncMagazineAddonSummary, 50);
+			}).observe(nativeDiscountMessage, {
+				childList: true,
+				subtree: true,
+				characterData: true,
+				attributes: true,
 			});
+			nativeDiscountMessage.dataset.aacSummaryObserved = 'true';
+		}
+
+		const priceContainer = document.getElementById('pmpro_level_cost');
+		if (priceContainer && priceContainer.dataset.aacSummaryObserved !== 'true') {
+			new MutationObserver(() => {
+				window.setTimeout(syncMagazineAddonSummary, 50);
+			}).observe(priceContainer, {
+				childList: true,
+				subtree: true,
+				characterData: true,
+			});
+			priceContainer.dataset.aacSummaryObserved = 'true';
+		}
+	};
+
+	const bindToggleableMembershipDiscounts = () => {
+		document.querySelectorAll('input[name="aac_membership_discount"][data-aac-toggleable-choice="true"]').forEach((input) => {
+			if (input.dataset.aacToggleableBound === 'true') {
+				return;
+			}
 
 			input.addEventListener('change', () => {
 				if (input.checked) {
@@ -1936,15 +2797,107 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 						if (candidate === input) {
 							candidate.setAttribute('checked', 'checked');
 						} else {
+							candidate.checked = false;
 							candidate.removeAttribute('checked');
 						}
 					});
+
+					const familyShortcut = document.getElementById('aac_partner_family_shortcut');
+					if (familyShortcut) {
+						familyShortcut.checked = false;
+						familyShortcut.removeAttribute('checked');
+					}
+				} else {
+					input.removeAttribute('checked');
 				}
 
 				syncMagazineAddonSummary();
 			});
 
 			input.dataset.aacToggleableBound = 'true';
+		});
+	};
+
+	const bindFamilySelectionShortcut = () => {
+		const shortcut = document.getElementById('aac_partner_family_shortcut');
+		const modeInput = document.getElementById('aac_partner_family_mode');
+		const details = document.querySelector('[data-aac-partner-family-details]');
+		if (!shortcut || !modeInput || !details) {
+			return;
+		}
+
+		const syncFamilyState = () => {
+			const active = shortcut.checked;
+			if (active) {
+				document.querySelectorAll('input[name="aac_membership_discount"][data-aac-toggleable-choice="true"]').forEach((input) => {
+					input.checked = false;
+					input.removeAttribute('checked');
+				});
+			}
+			modeInput.value = active ? 'family' : '';
+			details.hidden = !active;
+			details.style.display = active ? 'grid' : 'none';
+		};
+
+		if (shortcut.dataset.aacFamilyShortcutBound !== 'true') {
+			shortcut.addEventListener('change', () => {
+				syncFamilyState();
+				syncMagazineAddonSummary();
+			});
+			shortcut.dataset.aacFamilyShortcutBound = 'true';
+		}
+
+		syncFamilyState();
+	};
+
+	const relabelTShirtSizeOptions = () => {
+		document.querySelectorAll('select[name="t_shirt"]').forEach((select) => {
+			if (select.dataset.aacTshirtEnhanced !== 'true') {
+				select.required = false;
+				select.classList.remove('pmpro_form_input-required');
+
+				const field = select.closest('.pmpro_form_field');
+				field?.classList.remove('pmpro_form_field-required');
+				field?.querySelector('.pmpro_asterisk')?.remove();
+
+				let noTshirtOption = select.querySelector('option[value="none"]');
+				if (!noTshirtOption) {
+					noTshirtOption = document.createElement('option');
+					noTshirtOption.value = 'none';
+					noTshirtOption.textContent = 'No T-shirt';
+					select.insertBefore(noTshirtOption, select.firstChild);
+				}
+
+				select.querySelectorAll('option').forEach((option) => {
+					if ((option.value || '').trim() === '') {
+						option.remove();
+					}
+				});
+
+				const desiredTshirtValue = (checkoutProfileDefaults.size || 'none').trim() || 'none';
+				if (select.querySelector(`option[value="${desiredTshirtValue}"]`)) {
+					select.value = desiredTshirtValue;
+				} else if (!select.value) {
+					select.value = 'none';
+				}
+
+				if (select.value === 'none') {
+					noTshirtOption.selected = true;
+					select.dispatchEvent(new Event('change', { bubbles: true }));
+				}
+
+				select.dataset.aacTshirtEnhanced = 'true';
+			}
+
+			Array.from(select.options).forEach((option) => {
+				const rawValue = (option.value || option.textContent || '').trim();
+				if (rawValue === 'none' || rawValue === 'No T-shirt') {
+					option.textContent = 'No T-shirt';
+					return;
+				}
+
+				option.textContent = rawValue.startsWith('Unisex ') ? rawValue : `Unisex ${rawValue}`;
+			});
 		});
 	};
 
@@ -2218,13 +3171,196 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			emailInput.addEventListener('change', syncValue);
 		};
 
+		const bindEmailAvailabilityCheck = () => {
+			if (currentUserEmail) {
+				return;
+			}
+
+			const emailInput = document.querySelector('input[name="bemail"]');
+			if (!emailInput || emailInput.dataset.aacEmailAvailabilityBound === 'true') {
+				return;
+			}
+
+			const emailField = emailInput.closest('.pmpro_form_field');
+			if (!emailField) {
+				return;
+			}
+
+			let statusNode = emailField.querySelector('.aac-email-availability');
+			if (!statusNode) {
+				statusNode = document.createElement('p');
+				statusNode.className = 'aac-email-availability';
+				statusNode.dataset.state = 'idle';
+				emailField.appendChild(statusNode);
+			}
+
+			let requestCounter = 0;
+			let debounceTimer = null;
+
+			const setStatus = (state, message) => {
+				statusNode.dataset.state = state;
+				statusNode.textContent = message || '';
+			};
+
+			const runAvailabilityCheck = async () => {
+				const email = String(emailInput.value || '').trim();
+				emailInput.setCustomValidity('');
+
+				if (!email) {
+					setStatus('idle', '');
+					return;
+				}
+
+				if (!emailInput.checkValidity()) {
+					setStatus('idle', 'Enter a valid email address.');
+					return;
+				}
+
+				const currentRequest = ++requestCounter;
+				setStatus('checking', 'Checking email availability...');
+
+				try {
+					const url = new URL(emailAvailabilityEndpoint);
+					url.searchParams.set('email', email);
+
+					const response = await fetch(url.toString(), {
+						credentials: 'same-origin',
+						headers: {
+							Accept: 'application/json',
+						},
+					});
+
+					if (!response.ok) {
+						throw new Error(`Email check failed with status ${response.status}`);
+					}
+
+					const result = await response.json();
+					if (currentRequest !== requestCounter) {
+						return;
+					}
+
+					if (result?.valid && result?.available) {
+						emailInput.setCustomValidity('');
+						setStatus('available', result.message || 'Email address is available.');
+						return;
+					}
+
+					const message = result?.message || 'An account with this email already exists.';
+					emailInput.setCustomValidity(message);
+					setStatus('unavailable', message);
+				} catch (error) {
+					if (currentRequest !== requestCounter) {
+						return;
+					}
+
+					emailInput.setCustomValidity('');
+					setStatus('idle', 'Unable to check email availability right now.');
+				}
+			};
+
+			const scheduleAvailabilityCheck = () => {
+				window.clearTimeout(debounceTimer);
+				debounceTimer = window.setTimeout(runAvailabilityCheck, 280);
+			};
+
+			emailInput.addEventListener('input', scheduleAvailabilityCheck);
+			emailInput.addEventListener('change', runAvailabilityCheck);
+			emailInput.dataset.aacEmailAvailabilityBound = 'true';
+		};
+
+		const enhanceCheckoutAutoRenewFieldset = () => {
+			const fieldset = document.getElementById('pmpro_autorenewal_checkbox');
+			if (!fieldset) {
+				return;
+			}
+
+			const checkbox = fieldset.querySelector('input[type="checkbox"]');
+			const checkoutForm = fieldset.closest('form');
+			if (!checkbox || !checkoutForm) {
+				return;
+			}
+
+			let presentInput = checkoutForm.querySelector('input[name="autorenew_present"]');
+			if (!presentInput) {
+				presentInput = document.createElement('input');
+				presentInput.type = 'hidden';
+				presentInput.name = 'autorenew_present';
+				presentInput.value = '1';
+				checkoutForm.appendChild(presentInput);
+			}
+
+			const storageKey = `aacCheckoutAutoRenewChoice:${window.location.pathname}:${new URLSearchParams(window.location.search).get('level') || ''}`;
+			const originalField = checkbox.closest('.pmpro_form_field');
+			if (originalField) {
+				originalField.hidden = true;
+				originalField.style.display = 'none';
+			}
+
+			let toggle = fieldset.querySelector('[data-aac-checkout-autorenew-toggle]');
+			if (!toggle) {
+				const wrapper = document.createElement('div');
+				wrapper.className = 'aac-checkout-autorenew';
+				wrapper.innerHTML = `
+					<div class="aac-checkout-autorenew__copy">
+						<strong>Automatic Renewals</strong>
+						<span>Keep this membership active with recurring annual renewal.</span>
+					</div>
+					<label class="aac-managed-toggle">
+						<input type="checkbox" data-aac-checkout-autorenew-toggle />
+						<span class="aac-managed-toggle__track" aria-hidden="true"></span>
+						<span class="aac-managed-toggle__state">On</span>
+					</label>
+				`;
+				fieldset.querySelector('.pmpro_form_fields')?.appendChild(wrapper);
+				toggle = wrapper.querySelector('[data-aac-checkout-autorenew-toggle]');
+			}
+
+			const stateNode = fieldset.querySelector('.aac-managed-toggle__state');
+			let storedChoice = '';
+			try {
+				storedChoice = window.sessionStorage.getItem(storageKey) || '';
+			} catch (error) {
+				storedChoice = '';
+			}
+
+			const syncState = (checked) => {
+				checkbox.checked = checked;
+				if (checked) {
+					checkbox.setAttribute('checked', 'checked');
+				} else {
+					checkbox.removeAttribute('checked');
+				}
+				toggle.checked = checked;
+				if (stateNode) {
+					stateNode.textContent = checked ? 'On' : 'Off';
+				}
+			};
+
+			if (!fieldset.dataset.aacCheckoutAutoRenewInitialized) {
+				syncState(storedChoice ? storedChoice === 'on' : true);
+				fieldset.dataset.aacCheckoutAutoRenewInitialized = 'true';
+			}
+
+			if (toggle.dataset.aacCheckoutAutoRenewBound !== 'true') {
+				toggle.addEventListener('change', () => {
+					syncState(toggle.checked);
+					try {
+						window.sessionStorage.setItem(storageKey, toggle.checked ? 'on' : 'off');
+					} catch (error) {
+						// Ignore storage write failures.
+					}
+				});
+				toggle.dataset.aacCheckoutAutoRenewBound = 'true';
+			}
+		};
+
 		const replacePmproLoggedInAccountUsername = () => {
-			if (!currentUserEmail) {
+			if (!currentUserDisplayName) {
 				return;
 			}
 
 			const accountFieldset = document.getElementById('pmpro_user_fields');
-			if (!accountFieldset || accountFieldset.dataset.aacLoggedInEmailPatched === 'true') {
+			if (!accountFieldset || accountFieldset.dataset.aacLoggedInDisplayPatched === 'true') {
 				return;
 			}
 
@@ -2235,11 +3371,20 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 					continue;
 				}
 
-				const usernameStrong = paragraph.querySelector('strong');
-				if (usernameStrong) {
-					usernameStrong.textContent = currentUserEmail;
-					accountFieldset.dataset.aacLoggedInEmailPatched = 'true';
-				}
+				const logoutLink = paragraph.querySelector('a[href*="logout"], a[href*="log-out"], a[href*="action=logout"]');
+				const logoutHref = logoutLink?.getAttribute('href') || '';
+				const logoutText = (logoutLink?.textContent || 'log out now').trim();
+				const escapedName = String(currentUserDisplayName)
+					.replace(/&/g, '&amp;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;')
+					.replace(/"/g, '&quot;')
+					.replace(/'/g, '&#039;');
+
+				paragraph.innerHTML = logoutHref
+					? `You are logged in as <strong>${escapedName}</strong>. If you would like to use a different account for this membership, <a href="${logoutHref}">${logoutText}</a>.`
+					: `You are logged in as <strong>${escapedName}</strong>. If you would like to use a different account for this membership, log out now.`;
+				accountFieldset.dataset.aacLoggedInDisplayPatched = 'true';
 				break;
 			}
 		};
@@ -2269,9 +3414,13 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		if (document.readyState === 'loading') {
 			document.addEventListener('DOMContentLoaded', () => {
 				syncPmproUsernameFromEmail();
+				bindEmailAvailabilityCheck();
 				enhancePmproProfileInformation();
+				enhanceCheckoutAutoRenewFieldset();
 				enhancePmproDonationFieldset();
 				bindToggleableMembershipDiscounts();
+				bindFamilySelectionShortcut();
+				relabelTShirtSizeOptions();
 				syncMagazineAddonSummary();
 				syncPmproStateDropdown();
 				replacePmproLoggedInAccountUsername();
@@ -2279,9 +3428,13 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			});
 		} else {
 			syncPmproUsernameFromEmail();
+			bindEmailAvailabilityCheck();
 			enhancePmproProfileInformation();
+			enhanceCheckoutAutoRenewFieldset();
 			enhancePmproDonationFieldset();
 			bindToggleableMembershipDiscounts();
+			bindFamilySelectionShortcut();
+			relabelTShirtSizeOptions();
 			syncMagazineAddonSummary();
 			syncPmproStateDropdown();
 			replacePmproLoggedInAccountUsername();
@@ -2289,9 +3442,13 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		}
 
 		window.addEventListener('load', syncPmproUsernameFromEmail);
+		window.addEventListener('load', bindEmailAvailabilityCheck);
 		window.addEventListener('load', enhancePmproProfileInformation);
+		window.addEventListener('load', enhanceCheckoutAutoRenewFieldset);
 		window.addEventListener('load', enhancePmproDonationFieldset);
 		window.addEventListener('load', bindToggleableMembershipDiscounts);
+		window.addEventListener('load', bindFamilySelectionShortcut);
+		window.addEventListener('load', relabelTShirtSizeOptions);
 		window.addEventListener('load', syncMagazineAddonSummary);
 		window.addEventListener('load', syncPmproStateDropdown);
 		window.addEventListener('load', replacePmproLoggedInAccountUsername);

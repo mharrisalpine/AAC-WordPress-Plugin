@@ -1,6 +1,6 @@
 /**
  * Display membership tiles for signup / renewal.
- * Legacy stored id `Lifetime` still maps to Advocate for backward compatibility.
+ * Legacy stored ids `Lifetime` and `Partner Family` map to current visible levels.
  */
 export const MEMBERSHIP_TIER_OPTIONS = [
   {
@@ -43,29 +43,14 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     publicSelectable: true,
     manualOnly: false,
     blurb: 'Enhanced rescue & medical benefit levels.',
-    priceCents: 9500,
+    priceCents: 10000,
     benefits: [
-      '$50,000 in rescue coverage',
+      '$7,500 in rescue coverage',
       '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Supporter',
-      'Documentation and support for rescue benefit claims',
       'Eligible for AAC grants and awards (where applicable)',
-      'Member pricing on AAC publications and resources',
-    ],
-  },
-  {
-    id: 'Partner Family',
-    label: 'Partner Family',
-    pmproLevelId: 6,
-    publicSelectable: false,
-    manualOnly: false,
-    blurb: 'Partner-level membership configured for families and household add-ons.',
-    benefits: [
-      '$50,000 in rescue coverage',
-      '$5,000 in medical coverage',
-      'Partner-level benefits with family add-ons',
-      'Optional additional adult and dependent seats',
-      'Managed through the Partner checkout flow',
     ],
   },
   {
@@ -74,15 +59,15 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     pmproLevelId: 4,
     publicSelectable: true,
     manualOnly: false,
-    blurb: 'Highest published annual-tier benefit limits.',
-    priceCents: 15000,
+    blurb: 'Highest published annual membership-level benefit limits.',
+    priceCents: 25000,
     benefits: [
-      '$100,000 in rescue coverage',
-      '$10,000 in medical coverage',
+      '$300,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Partner',
-      'Higher published ceilings for rescue and medical benefits',
       'Priority consideration for select AAC programs',
-      'Full mid-tier benefits package for active climbers',
     ],
   },
   {
@@ -91,12 +76,14 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     pmproLevelId: 5,
     publicSelectable: true,
     manualOnly: false,
-    blurb: 'Highest tier of annual member support.',
+    blurb: 'Highest level of annual member support.',
     priceCents: 50000,
     benefits: [
       'Annual Advocate membership',
-      '$100,000 in rescue coverage',
-      '$10,000 in medical coverage',
+      '$300,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Leader',
       'Expanded support for the AAC mission and climbing community',
       'Recognition as an Advocate-level member',
@@ -108,11 +95,13 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     pmproLevelId: null,
     publicSelectable: false,
     manualOnly: true,
-    blurb: 'Manual donor tier for members who have contributed $1,500 within a single year.',
+    blurb: 'Manual donor level for members who have contributed $1,500 within a single year.',
     benefits: [
-      'Manual donor recognition tier',
-      '$100,000 in rescue coverage',
-      '$10,000 in medical coverage',
+      'Manual donor recognition level',
+      '$300,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Advocate',
       'Reserved for members added manually by AAC staff',
       'Not available through public checkout or self-service upgrades',
@@ -138,6 +127,16 @@ export const PHONE_TYPE_OPTIONS = [
 
 export const TSHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
 
+const MEMBERSHIP_ACCESS_RANK = {
+  Free: 0,
+  Supporter: 1,
+  Partner: 2,
+  Leader: 3,
+  Advocate: 4,
+  GRF: 5,
+  Lifetime: 5,
+};
+
 /** Map legacy stored tier ids to a canonical option id. */
 export function normalizeTierId(raw) {
   if (!raw || typeof raw !== 'string') {
@@ -145,6 +144,9 @@ export function normalizeTierId(raw) {
   }
   if (raw === 'Lifetime') {
     return 'Advocate';
+  }
+  if (raw === 'Partner Family') {
+    return 'Partner';
   }
   return MEMBERSHIP_TIER_OPTIONS.some((t) => t.id === raw) ? raw : 'Partner';
 }
@@ -161,6 +163,9 @@ export function getTierDisplayLabel(id, fallback = 'Free') {
 
   if (id === 'Lifetime') {
     return 'Advocate';
+  }
+  if (id === 'Partner Family') {
+    return 'Partner';
   }
 
   const exactMatch = MEMBERSHIP_TIER_OPTIONS.find((tier) => tier.id === id);
@@ -181,4 +186,13 @@ export function isManualOnlyMembershipTierId(id) {
 
 export function isOneTimeMembershipTierId(id) {
   return false;
+}
+
+export function getMembershipAccessRank(id) {
+  const normalized = normalizeTierId(id);
+  return MEMBERSHIP_ACCESS_RANK[normalized] ?? 0;
+}
+
+export function isPartnerOrAboveMembershipTierId(id) {
+  return getMembershipAccessRank(id) >= MEMBERSHIP_ACCESS_RANK.Partner;
 }

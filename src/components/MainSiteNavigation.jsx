@@ -1,13 +1,13 @@
 import React from 'react';
-import { ChevronDown } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { AAC_MAIN_NAV, mainSiteHref, resolveNavChildHref } from '@/lib/mainWebsiteNav';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
 const desktopLinkBase =
-  'group inline-flex items-center gap-1 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/84 transition-colors hover:text-[#f8c235]';
+  'group inline-flex items-center gap-2 py-3 text-[0.84rem] font-semibold uppercase tracking-[0.22em] text-white/84 transition-colors hover:text-[#f8c235]';
 const dropdownPanel =
-  'rounded-[1.75rem] border border-white/12 bg-[#0b0908]/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/8 backdrop-blur';
+  'rounded-none border border-white/12 bg-[#0b0908]/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/8 backdrop-blur';
 const dropdownLink =
   'block rounded-2xl px-4 py-3 text-sm font-medium text-[#f4efe7] transition-colors hover:bg-white/8 hover:text-[#f8c235]';
 
@@ -31,7 +31,7 @@ export function MainSiteNavigation({ className }) {
 
   return (
     <nav className={cn('flex items-center', className)} aria-label="American Alpine Club website">
-      <ul className="hidden flex-wrap items-center gap-7 xl:flex">
+      <ul className="hidden w-full flex-wrap items-center justify-end gap-7 xl:flex">
         {navSections.map((section) => {
           if (section.type === 'link') {
             return (
@@ -56,10 +56,7 @@ export function MainSiteNavigation({ className }) {
                   {section.label}
                   <span className="absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-[#f8c235] transition-transform duration-200 group-hover:scale-x-100 group-focus-within:scale-x-100" />
                 </span>
-                <ChevronDown
-                  className="h-4 w-4 opacity-80 transition-transform group-hover:rotate-180 group-focus-within:rotate-180"
-                  aria-hidden
-                />
+                <Plus className="h-4.5 w-4.5 text-[#f8c235] opacity-100" aria-hidden />
               </a>
               <div
                 className={cn(
@@ -112,12 +109,12 @@ export function MainSiteNavigation({ className }) {
           }
           return (
             <div key={section.label} className="relative">
-              <details className="group overflow-hidden rounded-[1.2rem] border border-white/10 bg-white/[0.03]">
+              <details className="group overflow-hidden rounded-none border border-white/10 bg-white/[0.03]">
                 <summary
-                  className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold uppercase tracking-[0.16em] text-white/88 marker:hidden [&::-webkit-details-marker]:hidden"
+                className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[0.95rem] font-semibold uppercase tracking-[0.16em] text-white/88 marker:hidden [&::-webkit-details-marker]:hidden hover:text-[#f8c235]"
                 >
                   <span>{section.label}</span>
-                  <ChevronDown className="h-4 w-4 opacity-80 transition-transform group-open:rotate-180" aria-hidden />
+                  <Plus className="h-5 w-5 text-[#f8c235] opacity-100" aria-hidden />
                 </summary>
                 <ul className="space-y-1 border-t border-white/8 px-2 py-2">
                   <li>

@@ -85,7 +85,7 @@ const MembershipManagementPage = () => {
             </div>
             <h1 className="text-4xl font-bold text-black">Manage Membership</h1>
             <p className="text-black/75 mt-3 max-w-3xl mx-auto">
-              Compare AAC membership tiers, see key benefits, and move to the plan that best matches your climbing season.
+              Compare AAC membership levels, see key benefits, and move to the plan that best matches your climbing season.
             </p>
             <p className="text-sm text-black/60 mt-2">
               {hasManagedMembershipUrls
@@ -115,7 +115,7 @@ const MembershipManagementPage = () => {
                   }`}
                 >
                   <div className="mb-6">
-                    <p className="text-xs uppercase tracking-[0.25em] text-[#a07f21] mb-2">Membership Tier</p>
+                    <p className="text-xs uppercase tracking-[0.25em] text-[#a07f21] mb-2">Membership Level</p>
                     <h2 className="text-2xl font-bold text-black">{tier}</h2>
                     <div className="mt-3 text-3xl font-bold text-black">
                       {MEMBERSHIP_PLAN_PRICES[tier] === 0 ? 'Free' : formatDollars(MEMBERSHIP_PLAN_PRICES[tier])}

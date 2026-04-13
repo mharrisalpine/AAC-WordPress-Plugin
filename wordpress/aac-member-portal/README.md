@@ -63,4 +63,5 @@ Full install and hosting instructions:
 
 - `docs/wordpress-hosting.md`
 - `docs/codebase-reference.md`
+- `docs/change-management.md`
 - `docs/family-membership.md`

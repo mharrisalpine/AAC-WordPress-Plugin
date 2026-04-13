@@ -137,3 +137,34 @@ export const getMemberTransactions = () =>
     () => apiRequest('/transactions'),
     () => fakeAuthDb.getMemberTransactions()
   );
+
+export const validateInviteCode = (code) =>
+  withOptionalFakeBackend(
+    () => apiRequest(`/invite-code?code=${encodeURIComponent(code)}`),
+    () => fakeAuthDb.validateInviteCode(code)
+  );
+
+export async function redeemInviteCode(payload) {
+  const data = await withOptionalFakeBackend(
+    () => apiRequest('/redeem-invite', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    () => fakeAuthDb.redeemInviteCode(payload)
+  );
+
+  setAuthToken(data.token || null);
+  setRestNonce(data.restNonce || null);
+  return data;
+}
+
+export const scheduleLinkedAccountRemoval = (slotId) =>
+  withOptionalFakeBackend(
+    () => apiRequest('/linked-accounts/remove', {
+      method: 'POST',
+      body: JSON.stringify({ slot_id: slotId }),
+    }),
+    async () => {
+      throw new Error('Linked account renewal removal is not available in the demo mode.');
+    }
+  );

@@ -22,6 +22,8 @@
 
 html, body, #root {
   min-height: 100%;
+  width: 100%;
+  max-width: 100%;
 }
 
 body {
@@ -33,6 +35,7 @@ body {
   letter-spacing: 0.02em;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -66,6 +69,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .topo-lines {
+  width: 100%;
+  max-width: 100%;
   background-color: #fffbf4;
   background-image:
     radial-gradient(circle at 15% 10%, rgba(248, 194, 53, 0.16), transparent 24%),
@@ -75,6 +80,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .member-app-surface {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background-color: #f6f3ed;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(246, 241, 232, 0.74)),
@@ -152,4 +160,8 @@ h1, h2, h3, h4, h5, h6 {
   background:
     linear-gradient(135deg, transparent 0 46%, rgba(255, 251, 244, 1) 46% 54%, transparent 54% 100%);
   opacity: 0.9;
+}
+
+[data-aac-button="true"] {
+  border-radius: 0 !important;
 }

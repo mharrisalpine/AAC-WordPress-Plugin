@@ -62,6 +62,10 @@ const getDefaultProfile = ({ email, firstName, lastName }) => ({
     country: 'US',
     size: 'M',
     publication_pref: 'Digital',
+    aaj_pref: 'Digital',
+    anac_pref: 'Digital',
+    acj_pref: 'Digital',
+    guidebook_pref: 'Digital',
     auto_renew: false,
     payment_method: '',
   }),
@@ -81,6 +85,13 @@ const getDefaultProfile = ({ email, firstName, lastName }) => ({
     levels: {},
   },
   grant_applications: [],
+  connected_accounts: [],
+  family_membership: {
+    mode: '',
+    additional_adult: false,
+    dependent_count: 0,
+  },
+  linked_parent_account: null,
 });
 
 const mergeProfile = (currentProfile, updates) => {
@@ -110,6 +121,13 @@ const mergeProfile = (currentProfile, updates) => {
     grant_applications: Array.isArray(updates?.grant_applications)
       ? updates.grant_applications
       : (currentProfile?.grant_applications || []),
+    connected_accounts: Array.isArray(updates?.connected_accounts)
+      ? updates.connected_accounts
+      : (currentProfile?.connected_accounts || []),
+    family_membership: updates?.family_membership
+      ? { ...(currentProfile?.family_membership || {}), ...updates.family_membership }
+      : (currentProfile?.family_membership || { mode: '', additional_adult: false, dependent_count: 0 }),
+    linked_parent_account: updates?.linked_parent_account ?? currentProfile?.linked_parent_account ?? null,
   };
 
   if (!merged.account_info.email && currentProfile?.account_info?.email) {
@@ -294,6 +312,99 @@ export const fakeAuthDb = {
   async getMemberTransactions() {
     return {
       transactions: [],
+      fakeBackend: true,
+    };
+  },
+
+  async validateInviteCode(code) {
+    const normalizedCode = String(code || '').trim().toUpperCase();
+    if (!normalizedCode) {
+      throw new Error('Enter a valid invite code.');
+    }
+
+    return {
+      success: true,
+      invite: {
+        code: normalizedCode,
+        label: 'Dependent 1',
+        type: 'dependent',
+        status: 'pending',
+        price: 45,
+        parent_name: 'AAC Parent Member',
+      },
+      fakeBackend: true,
+    };
+  },
+
+  async redeemInviteCode(payload = {}) {
+    const normalizedEmail = normalizeEmail(payload.email);
+    const inviteCode = String(payload.invite_code || '').trim().toUpperCase();
+    const firstName = payload.first_name || '';
+    const lastName = payload.last_name || '';
+    const users = getUsers();
+    const session = getSession();
+    let record = null;
+
+    if (session?.userId) {
+      record = users.find((entry) => entry.id === session.userId) || null;
+    }
+
+    if (!record) {
+      if (!normalizedEmail || !payload.password) {
+        throw new Error('Enter your email and password to redeem this invite.');
+      }
+
+      record = users.find((entry) => entry.email === normalizedEmail) || null;
+
+      if (record) {
+        if (record.password !== payload.password) {
+          throw new Error('Incorrect password. Please try again.');
+        }
+      } else {
+        record = {
+          id: makeId('member'),
+          email: normalizedEmail,
+          password: payload.password,
+          profile: getDefaultProfile({
+            email: normalizedEmail,
+            firstName,
+            lastName,
+          }),
+          createdAt: new Date().toISOString(),
+        };
+        users.push(record);
+        saveUsers(users);
+      }
+    }
+
+    record.profile = mergeProfile(record.profile, {
+      linked_parent_account: {
+        parent_user_id: 1,
+        parent_name: 'AAC Parent Member',
+        parent_email: 'parent@example.com',
+        invite_code: inviteCode,
+        type: 'dependent',
+        label: 'Dependent 1',
+        status: 'connected',
+      },
+    });
+
+    const nextUsers = users.map((entry) => (entry.id === record.id ? record : entry));
+    saveUsers(nextUsers);
+    saveSession({ userId: record.id });
+
+    return {
+      success: true,
+      invite: {
+        code: inviteCode,
+        label: 'Dependent 1',
+        type: 'dependent',
+        status: 'connected',
+        price: 45,
+        parent_name: 'AAC Parent Member',
+      },
+      linked_parent_account: record.profile.linked_parent_account,
+      ...buildUserPayload(record),
       fakeBackend: true,
     };
   },

@@ -145,9 +145,15 @@ const getLetterBlocks = (profile) => {
   const dateLabel = accountInfo.auto_renew ? 'Renewal Date' : 'Expiration Date';
   const membershipDate = accountInfo.auto_renew
     ? profileInfo.renewal_date
-    : (profileInfo.expiration_date || profileInfo.renewal_date);
+    : profileInfo.expiration_date;
   const rescueAmount = formatMoney(benefitsInfo.rescue_amount);
   const medicalAmount = formatMoney(benefitsInfo.medical_amount);
+  const mortalRemainsAmount = formatMoney(benefitsInfo.mortal_remains_amount);
+  const hasRescueBenefits =
+    Number(benefitsInfo.rescue_amount || 0) > 0 ||
+    Number(benefitsInfo.medical_amount || 0) > 0 ||
+    Number(benefitsInfo.mortal_remains_amount || 0) > 0;
+  const hasReimbursementProcess = Boolean(benefitsInfo.rescue_reimbursement_process);
 
   const line = (segments, fontSize = BODY_FONT_SIZE) => ({
     type: 'line',
@@ -171,16 +177,27 @@ const getLetterBlocks = (profile) => {
       { text: memberName, bold: true },
       { text: ' is a member of The American Alpine Club.' },
     ]),
-    line([
-      { text: membershipLevel, bold: true },
-      { text: ' level members are entitled to ' },
-      { text: rescueAmount, bold: true },
-      { text: ' in rescue services, ' },
-      { text: medicalAmount, bold: true },
-      { text: ' in medical expense coverage, and $15,000 in mortal remains transportation coverage from Redpoint Travel Protection through the expiration of their membership.' },
-    ]),
+    ...(hasRescueBenefits
+      ? [line([
+          { text: membershipLevel, bold: true },
+          { text: ' level members are entitled to ' },
+          { text: rescueAmount, bold: true },
+          { text: ' in rescue services, ' },
+          { text: medicalAmount, bold: true },
+          { text: ' in medical expense coverage, and ' },
+          { text: mortalRemainsAmount, bold: true },
+          { text: ' in mortal remains transportation coverage from Redpoint Travel Protection through the expiration of their membership.' },
+        ])]
+      : [line([
+          { text: membershipLevel, bold: true },
+          { text: ' level members are not entitled to Redpoint rescue, medical expense, or mortal remains transportation coverage.' },
+        ])]),
     { type: 'spacer', height: 4 },
-    line([{ text: 'Proof of service through Redpoint Travel Protection can be verified with this letter for the above-mentioned membership level.' }]),
+    line([{
+      text: hasReimbursementProcess
+        ? 'Proof of service through Redpoint Travel Protection can be verified with this letter for the above-mentioned membership level.'
+        : 'This membership level does not include the Redpoint rescue reimbursement process.'
+    }]),
     { type: 'spacer', height: 4 },
     line([{ text: 'In case of rescue contact Redpoint Travel Protection: +01-628-251-1510' }]),
     { type: 'spacer', height: 4 },

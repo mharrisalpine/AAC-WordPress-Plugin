@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { LogOut, Menu, Search, ShoppingCart } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { LogOut, Menu, Search, ShoppingCart, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/hooks/useCart';
 import { Link, useLocation } from 'react-router-dom';
@@ -11,7 +11,7 @@ const LIGHT_LOGO_URL = 'https://americanalpine.wpenginepowered.com/wp-content/up
 const ACTION_H = 'h-11 min-h-[2.75rem]';
 
 const utilityLinkBase =
-  'inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-white/80 transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]';
+  'inline-flex items-center gap-2 rounded-none border border-white/10 bg-white/[0.03] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-white/80 transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]';
 
 const UtilityLinks = ({ className }) => {
   const items = [
@@ -38,52 +38,67 @@ const UtilityLinks = ({ className }) => {
   );
 };
 
-const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLogout, showLogin, className }) => (
-  <div className={className}>
-    {showCart ? (
-      <button
-        type="button"
-        onClick={onCartClick}
-        className={`relative inline-flex ${ACTION_H} w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]`}
-        aria-label="Shopping cart"
-      >
-        <ShoppingCart className="h-6 w-6" />
-        {cartItemCount > 0 ? (
-          <span className="absolute -right-1 -top-0 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#f8c235] px-1 text-xs font-bold text-black">
-            {cartItemCount}
-          </span>
-        ) : null}
-      </button>
-    ) : null}
+const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLogout, showLogin, showJoin, className, compact = false }) => {
+  const actionHeight = compact ? 'h-10 min-h-[2.5rem]' : ACTION_H;
+  const actionPadding = compact ? 'px-3.5 text-[0.72rem] tracking-[0.12em]' : 'px-5 text-sm tracking-[0.14em]';
+  const iconButtonSize = compact ? 'h-10 w-10' : `${ACTION_H} w-11`;
 
-    <Link
-      to="/donate"
-      className={`inline-flex ${ACTION_H} items-center justify-center rounded-full bg-[#8f1515] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#6b1010]`}
-    >
-      Donate
-    </Link>
+  return (
+    <div className={className}>
+      {showCart ? (
+        <button
+          type="button"
+          onClick={onCartClick}
+          className={`relative inline-flex ${iconButtonSize} items-center justify-center rounded-none border border-white/10 bg-white/[0.03] text-white transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]`}
+          aria-label="Shopping cart"
+        >
+          <ShoppingCart className={compact ? 'h-5 w-5' : 'h-6 w-6'} />
+          {cartItemCount > 0 ? (
+            <span className="absolute -right-1 -top-0 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#f8c235] px-1 text-xs font-bold text-black">
+              {cartItemCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
 
-    {showLogin ? (
+      {showJoin ? (
+        <Link
+          to="/join"
+          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black transition-colors hover:bg-[#e1ae14]`}
+        >
+          Join
+        </Link>
+      ) : null}
+
       <Link
-        to="/login"
-        className={`inline-flex ${ACTION_H} items-center justify-center rounded-full border border-[#f8c235] bg-[#f8c235] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-black transition-colors hover:bg-[#e1ae14]`}
+        to="/donate"
+        className={`inline-flex ${actionHeight} items-center justify-center rounded-none bg-[#8f1515] ${actionPadding} font-semibold uppercase text-white transition-colors hover:bg-[#6b1010]`}
       >
-        Login
+        Donate
       </Link>
-    ) : null}
 
-    {showLogout ? (
-      <Button
-        type="button"
-        onClick={onLogout}
-        className={`${ACTION_H} rounded-full border border-[#f8c235] bg-[#f8c235] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-black hover:bg-[#e1ae14]`}
-      >
-        <LogOut className="mr-1.5 hidden h-4 w-4 sm:inline" />
-        Log Out
-      </Button>
-    ) : null}
-  </div>
-);
+      {showLogin ? (
+        <Link
+          to="/login"
+          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black transition-colors hover:bg-[#e1ae14]`}
+        >
+          Login
+        </Link>
+      ) : null}
+
+      {showLogout ? (
+        <Button
+          type="button"
+          onClick={onLogout}
+          className={`${actionHeight} rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black hover:bg-[#e1ae14]`}
+        >
+          <LogOut className="mr-1.5 hidden h-4 w-4 sm:inline" />
+          Log Out
+        </Button>
+      ) : null}
+    </div>
+  );
+};
 
 /**
  * @param {object} props
@@ -94,6 +109,7 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
   const { cartItems } = useCart();
   const location = useLocation();
   const headerRef = useRef(null);
+  const [mobileSiteNavOpen, setMobileSiteNavOpen] = useState(false);
   const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const isLoginRoute = location.pathname === '/login';
 
@@ -126,6 +142,10 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
     };
   }, [variant, location.pathname]);
 
+  useEffect(() => {
+    setMobileSiteNavOpen(false);
+  }, [location.pathname, variant]);
+
   return (
     <header
       ref={headerRef}
@@ -142,13 +162,13 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
                   variant="ghost"
                   size="icon"
                   onClick={onOpenPortalMenu}
-                  className="shrink-0 rounded-full border border-white/10 bg-white/[0.03] text-white hover:bg-white/10 hover:text-white md:hidden"
+                  className="shrink-0 rounded-none border border-white/10 bg-white/[0.03] text-white hover:bg-white/10 hover:text-white md:hidden"
                   aria-label="Open member portal menu"
                 >
                   <Menu className="h-6 w-6" />
                 </Button>
               ) : null}
-              <Link to="/" className="flex shrink-0 items-center">
+              <Link to="/home" className="flex shrink-0 items-center">
                 <img
                   alt="American Alpine Club Logo"
                   className="h-10 w-auto sm:h-11"
@@ -157,20 +177,37 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
               </Link>
             </div>
 
-            <HeaderActions
-              showCart={showCart && !isPublic}
-              cartItemCount={cartItemCount}
-              onCartClick={onCartClick}
-              onLogout={onLogout}
-              showLogout={!isPublic}
-              showLogin={isPublic && !isLoginRoute}
-              className="flex items-center gap-2"
-            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileSiteNavOpen((current) => !current)}
+              className="shrink-0 rounded-none border border-white/10 bg-white/[0.03] text-white hover:bg-white/10 hover:text-white"
+              aria-label={mobileSiteNavOpen ? 'Close site navigation' : 'Open site navigation'}
+              aria-expanded={mobileSiteNavOpen}
+            >
+              {mobileSiteNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
           </div>
 
-          <UtilityLinks className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-3" />
+          <HeaderActions
+            showCart={showCart && !isPublic}
+            cartItemCount={cartItemCount}
+            onCartClick={onCartClick}
+            onLogout={onLogout}
+            showLogout={!isPublic}
+            showLogin={isPublic && !isLoginRoute}
+            showJoin={isPublic && isLoginRoute}
+            className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3"
+            compact
+          />
 
-          <MainSiteNavigation className="min-w-0" />
+          {mobileSiteNavOpen ? (
+            <div className="space-y-3 border-t border-white/10 pt-3">
+              <UtilityLinks className="flex flex-wrap items-center gap-2" />
+              <MainSiteNavigation className="min-w-0" />
+            </div>
+          ) : null}
         </div>
 
         <div className="hidden xl:flex xl:flex-col xl:gap-3">
@@ -184,19 +221,20 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
               onLogout={onLogout}
               showLogout={!isPublic}
               showLogin={isPublic && !isLoginRoute}
+              showJoin={isPublic && isLoginRoute}
               className="flex shrink-0 items-center gap-2"
             />
           </div>
 
-          <div className="relative flex items-center justify-center pb-1">
-            <Link to="/" className="absolute left-0 flex items-center">
+          <div className="relative flex items-center justify-end pb-1">
+            <Link to="/home" className="absolute left-0 flex items-center">
               <img
                 alt="American Alpine Club Logo"
                 className="h-14 w-auto"
                 src={LIGHT_LOGO_URL}
               />
             </Link>
-            <MainSiteNavigation className="min-w-0 justify-center" />
+            <MainSiteNavigation className="min-w-0 justify-end" />
           </div>
         </div>
       </div>

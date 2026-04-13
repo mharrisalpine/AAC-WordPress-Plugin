@@ -477,7 +477,7 @@ const FakePaymentPage = () => {
               </div>
               {intent.metadata?.targetTier && (
                 <div className="flex justify-between gap-4">
-                  <span>Tier</span>
+                  <span>Membership Level</span>
                   <span className="text-stone-900">{intent.metadata.targetTier}</span>
                 </div>
               )}

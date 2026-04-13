@@ -44,7 +44,7 @@ export const AAC_MAIN_NAV = [
     path: '/membership',
     children: [
       { label: 'Benefits', path: '/benefits' },
-      { label: 'Join', href: '/#membership-form' },
+      { label: 'Join', href: '/join' },
       { label: 'Renew', href: 'https://membership.americanalpineclub.org/renew', external: true },
     ],
   },

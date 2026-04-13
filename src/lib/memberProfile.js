@@ -14,6 +14,21 @@ export const normalizeMembershipDiscountType = (value) => {
   return value === 'student' || value === 'military' ? value : '';
 };
 
+export const TSHIRT_SIZE_OPTIONS = ['none', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+
+export const formatTShirtSizeLabel = (value, fallback = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (normalized === 'none' || normalized === 'No T-shirt') {
+    return 'No T-shirt';
+  }
+
+  return normalized.startsWith('Unisex ') ? normalized : `Unisex ${normalized}`;
+};
+
 export const normalizeMagazineSubscriptions = (value) => {
   if (!Array.isArray(value)) {
     return [];
@@ -32,6 +47,7 @@ export const formatMagazineSubscriptions = (value, fallback = 'None selected') =
 
 export const normalizeAccountInfo = (accountInfo = {}) => {
   const normalized = { ...accountInfo };
+  const legacyPublicationPref = normalizePrintDigitalPreference(normalized.publication_pref);
   normalized.first_name = normalized.first_name || '';
   normalized.last_name = normalized.last_name || '';
   normalized.name = getFullName(normalized);
@@ -41,7 +57,10 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.state = normalized.state || '';
   normalized.zip = normalized.zip || '';
   normalized.country = normalized.country || '';
-  normalized.publication_pref = normalizePrintDigitalPreference(normalized.publication_pref);
+  normalized.publication_pref = legacyPublicationPref;
+  normalized.aaj_pref = normalizePrintDigitalPreference(normalized.aaj_pref, legacyPublicationPref);
+  normalized.anac_pref = normalizePrintDigitalPreference(normalized.anac_pref, legacyPublicationPref);
+  normalized.acj_pref = normalizePrintDigitalPreference(normalized.acj_pref, legacyPublicationPref);
   normalized.guidebook_pref = normalizePrintDigitalPreference(normalized.guidebook_pref);
   normalized.magazine_subscriptions = normalizeMagazineSubscriptions(normalized.magazine_subscriptions);
   normalized.membership_discount_type = normalizeMembershipDiscountType(normalized.membership_discount_type);

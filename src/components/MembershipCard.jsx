@@ -38,8 +38,8 @@ const MembershipCard = ({ profile }) => {
   const isManualOnlyTier = isManualOnlyMembershipTierId(profileInfo?.tier);
   const canManageMembership = isMemberActive && Boolean(profileInfo?.tier);
   const membershipTierLabel = getTierDisplayLabel(profileInfo?.tier, 'Free');
-  const membershipDateLabel = accountInfo.auto_renew ? 'RENEWS ON' : 'EXPIRES ON';
-  const membershipDateValue = profileInfo?.renewal_date || profileInfo?.expiration_date;
+  const joinedDateValue = profileInfo?.joined_date;
+  const memberSinceLabel = joinedDateValue ? new Date(joinedDateValue).toLocaleDateString() : 'N/A';
 
   const handleJoinRenew = () => {
     const type = status === 'Active' ? 'renew' : 'join';
@@ -62,34 +62,44 @@ const MembershipCard = ({ profile }) => {
   return (
     <div className="w-full max-w-3xl mx-auto">
       <motion.div
-        className="w-full card-gradient rounded-[28px] border border-stone-200/80 p-6 md:p-8"
+        className="relative w-full overflow-hidden rounded-[28px] border border-[#f8c235]/25 bg-[radial-gradient(circle_at_top_left,rgba(248,194,53,0.14),transparent_34%),linear-gradient(145deg,#050505_0%,#101010_55%,#17130f_100%)] p-6 text-white shadow-[0_28px_80px_rgba(3,0,0,0.28)] md:p-8"
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
       >
-        <div className="space-y-6">
-          <div className="relative flex items-start justify-between gap-4 pr-24 sm:pr-28">
-            <div className="flex items-start gap-4">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.14]"
+          style={{
+            backgroundImage:
+              'linear-gradient(120deg, rgba(255,255,255,0.22) 0, rgba(255,255,255,0) 18%, rgba(255,255,255,0) 82%, rgba(248,194,53,0.18) 100%), repeating-linear-gradient(0deg, transparent 0, transparent 26px, rgba(255,255,255,0.035) 27px), repeating-linear-gradient(90deg, transparent 0, transparent 26px, rgba(255,255,255,0.03) 27px)',
+          }}
+        />
+
+        <div className="relative space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+            <div className="flex min-w-0 items-start gap-4">
               {accountInfo.photo_url ? (
                 <img
                   src={accountInfo.photo_url}
                   alt={getFullName(accountInfo)}
-                  className="w-20 h-20 shrink-0 rounded-full border-2 border-[#B71C1C] object-cover"
+                  className="h-24 w-24 shrink-0 rounded-full border-2 border-[#f8c235] object-cover"
                 />
               ) : (
                 <div
-                  className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-[#B71C1C]/50 bg-stone-100"
+                  className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-[#f8c235]/55 bg-white/10"
                   aria-hidden
                 >
-                  <User className="h-9 w-9 text-stone-400" strokeWidth={1.5} />
+                  <User className="h-10 w-10 text-white/70" strokeWidth={1.5} />
                 </div>
               )}
-              <div>
-                <h2 className="text-xl md:text-2xl font-bold text-stone-900">{getFullName(accountInfo)}</h2>
+              <div className="min-w-0">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-[#f8c235]">American Alpine Club</p>
+                <h2 className="mt-2 text-xl font-bold text-white md:text-2xl">{getFullName(accountInfo)}</h2>
                 <span
                   className={cn(
-                    'mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold',
-                    isMemberActive ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700',
+                    'mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold',
+                    isMemberActive ? 'bg-emerald-500/18 text-emerald-200' : 'bg-red-500/18 text-red-200',
                   )}
                 >
                   <span
@@ -102,64 +112,83 @@ const MembershipCard = ({ profile }) => {
                 </span>
               </div>
             </div>
-            {discountBadge ? (
-              <div className="absolute right-0 top-0 flex shrink-0 flex-col items-center rounded-2xl border border-stone-200 bg-white px-3 py-2 text-center shadow-sm">
-                {DiscountBadgeIcon ? <DiscountBadgeIcon className="h-5 w-5 text-[#8f1515]" strokeWidth={2.1} /> : null}
-                <span className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-700">
-                  {discountBadge.label}
-                </span>
-              </div>
-            ) : null}
-          </div>
 
-          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-stone-500" />
-              <div>
-                <p className="text-stone-500 text-xs">MEMBER ID</p>
-                <p className="text-stone-900 font-semibold">{profileInfo?.member_id || 'N/A'}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-stone-500" />
-              <div>
-                <p className="text-stone-500 text-xs">TIER</p>
-                <p className="text-stone-900 font-semibold">{membershipTierLabel}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-stone-500" />
-              <div>
-                <p className="text-stone-500 text-xs">{membershipDateLabel}</p>
-                <p className="text-stone-900 font-semibold">
-                  {membershipDateValue ? new Date(membershipDateValue).toLocaleDateString() : 'N/A'}
+            <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+              {discountBadge ? (
+                <div className="flex w-fit flex-col items-center rounded-2xl border border-white/14 bg-white/8 px-3 py-2 text-center shadow-sm backdrop-blur-sm sm:self-end">
+                  {DiscountBadgeIcon ? <DiscountBadgeIcon className="h-5 w-5 text-[#f8c235]" strokeWidth={2.1} /> : null}
+                  <span className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-white/84">
+                    {discountBadge.label}
+                  </span>
+                </div>
+              ) : null}
+
+              <div className="rounded-[22px] border border-white/12 bg-white px-3 py-3 shadow-[0_16px_36px_rgba(0,0,0,0.18)]">
+                <div
+                  className="h-[86px] w-[86px] rounded-[14px] border border-stone-300 bg-white"
+                  aria-label="Placeholder membership QR code"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    backgroundImage: `
+                      linear-gradient(90deg, #0a0a0a 10%, transparent 10%, transparent 20%, #0a0a0a 20%, #0a0a0a 30%, transparent 30%, transparent 40%, #0a0a0a 40%, #0a0a0a 50%, transparent 50%, transparent 60%, #0a0a0a 60%, #0a0a0a 70%, transparent 70%, transparent 80%, #0a0a0a 80%, #0a0a0a 90%, transparent 90%),
+                      linear-gradient(#0a0a0a 10%, transparent 10%, transparent 20%, #0a0a0a 20%, #0a0a0a 30%, transparent 30%, transparent 40%, #0a0a0a 40%, #0a0a0a 50%, transparent 50%, transparent 60%, #0a0a0a 60%, #0a0a0a 70%, transparent 70%, transparent 80%, #0a0a0a 80%, #0a0a0a 90%, transparent 90%)
+                    `,
+                    backgroundSize: '18px 18px, 18px 18px',
+                    backgroundPosition: '0 0, 0 0',
+                  }}
+                />
+                <p className="mt-2 text-center text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                  Scan Placeholder
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 space-y-2">
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-[20px] border border-white/10 bg-white/6 px-4 py-3">
+              <User className="h-4 w-4 text-[#f8c235]" />
+              <div>
+                <p className="text-xs text-white/55">MEMBER ID</p>
+                <p className="font-semibold text-white">{profileInfo?.member_id || 'N/A'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-[20px] border border-white/10 bg-white/6 px-4 py-3">
+              <Sparkles className="h-4 w-4 text-[#f8c235]" />
+              <div>
+                <p className="text-xs text-white/55">MEMBERSHIP LEVEL</p>
+                <p className="font-semibold text-white">{membershipTierLabel}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-[20px] border border-white/10 bg-white/6 px-4 py-3">
+              <Calendar className="h-4 w-4 text-[#f8c235]" />
+              <div>
+                <p className="text-xs text-white/55">MEMBER SINCE</p>
+                <p className="font-semibold text-white">{memberSinceLabel}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
             {status !== 'Active' && !isManualOnlyTier && (
-              <Button onClick={handleJoinRenew} className="w-full bg-[#b71c1c] text-white hover:bg-[#8f1515]">
+              <Button onClick={handleJoinRenew} className="min-h-[3.25rem] w-full rounded-full bg-[#b71c1c] text-white hover:bg-[#8f1515]">
                 {profileInfo?.tier
                   ? `Renew ${getTierById(profileInfo.tier).label} • ${formatDollars(createMembershipPaymentIntent({ type: 'renew', currentTier: profileInfo?.tier, targetTier: profileInfo?.tier }).amount)}`
                   : `Join Membership • ${formatDollars(createMembershipPaymentIntent({ type: 'join', targetTier: 'Partner' }).amount)}`}
               </Button>
             )}
             {canManageMembership && (
-              <Button onClick={handleManageMembership} variant="secondary" className="w-full text-black hover:bg-[#a07f21]">
-                Manage Membership
+              <Button onClick={handleManageMembership} className="min-h-[3.25rem] w-full rounded-full bg-[#b71c1c] text-white hover:bg-[#8f1515]">
+                Renew Membership
               </Button>
             )}
+            <Button onClick={handleDonate} className="flex min-h-[3.25rem] w-full items-center gap-2 rounded-full bg-[#b71c1c] text-white hover:bg-[#8f1515]">
+              <Heart size={16} /> Donate
+            </Button>
             <Button
               onClick={handleDownloadConfirmationLetter}
-              variant="outline"
-              className="flex w-full items-center gap-2 border-stone-300 text-stone-900 hover:bg-stone-100"
+              className="flex min-h-[3.25rem] w-full items-center gap-2 rounded-full bg-[#b71c1c] text-white hover:bg-[#8f1515]"
             >
               <FileDown size={16} /> Download Membership Confirmation Letter
-            </Button>
-            <Button onClick={handleDonate} variant="outline" className="flex w-full items-center gap-2 border-[#c8a43a] text-[#6b5310] hover:bg-[#c8a43a] hover:text-black">
-              <Heart size={16} /> Donate
             </Button>
           </div>
         </div>

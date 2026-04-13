@@ -12,10 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getMemberTransactions } from '@/lib/memberApi';
 import { getMembershipBenefits, formatDollars } from '@/lib/fakePaymentFlows';
-import { formatMagazineSubscriptions, getFullName, normalizeAccountInfo } from '@/lib/memberProfile';
-import { getMembershipStatus, isMembershipActive } from '@/lib/membershipStatus';
+import { getFullName, normalizeAccountInfo, TSHIRT_SIZE_OPTIONS, formatTShirtSizeLabel } from '@/lib/memberProfile';
 import { getPortalUiSettings } from '@/lib/portalSettings';
-import { cn } from '@/lib/utils';
 import {
   listMemberTransactions,
   subscribeMemberTransactions,
@@ -102,6 +100,7 @@ const AccountTab = ({ profile }) => {
       })
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [localTransactions, remoteTransactions]);
+  const recentTransactions = React.useMemo(() => transactions.slice(0, 2), [transactions]);
 
   useEffect(() => {
     if (profile && profile.account_info) {
@@ -180,13 +179,11 @@ const AccountTab = ({ profile }) => {
     });
   };
 
-  const membershipStatus = getMembershipStatus(profile?.profile_info);
-  const membershipActive = isMembershipActive(profile?.profile_info);
   const portalContent = getPortalUiSettings().content;
 
   const transactionGroups = ['Membership', 'Donation', 'Merchandise', 'Events', 'Lodging'].map((kind) => ({
     kind,
-    entries: transactions.filter((transaction) => transaction.kind === kind),
+    entries: recentTransactions.filter((transaction) => transaction.kind === kind),
   }));
 
   if (!accountData) return <div className="text-black text-center pt-10">Loading account details...</div>;
@@ -204,37 +201,6 @@ const AccountTab = ({ profile }) => {
           </h2>
 
           <div className="max-w-2xl mx-auto space-y-6">
-            <div className="card-gradient rounded-2xl border border-stone-200 p-6">
-              <h3 className="text-xl font-bold text-black mb-4">Account status</h3>
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                  <span className="text-black font-medium">Member portal</span>
-                  <span className="text-emerald-800 font-semibold">Active</span>
-                </div>
-                <div
-                  className={cn(
-                    'flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-3',
-                    membershipActive
-                      ? 'border-emerald-200 bg-emerald-50'
-                      : 'border-amber-200 bg-amber-50/90',
-                  )}
-                >
-                  <span className="text-black font-medium">Membership</span>
-                  <span
-                    className={cn(
-                      'font-semibold',
-                      membershipActive ? 'text-emerald-800' : 'text-amber-900',
-                    )}
-                  >
-                    {membershipActive ? 'Active' : membershipStatus}
-                  </span>
-                </div>
-                <p className="text-sm text-black/60">
-                  Your portal login is active. Membership status reflects your current AAC membership record.
-                </p>
-              </div>
-            </div>
-
             {/* Profile Photo */}
             <div className="card-gradient rounded-2xl p-6 border border-stone-200">
               <h3 className="text-xl font-bold text-black mb-4">Profile Photo</h3>
@@ -274,6 +240,26 @@ const AccountTab = ({ profile }) => {
             <div className="card-gradient rounded-2xl p-6 border border-stone-200">
               <h3 className="text-xl font-bold text-black mb-4">Personal Information</h3>
               <div className="space-y-4">
+                <div>
+                  <Label htmlFor="first_name" className="text-black">First Name</Label>
+                  <Input
+                    id="first_name"
+                    value={accountData.first_name || ''}
+                    onChange={(e) => setAccountData({ ...accountData, first_name: e.target.value })}
+                    className="bg-white border-[#d9d9d9] text-black mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="last_name" className="text-black">Last Name</Label>
+                  <Input
+                    id="last_name"
+                    value={accountData.last_name || ''}
+                    onChange={(e) => setAccountData({ ...accountData, last_name: e.target.value })}
+                    className="bg-white border-[#d9d9d9] text-black mt-1"
+                  />
+                </div>
+
                 <div>
                   <Label htmlFor="email" className="text-black">Email</Label>
                   <Input
@@ -341,18 +327,25 @@ const AccountTab = ({ profile }) => {
                   <Label htmlFor="size" className="text-black">T-Shirt Size</Label>
                   <select
                     id="size"
-                    value={accountData.size || 'M'}
+                    value={accountData.size || 'none'}
                     onChange={(e) => setAccountData({ ...accountData, size: e.target.value })}
                     className="w-full bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2 mt-1"
                   >
-                    <option value="XS">XS</option>
-                    <option value="S">S</option>
-                    <option value="M">M</option>
-                    <option value="L">L</option>
-                    <option value="XL">XL</option>
-                    <option value="XXL">XXL</option>
+                    {TSHIRT_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {formatTShirtSizeLabel(size)}
+                      </option>
+                    ))}
                   </select>
                 </div>
+
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="h-12 w-full rounded-full bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
               </div>
             </div>
 
@@ -362,12 +355,12 @@ const AccountTab = ({ profile }) => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
                   <div>
-                    <p className="text-white font-medium">Publication Format</p>
-                    <p className="text-[#999999] text-sm">Choose how you receive AAC publications</p>
+                    <p className="text-white font-medium">American Alpine Journal</p>
+                    <p className="text-[#999999] text-sm">Choose how you receive this annual publication</p>
                   </div>
                   <select
-                    value={accountData.publication_pref || 'Digital'}
-                    onChange={(e) => setAccountData({ ...accountData, publication_pref: e.target.value })}
+                    value={accountData.aaj_pref || accountData.publication_pref || 'Digital'}
+                    onChange={(e) => setAccountData({ ...accountData, aaj_pref: e.target.value, publication_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
                     <option value="Print">Print</option>
@@ -377,7 +370,37 @@ const AccountTab = ({ profile }) => {
 
                 <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
                   <div>
-                    <p className="text-white font-medium">Guide Preference</p>
+                    <p className="text-white font-medium">Accidents in North American Climbing</p>
+                    <p className="text-[#999999] text-sm">Choose how you receive this annual publication</p>
+                  </div>
+                  <select
+                    value={accountData.anac_pref || 'Digital'}
+                    onChange={(e) => setAccountData({ ...accountData, anac_pref: e.target.value })}
+                    className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
+                  >
+                    <option value="Print">Print</option>
+                    <option value="Digital">Digital</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
+                  <div>
+                    <p className="text-white font-medium">American Climbing Journal</p>
+                    <p className="text-[#999999] text-sm">Choose how you receive this journal</p>
+                  </div>
+                  <select
+                    value={accountData.acj_pref || 'Digital'}
+                    onChange={(e) => setAccountData({ ...accountData, acj_pref: e.target.value })}
+                    className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
+                  >
+                    <option value="Print">Print</option>
+                    <option value="Digital">Digital</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
+                  <div>
+                    <p className="text-white font-medium">Guidebook to Membership</p>
                     <p className="text-[#999999] text-sm">Choose how you receive AAC guide content</p>
                   </div>
                   <select
@@ -388,16 +411,6 @@ const AccountTab = ({ profile }) => {
                     <option value="Print">Print</option>
                     <option value="Digital">Digital</option>
                   </select>
-                </div>
-
-                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
-                  <div>
-                    <p className="text-white font-medium">Magazine Subscriptions</p>
-                    <p className="text-[#999999] text-sm">Managed during membership checkout and stored on your member record</p>
-                  </div>
-                  <span className="text-right text-sm font-medium text-white">
-                    {formatMagazineSubscriptions(accountData.magazine_subscriptions)}
-                  </span>
                 </div>
 
               </div>
@@ -467,14 +480,6 @@ const AccountTab = ({ profile }) => {
 
             {/* Action Buttons */}
             <div className="space-y-3">
-              <Button
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full bg-[#b71c1c] hover:bg-[#8f1515] text-white h-12 text-lg"
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-
               {!hasManagedMembershipUrls ? (
                 <Button
                   onClick={handleRenew}

@@ -1,4 +1,4 @@
-import React, { createContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import {
   changeMemberPassword,
@@ -14,6 +14,7 @@ export const AuthContext = createContext(undefined);
 
 export const AuthProvider = ({ children }) => {
   const { toast } = useToast();
+  const authRequestRef = useRef(0);
 
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -27,13 +28,29 @@ export const AuthProvider = ({ children }) => {
     setProfile(data?.profile ?? null);
   }, []);
 
+  const beginAuthRequest = useCallback(() => {
+    authRequestRef.current += 1;
+    return authRequestRef.current;
+  }, []);
+
+  const isLatestAuthRequest = useCallback((requestId) => authRequestRef.current === requestId, []);
+
   const refreshProfile = useCallback(async () => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       const data = await getCurrentMember();
+      if (!isLatestAuthRequest(requestId)) {
+        return { data: null, error: null };
+      }
+
       applyAuthState(data);
       return { data, error: null };
     } catch (error) {
+      if (!isLatestAuthRequest(requestId)) {
+        return { data: null, error: null };
+      }
+
       const isLoggedOutState =
         error.status === 401 ||
         (error.status === 403 && error?.payload?.code === 'rest_cookie_invalid_nonce');
@@ -51,18 +68,25 @@ export const AuthProvider = ({ children }) => {
       });
       return { data: null, error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [applyAuthState, toast]);
+  }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   useEffect(() => {
     refreshProfile();
   }, [refreshProfile]);
 
   const signUp = useCallback(async (email, password, options) => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       const data = await registerMember(email, password, options);
+      if (!isLatestAuthRequest(requestId)) {
+        return { user: null, error: null };
+      }
+
       applyAuthState(data);
       toast({
         title: 'Welcome!',
@@ -79,17 +103,24 @@ export const AuthProvider = ({ children }) => {
       });
       return { user: null, error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [applyAuthState, toast]);
+  }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   /**
    * Register, then PATCH profile before swapping to the main app (avoids Login unmounting mid-flow).
    */
   const signUpWithProfile = useCallback(async (email, password, registerOpts, { account_info, profile_info }) => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       const data = await registerMember(email, password, registerOpts);
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       applyAuthState(data);
 
       const baseAcc = data?.profile?.account_info || {};
@@ -117,35 +148,57 @@ export const AuthProvider = ({ children }) => {
       });
       return { error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [applyAuthState, toast]);
+  }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   const signIn = useCallback(async (email, password) => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       const data = await loginMember(email, password);
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       applyAuthState(data);
       return { error: null };
     } catch (error) {
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       toast({
         variant: 'destructive',
         title: 'Sign in Failed',
-        description: error.message || 'Something went wrong',
+        description: error.message || 'Incorrect password. Please try again.',
       });
       return { error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [applyAuthState, toast]);
+  }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   const signOut = useCallback(async () => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       await logoutMember();
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       applyAuthState(null);
       return { error: null };
     } catch (error) {
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       const isAlreadyLoggedOut =
         error?.status === 401 ||
         (error?.status === 403 && error?.payload?.code === 'rest_cookie_invalid_nonce');
@@ -162,9 +215,11 @@ export const AuthProvider = ({ children }) => {
       });
       return { error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [applyAuthState, toast]);
+  }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   const updateProfile = useCallback(async (updates) => {
     if (!user) {
@@ -187,15 +242,24 @@ export const AuthProvider = ({ children }) => {
   }, [refreshProfile, toast, user]);
 
   const resetPassword = useCallback(async (email) => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       await requestPasswordReset(email);
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       toast({
         title: 'Check your email',
         description: 'A password reset link has been sent to your email address.',
       });
       return { error: null };
     } catch (error) {
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       toast({
         variant: 'destructive',
         title: 'Password Reset Failed',
@@ -203,14 +267,21 @@ export const AuthProvider = ({ children }) => {
       });
       return { error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [toast]);
+  }, [beginAuthRequest, isLatestAuthRequest, toast]);
 
   const changePassword = useCallback(async (currentPassword, newPassword, confirmPassword) => {
+    const requestId = beginAuthRequest();
     setLoading(true);
     try {
       const data = await changeMemberPassword(currentPassword, newPassword, confirmPassword);
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       if (data?.user || data?.profile) {
         applyAuthState({
           user: data?.user ?? user,
@@ -226,6 +297,10 @@ export const AuthProvider = ({ children }) => {
       });
       return { error: null };
     } catch (error) {
+      if (!isLatestAuthRequest(requestId)) {
+        return { error: null };
+      }
+
       toast({
         variant: 'destructive',
         title: 'Password Update Failed',
@@ -233,9 +308,11 @@ export const AuthProvider = ({ children }) => {
       });
       return { error };
     } finally {
-      setLoading(false);
+      if (isLatestAuthRequest(requestId)) {
+        setLoading(false);
+      }
     }
-  }, [applyAuthState, profile, refreshProfile, session, toast, user]);
+  }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, profile, refreshProfile, session, toast, user]);
 
   const value = useMemo(() => ({
     user,

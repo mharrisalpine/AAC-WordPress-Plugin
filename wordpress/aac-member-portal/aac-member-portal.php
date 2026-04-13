@@ -18,6 +18,7 @@ define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-pmpro.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-api.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-admin.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-database.php';
 
 final class AAC_Member_Portal_Null_WP_Fusion_User {
 	public function push_user_meta(...$args) {
@@ -39,8 +40,13 @@ final class AAC_Member_Portal_Plugin {
 	private $is_rendering_managed_fullscreen = false;
 
 	public function __construct() {
+		// The plugin bootstraps three major concerns:
+		// 1. the REST/API layer used by the React app
+		// 2. the admin/settings UI used by staff
+		// 3. the mirrored member database used for reporting/admin review
 		new AAC_Member_Portal_API();
 		new AAC_Member_Portal_Admin();
+		new AAC_Member_Portal_Member_Database();
 
 		add_shortcode(self::SHORTCODE, [$this, 'render_shortcode']);
 		add_action('plugins_loaded', [$this, 'maybe_disable_broken_wp_fusion_pmpro_hooks'], 100);
@@ -52,6 +58,7 @@ final class AAC_Member_Portal_Plugin {
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_portal_for_shortcode'], 15);
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_shell_styles'], 15);
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_frontend_admin_bar_hiding_style'], 99);
+		add_action('send_headers', [$this, 'maybe_send_nocache_headers'], 0);
 		add_action('template_redirect', [$this, 'maybe_disable_frontend_admin_bar'], 0);
 		add_action('template_redirect', [$this, 'maybe_render_managed_fullscreen_template'], 0);
 		add_action('template_redirect', [$this, 'maybe_redirect_frontend_login_to_portal'], 1);
@@ -126,6 +133,17 @@ final class AAC_Member_Portal_Plugin {
 		if ($asset_files['style']) {
 			wp_enqueue_style(self::STYLE_HANDLE);
 		}
+	}
+
+	public function maybe_send_nocache_headers() {
+		if (!$this->get_shortcode_post() && !$this->get_pmpro_shell_post() && !$this->get_public_shell_post()) {
+			return;
+		}
+
+		nocache_headers();
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		header('Pragma: no-cache');
+		header('Expires: Wed, 11 Jan 1984 05:00:00 GMT');
 	}
 
 	public function maybe_use_fullscreen_template($template) {
@@ -321,6 +339,16 @@ final class AAC_Member_Portal_Plugin {
 	}
 
 	public function filter_pmpro_required_user_fields($required_fields) {
+		if (!is_array($required_fields)) {
+			return $required_fields;
+		}
+
+		foreach ($required_fields as $index => $field_name) {
+			if ($field_name === 't_shirt' || $field_name === 'T-Shirt Size') {
+				unset($required_fields[$index]);
+			}
+		}
+
 		return $required_fields;
 	}
 
@@ -407,13 +435,12 @@ final class AAC_Member_Portal_Plugin {
 		}
 
 		$requested_level_id = $this->get_requested_level_id();
-		if (!$this->is_partner_family_checkout_level($requested_level_id)) {
+		$partner_family_level_id = $this->get_partner_family_level_id();
+		if (!$partner_family_level_id || $requested_level_id !== $partner_family_level_id) {
 			return;
 		}
 
-		$target_level_id = $this->should_apply_family_membership_request()
-			? $this->get_partner_family_level_id()
-			: $this->get_partner_level_id();
+		$target_level_id = $this->get_partner_level_id();
 
 		if (!$target_level_id) {
 			return;
@@ -426,15 +453,23 @@ final class AAC_Member_Portal_Plugin {
 
 	public function render_pmpro_membership_discounts() {
 		$discount_options = $this->get_membership_discount_catalog();
-		if (empty($discount_options)) {
+		$current_user_id = get_current_user_id();
+		$family_config = $this->get_effective_partner_family_config($current_user_id);
+		if (empty($discount_options) && $family_config['mode'] !== 'family') {
+			return;
+		}
+
+		$checkout_level = $this->get_level_at_checkout();
+		$supports_discount_tiers = $this->supports_discount_tiers($checkout_level);
+		$supports_family_plan = $this->supports_family_plan_tiers($checkout_level);
+		if (!$supports_discount_tiers && !$supports_family_plan) {
 			return;
 		}
 
 		$selected_discount = $this->has_membership_discount_request()
 			? $this->get_requested_membership_discount_type()
 			: '';
-		$checkout_level = $this->get_level_at_checkout();
-		$base_level_total = max(0, $this->get_level_recurring_total($checkout_level));
+		$base_level_total = max(0, $this->get_level_checkout_initial_total($checkout_level));
 		?>
 		<div
 			id="pmpro_form_fieldset-membership-discounts"
@@ -454,17 +489,17 @@ final class AAC_Member_Portal_Plugin {
 						<div class="aac-membership-discounts__picker" role="group" aria-label="<?php esc_attr_e('Membership discount selection', 'aac-member-portal'); ?>">
 							<div class="aac-membership-discounts__grid">
 								<?php foreach ($discount_options as $slug => $discount) : ?>
-									<div class="pmpro_form_field pmpro_form_field-radio aac-membership-discounts__field">
+									<div class="pmpro_form_field pmpro_form_field-checkbox aac-membership-discounts__field">
 										<label class="pmpro_form_label pmpro_form_label-inline aac-membership-discounts__label" for="<?php echo esc_attr('aac_membership_discount_' . $slug); ?>">
 											<input
 												id="<?php echo esc_attr('aac_membership_discount_' . $slug); ?>"
 												class="aac-membership-discounts__input"
-												type="radio"
+												type="checkbox"
 												name="aac_membership_discount"
 												value="<?php echo esc_attr($slug); ?>"
 												data-aac-membership-discount-rate="<?php echo esc_attr(number_format((float) $discount['rate'], 2, '.', '')); ?>"
 												data-aac-membership-discount-label="<?php echo esc_attr($discount['label']); ?>"
-												data-aac-toggleable-radio="true"
+												data-aac-toggleable-choice="true"
 												<?php checked($selected_discount, $slug); ?>
 											/>
 											<span class="aac-membership-discounts__card">
@@ -484,6 +519,34 @@ final class AAC_Member_Portal_Plugin {
 										</label>
 									</div>
 								<?php endforeach; ?>
+								<?php if ($supports_family_plan) : ?>
+									<div class="pmpro_form_field pmpro_form_field-checkbox aac-membership-discounts__field">
+										<label class="pmpro_form_label pmpro_form_label-inline aac-membership-discounts__label" for="aac_partner_family_shortcut">
+											<input
+												id="aac_partner_family_shortcut"
+												class="aac-membership-discounts__input"
+												type="checkbox"
+												value="family"
+												data-aac-family-shortcut="true"
+												<?php checked($family_config['mode'], 'family'); ?>
+											/>
+											<span class="aac-membership-discounts__card">
+												<span class="aac-membership-discounts__icon" aria-hidden="true">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+												</span>
+												<span class="aac-membership-discounts__body">
+													<span class="aac-membership-discounts__copy">
+														<strong><?php esc_html_e('Family Option', 'aac-member-portal'); ?></strong>
+														<span><?php esc_html_e('Add one additional adult and up to three dependents to this membership.', 'aac-member-portal'); ?></span>
+													</span>
+													<span class="aac-membership-discounts__footer">
+														<span class="aac-membership-discounts__price"><?php esc_html_e('Family plan pricing', 'aac-member-portal'); ?></span>
+													</span>
+												</span>
+											</span>
+										</label>
+									</div>
+								<?php endif; ?>
 							</div>
 						</div>
 					</div>
@@ -501,7 +564,7 @@ final class AAC_Member_Portal_Plugin {
 
 		$current_user_id = get_current_user_id();
 		$family_config = $this->get_effective_partner_family_config($current_user_id);
-		$base_level_total = max(0, $this->get_level_recurring_total($checkout_level));
+		$base_level_total = max(0, $this->get_level_checkout_initial_total($checkout_level));
 		$pricing = $this->get_partner_family_pricing($base_level_total);
 		?>
 		<div
@@ -514,36 +577,15 @@ final class AAC_Member_Portal_Plugin {
 			<div class="pmpro_card">
 				<div class="pmpro_card_content">
 					<legend class="pmpro_form_legend">
-						<h2 class="pmpro_form_heading pmpro_font-large"><?php esc_html_e('Partner Family Membership', 'aac-member-portal'); ?></h2>
+						<h2 class="pmpro_form_heading pmpro_font-large"><?php esc_html_e('Family Membership Options', 'aac-member-portal'); ?></h2>
 					</legend>
 					<div class="pmpro_form_fields">
 						<input type="hidden" name="aac_partner_family_present" value="1" />
+						<input type="hidden" id="aac_partner_family_mode" name="aac_partner_family_mode" value="<?php echo esc_attr($family_config['mode']); ?>" />
 						<p class="aac-partner-family__intro">
-							<?php esc_html_e('Partner memberships can be expanded into a family plan with one discounted adult and up to three dependents.', 'aac-member-portal'); ?>
+							<?php esc_html_e('Use the Family option above to activate these family plan add-ons for this membership.', 'aac-member-portal'); ?>
 						</p>
-						<div class="aac-partner-family__mode" role="radiogroup" aria-label="<?php esc_attr_e('Partner family selection', 'aac-member-portal'); ?>">
-							<label class="aac-partner-family__mode-option" for="aac_partner_family_mode_none">
-								<input
-									id="aac_partner_family_mode_none"
-									type="radio"
-									name="aac_partner_family_mode"
-									value=""
-									<?php checked($family_config['mode'], ''); ?>
-								/>
-								<span><?php esc_html_e('Individual membership', 'aac-member-portal'); ?></span>
-							</label>
-							<label class="aac-partner-family__mode-option" for="aac_partner_family_mode_family">
-								<input
-									id="aac_partner_family_mode_family"
-									type="radio"
-									name="aac_partner_family_mode"
-									value="family"
-									<?php checked($family_config['mode'], 'family'); ?>
-								/>
-								<span><?php esc_html_e('Family membership', 'aac-member-portal'); ?></span>
-							</label>
-						</div>
-						<div class="aac-partner-family__details" data-aac-partner-family-details>
+						<div class="aac-partner-family__details" data-aac-partner-family-details <?php if ($family_config['mode'] !== 'family') : ?>hidden style="display:none;"<?php endif; ?>>
 							<label class="aac-partner-family__card" for="aac_partner_family_additional_adult">
 								<input
 									id="aac_partner_family_additional_adult"
@@ -555,7 +597,7 @@ final class AAC_Member_Portal_Plugin {
 								<span class="aac-partner-family__card-inner">
 									<span class="aac-partner-family__card-copy">
 										<strong><?php esc_html_e('Additional adult', 'aac-member-portal'); ?></strong>
-										<span><?php esc_html_e('One adult may be added at 40% off the Partner list price.', 'aac-member-portal'); ?></span>
+										<span><?php esc_html_e('Select one additional adult for $80 per year.', 'aac-member-portal'); ?></span>
 									</span>
 									<span class="aac-partner-family__card-price">
 										<?php echo esc_html($this->format_price($pricing['additional_adult_price'])); ?>
@@ -616,7 +658,7 @@ final class AAC_Member_Portal_Plugin {
 			$this->has_magazine_addon_request() ? $request_selected_addons : []
 		);
 		$checkout_level = $this->get_level_at_checkout();
-		$base_level_total = max(0, $this->get_level_recurring_total($checkout_level) - $selected_addon_total);
+		$base_level_total = max(0, $this->get_level_checkout_initial_total($checkout_level) - $selected_addon_total);
 		?>
 		<div
 			id="pmpro_form_fieldset-magazine-addons"
@@ -690,23 +732,46 @@ final class AAC_Member_Portal_Plugin {
 			return $level;
 		}
 
-		$base_membership_total = $this->get_level_recurring_total($level);
-		$membership_discount_type = $this->get_requested_membership_discount_type();
-		$membership_discount_amount = $this->get_membership_discount_amount($base_membership_total, $membership_discount_type);
+		$base_membership_initial_total = max(0, $this->get_level_checkout_initial_total($level));
+		$base_membership_recurring_total = max(0, $this->get_level_recurring_total($level));
 		$partner_family_config = $this->get_requested_partner_family_config();
-		$partner_family_total = $this->get_partner_family_addon_total($base_membership_total, $partner_family_config);
+		$supports_discount_tiers = $this->supports_discount_tiers($level);
+		$supports_family_plan = $this->supports_family_plan_tiers($level);
+		$membership_discount_type = $supports_discount_tiers
+			? $this->get_requested_membership_discount_type()
+			: '';
+		if (!$supports_family_plan) {
+			$partner_family_config = $this->normalize_partner_family_config([]);
+		}
+		if (($partner_family_config['mode'] ?? '') === 'family') {
+			$membership_discount_type = '';
+		}
+		$membership_discount_amount_initial = $this->get_membership_discount_amount($base_membership_initial_total, $membership_discount_type);
+		$membership_discount_amount_recurring = $this->get_membership_discount_amount($base_membership_recurring_total, $membership_discount_type);
+		$partner_family_total = $this->get_partner_family_addon_total($base_membership_recurring_total, $partner_family_config);
 		$selected_addons = $this->get_requested_magazine_addons();
 		$addon_total = $this->get_magazine_addon_total($selected_addons);
-		if ($addon_total <= 0 && $membership_discount_amount <= 0 && $partner_family_total <= 0) {
+		$checkout_account_info = $this->get_checkout_account_info_from_request();
+		$international_surcharge = $this->get_international_print_surcharge_amount($checkout_account_info, isset($level->id) ? (int) $level->id : 0);
+		if ($addon_total <= 0 && $membership_discount_amount_initial <= 0 && $partner_family_total <= 0 && $international_surcharge <= 0) {
 			return $level;
 		}
 
+		$adjusted_initial_total = round(
+			max(0, $base_membership_initial_total - $membership_discount_amount_initial) + $partner_family_total + $addon_total + $international_surcharge,
+			2
+		);
+		$adjusted_recurring_total = round(
+			max(0, $base_membership_recurring_total - $membership_discount_amount_recurring) + $partner_family_total + $addon_total + $international_surcharge,
+			2
+		);
+
 		if (isset($level->initial_payment)) {
-			$level->initial_payment = round(max(0, (float) $level->initial_payment - $membership_discount_amount) + $partner_family_total + $addon_total, 2);
+			$level->initial_payment = $adjusted_initial_total;
 		}
 
 		if (isset($level->billing_amount) && (float) $level->billing_amount > 0) {
-			$level->billing_amount = round(max(0, (float) $level->billing_amount - $membership_discount_amount) + $partner_family_total + $addon_total, 2);
+			$level->billing_amount = $adjusted_recurring_total;
 		}
 
 		return $level;
@@ -736,19 +801,21 @@ final class AAC_Member_Portal_Plugin {
 			'state' => isset($_REQUEST['bstate']) ? sanitize_text_field(wp_unslash($_REQUEST['bstate'])) : ($stored_account_info['state'] ?? ''),
 			'zip' => isset($_REQUEST['bzipcode']) ? sanitize_text_field(wp_unslash($_REQUEST['bzipcode'])) : ($stored_account_info['zip'] ?? ''),
 			'country' => isset($_REQUEST['bcountry']) ? sanitize_text_field(wp_unslash($_REQUEST['bcountry'])) : ($stored_account_info['country'] ?? ''),
-			'size' => isset($_REQUEST['t_shirt']) ? sanitize_text_field(wp_unslash($_REQUEST['t_shirt'])) : ($stored_account_info['size'] ?? 'M'),
-			'publication_pref' => $this->normalize_print_digital_value(
-				isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($stored_account_info['publication_pref'] ?? 'Digital')
-			),
-			'guidebook_pref' => $this->normalize_print_digital_value(
-				isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($stored_account_info['guidebook_pref'] ?? 'Digital')
-			),
+			'size' => isset($_REQUEST['t_shirt']) ? sanitize_text_field(wp_unslash($_REQUEST['t_shirt'])) : ($stored_account_info['size'] ?? ''),
 			'photo_url' => $stored_account_info['photo_url'] ?? get_avatar_url($user_id),
 			'auto_renew' => isset($_REQUEST['autorenew_present'])
 				? !empty($_REQUEST['autorenew'])
-				: !empty($stored_account_info['auto_renew']),
+				: true,
 			'payment_method' => $stored_account_info['payment_method'] ?? '',
 		];
+
+		$next_account_info = array_merge($next_account_info, $this->get_normalized_publication_preferences([
+			'publication_pref' => isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($stored_account_info['publication_pref'] ?? 'Digital'),
+			'aaj_pref' => isset($_REQUEST['aac_aaj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref'])) : ($stored_account_info['aaj_pref'] ?? ($stored_account_info['publication_pref'] ?? 'Digital')),
+			'anac_pref' => isset($_REQUEST['aac_anac_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref'])) : ($stored_account_info['anac_pref'] ?? ($stored_account_info['publication_pref'] ?? 'Digital')),
+			'acj_pref' => isset($_REQUEST['aac_acj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref'])) : ($stored_account_info['acj_pref'] ?? ($stored_account_info['publication_pref'] ?? 'Digital')),
+			'guidebook_pref' => isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($stored_account_info['guidebook_pref'] ?? 'Digital'),
+		]));
 
 		$next_account_info['name'] = trim($next_account_info['first_name'] . ' ' . $next_account_info['last_name']);
 		if ($next_account_info['name'] === '') {
@@ -758,12 +825,23 @@ final class AAC_Member_Portal_Plugin {
 		$selected_magazine_addons = $this->has_magazine_addon_request()
 			? $this->get_requested_magazine_addons()
 			: $this->get_effective_magazine_addon_selection($user_id);
-		$membership_discount_type = $this->has_membership_discount_request()
-			? $this->get_requested_membership_discount_type()
-			: $this->get_effective_membership_discount_type($user_id);
+		$checkout_level = $this->get_level_at_checkout();
+		$checkout_level_supports_discount = $this->supports_discount_tiers($checkout_level);
+		$checkout_level_supports_family = $this->supports_family_plan_tiers($checkout_level);
 		$partner_family_config = $this->has_partner_family_request()
 			? $this->get_requested_partner_family_config()
 			: $this->get_effective_partner_family_config($user_id);
+		$membership_discount_type = $checkout_level_supports_discount
+			? ($this->has_membership_discount_request()
+				? $this->get_requested_membership_discount_type()
+				: $this->get_effective_membership_discount_type($user_id))
+			: '';
+		if (!$checkout_level_supports_family) {
+			$partner_family_config = $this->normalize_partner_family_config([]);
+		}
+		if (($partner_family_config['mode'] ?? '') === 'family') {
+			$membership_discount_type = '';
+		}
 
 		if ($this->has_magazine_addon_request()) {
 			update_user_meta($user_id, 'aac_magazine_addons', $selected_magazine_addons);
@@ -830,20 +908,23 @@ final class AAC_Member_Portal_Plugin {
 		$user = wp_get_current_user();
 		$account_info = $this->get_account_info_defaults_for_user($user instanceof WP_User && $user->exists() ? $user : null);
 
-		if (isset($_REQUEST['aac_publication_pref'])) {
-			$account_info['publication_pref'] = $this->normalize_print_digital_value(sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])));
-		}
+		$account_info = array_merge($account_info, $this->get_normalized_publication_preferences([
+			'publication_pref' => isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($account_info['publication_pref'] ?? 'Print'),
+			'aaj_pref' => isset($_REQUEST['aac_aaj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref'])) : ($account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? 'Print')),
+			'anac_pref' => isset($_REQUEST['aac_anac_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref'])) : ($account_info['anac_pref'] ?? ($account_info['publication_pref'] ?? 'Print')),
+			'acj_pref' => isset($_REQUEST['aac_acj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref'])) : ($account_info['acj_pref'] ?? ($account_info['publication_pref'] ?? 'Print')),
+			'guidebook_pref' => isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($account_info['guidebook_pref'] ?? 'Print'),
+		]));
 
-		if (isset($_REQUEST['aac_guidebook_pref'])) {
-			$account_info['guidebook_pref'] = $this->normalize_print_digital_value(sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])));
-		}
-
-		if (isset($_REQUEST['t_shirt']) && sanitize_text_field(wp_unslash($_REQUEST['t_shirt'])) !== '') {
+		if (isset($_REQUEST['t_shirt'])) {
 			$account_info['size'] = sanitize_text_field(wp_unslash($_REQUEST['t_shirt']));
 		}
 
 		return [
 			'publication_pref' => $account_info['publication_pref'],
+			'aaj_pref' => $account_info['aaj_pref'],
+			'anac_pref' => $account_info['anac_pref'],
+			'acj_pref' => $account_info['acj_pref'],
 			'guidebook_pref' => $account_info['guidebook_pref'],
 			'size' => $account_info['size'],
 		];
@@ -853,16 +934,16 @@ final class AAC_Member_Portal_Plugin {
 		return [
 			'student' => [
 				'label' => 'Student Discount',
-				'description' => 'Apply 15% off your annual membership.',
-				'badge' => '15% off membership',
-				'rate' => 0.15,
+				'description' => 'Apply 35% off your annual membership.',
+				'badge' => '35% off membership',
+				'rate' => 0.35,
 				'icon' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m2 9 10-5 10 5-10 5-10-5Z"/><path d="M6 11.5v4.5c0 .8 2.7 3 6 3s6-2.2 6-3v-4.5"/><path d="M22 9v6"/></svg>',
 			],
 			'military' => [
 				'label' => 'Military Discount',
-				'description' => 'Apply 15% off your annual membership.',
-				'badge' => '15% off membership',
-				'rate' => 0.15,
+				'description' => 'Apply 35% off your annual membership.',
+				'badge' => '35% off membership',
+				'rate' => 0.35,
 				'icon' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16"/><path d="M4 5c3-2 6 2 9 0s6 2 7 0v8c-1 2-4-2-7 0s-6-2-9 0"/></svg>',
 			],
 		];
@@ -911,11 +992,6 @@ final class AAC_Member_Portal_Plugin {
 		];
 	}
 
-	private function should_apply_family_membership_request() {
-		$config = $this->get_requested_partner_family_config();
-		return $config['mode'] === 'family';
-	}
-
 	private function get_partner_level_id() {
 		return $this->get_level_id_by_name('Partner', 3);
 	}
@@ -951,29 +1027,65 @@ final class AAC_Member_Portal_Plugin {
 		return absint(wp_unslash($_REQUEST['level']));
 	}
 
-	private function is_partner_family_checkout_level($level) {
+	private function supports_discount_tiers($level) {
 		$level_id = 0;
 		$level_name = '';
 
 		if (is_object($level)) {
 			$level_id = isset($level->id) ? (int) $level->id : 0;
-			$level_name = isset($level->name) ? (string) $level->name : '';
+			$level_name = isset($level->name) ? sanitize_text_field((string) $level->name) : '';
 		} else {
 			$level_id = (int) $level;
+			if ($level_id > 0 && function_exists('pmpro_getLevel')) {
+				$level_object = pmpro_getLevel($level_id);
+				if (is_object($level_object) && isset($level_object->name)) {
+					$level_name = sanitize_text_field((string) $level_object->name);
+				}
+			}
+		}
+
+		$normalized_name = strtolower(trim($level_name));
+		if ($normalized_name !== '') {
+			return $normalized_name === 'partner';
 		}
 
 		$partner_level_id = $this->get_partner_level_id();
-		$partner_family_level_id = $this->get_partner_family_level_id();
+		return $partner_level_id > 0 && $level_id === $partner_level_id;
+	}
 
-		return in_array($level_id, array_filter([$partner_level_id, $partner_family_level_id]), true)
-			|| in_array($level_name, ['Partner', 'Partner Family'], true);
+	private function supports_family_plan_tiers($level) {
+		$level_id = 0;
+		$level_name = '';
+
+		if (is_object($level)) {
+			$level_id = isset($level->id) ? (int) $level->id : 0;
+			$level_name = isset($level->name) ? sanitize_text_field((string) $level->name) : '';
+		} else {
+			$level_id = (int) $level;
+			if ($level_id > 0 && function_exists('pmpro_getLevel')) {
+				$level_object = pmpro_getLevel($level_id);
+				if (is_object($level_object) && isset($level_object->name)) {
+					$level_name = sanitize_text_field((string) $level_object->name);
+				}
+			}
+		}
+
+		$normalized_name = strtolower(trim($level_name));
+		if ($normalized_name !== '') {
+			return $normalized_name === 'partner';
+		}
+
+		$partner_level_id = $this->get_partner_level_id();
+		return $partner_level_id > 0 && $level_id === $partner_level_id;
+	}
+
+	private function is_partner_family_checkout_level($level) {
+		return $this->supports_family_plan_tiers($level);
 	}
 
 	private function get_partner_family_pricing($base_membership_total) {
-		$base_membership_total = max(0, (float) $base_membership_total);
-
 		return [
-			'additional_adult_price' => round($base_membership_total * 0.6, 2),
+			'additional_adult_price' => 80.0,
 			'dependent_price' => 45.0,
 		];
 	}
@@ -1004,11 +1116,6 @@ final class AAC_Member_Portal_Plugin {
 		$family_config = $this->normalize_partner_family_config($family_config);
 		update_user_meta($user_id, 'aac_partner_family_config', $family_config);
 
-		if ($family_config['mode'] !== 'family') {
-			delete_user_meta($user_id, 'aac_connected_accounts');
-			return;
-		}
-
 		$existing_slots = get_user_meta($user_id, 'aac_connected_accounts', true);
 		$existing_slots = is_array($existing_slots) ? $existing_slots : [];
 		$normalized_existing = [];
@@ -1022,49 +1129,84 @@ final class AAC_Member_Portal_Plugin {
 				'id' => sanitize_text_field($slot['id'] ?? wp_generate_uuid4()),
 				'type' => sanitize_key($slot['type'] ?? 'dependent'),
 				'label' => sanitize_text_field($slot['label'] ?? 'Family member'),
-				'status' => in_array(($slot['status'] ?? ''), ['pending', 'connected'], true) ? $slot['status'] : 'pending',
+				'status' => in_array(($slot['status'] ?? ''), ['pending', 'connected', 'removal_pending'], true) ? $slot['status'] : 'pending',
 				'invite_code' => sanitize_text_field($slot['invite_code'] ?? $this->generate_family_invite_code()),
 				'child_user_id' => absint($slot['child_user_id'] ?? 0),
 				'child_name' => sanitize_text_field($slot['child_name'] ?? ''),
 				'child_email' => sanitize_email($slot['child_email'] ?? ''),
 				'price' => round((float) ($slot['price'] ?? 0), 2),
+				'scheduled_removal_date' => sanitize_text_field($slot['scheduled_removal_date'] ?? ''),
 			];
 		}
-
-		$pricing = $this->get_partner_family_pricing($base_membership_total);
 		$next_slots = [];
+		$pricing = $this->get_partner_family_pricing($base_membership_total);
 
-		if (!empty($family_config['additional_adult'])) {
-			$next_slots[] = $this->preserve_or_create_family_slot(
-				$normalized_existing,
-				'adult',
-				'Additional adult',
-				(float) $pricing['additional_adult_price']
-			);
+		if ($family_config['mode'] === 'family') {
+			if (!empty($family_config['additional_adult'])) {
+				$next_slots[] = $this->preserve_or_create_family_slot(
+					$user_id,
+					$normalized_existing,
+					'adult',
+					'Additional adult',
+					(float) $pricing['additional_adult_price']
+				);
+			}
+
+			$dependent_count = max(0, (int) $family_config['dependent_count']);
+			for ($dependent_index = 1; $dependent_index <= $dependent_count; $dependent_index++) {
+				$next_slots[] = $this->preserve_or_create_family_slot(
+					$user_id,
+					$normalized_existing,
+					'dependent',
+					sprintf('Dependent %d', $dependent_index),
+					(float) $pricing['dependent_price']
+				);
+			}
 		}
 
-		$dependent_count = max(0, (int) $family_config['dependent_count']);
-		for ($dependent_index = 1; $dependent_index <= $dependent_count; $dependent_index++) {
-			$next_slots[] = $this->preserve_or_create_family_slot(
-				$normalized_existing,
-				'dependent',
-				sprintf('Dependent %d', $dependent_index),
-				(float) $pricing['dependent_price']
-			);
+		foreach ($normalized_existing as $slot) {
+			$scheduled_slot = $this->schedule_family_slot_for_term_end($user_id, $slot);
+			if ($scheduled_slot) {
+				$next_slots[] = $scheduled_slot;
+			}
 		}
 
-		update_user_meta($user_id, 'aac_connected_accounts', $next_slots);
+		if (empty($next_slots)) {
+			delete_user_meta($user_id, 'aac_connected_accounts');
+			return;
+		}
+
+		update_user_meta($user_id, 'aac_connected_accounts', array_values($next_slots));
 	}
 
-	private function preserve_or_create_family_slot(&$existing_slots, $type, $label, $price) {
+	private function preserve_or_create_family_slot($parent_user_id, &$existing_slots, $type, $label, $price) {
+		$preferred_slot_index = null;
+		$fallback_slot_index = null;
+
 		foreach ($existing_slots as $index => $slot) {
 			if (($slot['type'] ?? '') !== $type) {
 				continue;
 			}
 
-			unset($existing_slots[$index]);
+			if (($slot['status'] ?? '') !== 'removal_pending') {
+				$preferred_slot_index = $index;
+				break;
+			}
+
+			if ($fallback_slot_index === null) {
+				$fallback_slot_index = $index;
+			}
+		}
+
+		$target_index = $preferred_slot_index !== null ? $preferred_slot_index : $fallback_slot_index;
+		if ($target_index !== null) {
+			$slot = $existing_slots[$target_index];
+			unset($existing_slots[$target_index]);
 			$slot['label'] = $label;
 			$slot['price'] = round((float) $price, 2);
+			if (($slot['status'] ?? '') === 'removal_pending') {
+				$slot = $this->restore_scheduled_family_slot($parent_user_id, $slot);
+			}
 			return $slot;
 		}
 
@@ -1078,7 +1220,78 @@ final class AAC_Member_Portal_Plugin {
 			'child_name' => '',
 			'child_email' => '',
 			'price' => round((float) $price, 2),
+			'scheduled_removal_date' => '',
 		];
+	}
+
+	private function schedule_family_slot_for_term_end($parent_user_id, $slot) {
+		if (!is_array($slot)) {
+			return null;
+		}
+
+		$child_user_id = absint($slot['child_user_id'] ?? 0);
+		if ($child_user_id <= 0) {
+			return null;
+		}
+
+		$existing_scheduled_date = sanitize_text_field((string) ($slot['scheduled_removal_date'] ?? ''));
+		if (($slot['status'] ?? '') === 'removal_pending' && $existing_scheduled_date !== '') {
+			update_user_meta($child_user_id, 'aac_family_membership_access_until', $existing_scheduled_date);
+			update_user_meta($child_user_id, 'aac_family_membership_pending_removal', '1');
+			$slot['scheduled_removal_date'] = $existing_scheduled_date;
+			return $slot;
+		}
+
+		$term_end_date = $this->get_parent_family_term_end_date($parent_user_id);
+		if ($term_end_date === '') {
+			return null;
+		}
+
+		update_user_meta($child_user_id, 'aac_family_membership_access_until', $term_end_date);
+		update_user_meta($child_user_id, 'aac_family_membership_pending_removal', '1');
+
+		$slot['status'] = 'removal_pending';
+		$slot['scheduled_removal_date'] = $term_end_date;
+
+		return $slot;
+	}
+
+	private function restore_scheduled_family_slot($parent_user_id, $slot) {
+		if (!is_array($slot)) {
+			return $slot;
+		}
+
+		$child_user_id = absint($slot['child_user_id'] ?? 0);
+		if ($child_user_id > 0) {
+			delete_user_meta($child_user_id, 'aac_family_membership_access_until');
+			delete_user_meta($child_user_id, 'aac_family_membership_pending_removal');
+			update_user_meta($child_user_id, 'aac_linked_parent_user_id', (int) $parent_user_id);
+			update_user_meta($child_user_id, 'aac_family_account_role', 'Child');
+		}
+
+		$slot['status'] = $child_user_id > 0 ? 'connected' : 'pending';
+		$slot['scheduled_removal_date'] = '';
+		return $slot;
+	}
+
+	private function get_parent_family_term_end_date($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !class_exists('AAC_Member_Portal_PMPro') || !AAC_Member_Portal_PMPro::is_available()) {
+			return '';
+		}
+
+		$primary_membership = AAC_Member_Portal_PMPro::get_primary_membership($user_id);
+		if (!is_array($primary_membership) || empty($primary_membership)) {
+			return '';
+		}
+
+		$term_end_date = sanitize_text_field((string) ($primary_membership['renewal_date'] ?: $primary_membership['expiration_date']));
+		if ($term_end_date === '') {
+			return '';
+		}
+
+		$timestamp = strtotime($term_end_date);
+		return $timestamp ? gmdate('Y-m-d', $timestamp) : '';
 	}
 
 	private function generate_family_invite_code() {
@@ -1205,6 +1418,63 @@ final class AAC_Member_Portal_Plugin {
 		return $this->normalize_money_amount(wp_unslash($_REQUEST['donation']));
 	}
 
+	private function get_checkout_account_info_from_request($user = null) {
+		$user = $user instanceof WP_User && $user->exists() ? $user : null;
+		$account_info = $this->get_account_info_defaults_for_user($user);
+
+		$account_info['country'] = isset($_REQUEST['bcountry'])
+			? sanitize_text_field(wp_unslash($_REQUEST['bcountry']))
+			: ($account_info['country'] ?? 'US');
+
+		return array_merge($account_info, $this->get_normalized_publication_preferences([
+			'publication_pref' => isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($account_info['publication_pref'] ?? 'Digital'),
+			'aaj_pref' => isset($_REQUEST['aac_aaj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref'])) : ($account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')),
+			'anac_pref' => isset($_REQUEST['aac_anac_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref'])) : ($account_info['anac_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')),
+			'acj_pref' => isset($_REQUEST['aac_acj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref'])) : ($account_info['acj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')),
+			'guidebook_pref' => isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($account_info['guidebook_pref'] ?? 'Digital'),
+		]));
+	}
+
+	private function is_international_country($country) {
+		$normalized = strtoupper(trim((string) $country));
+		return !in_array($normalized, ['', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'], true);
+	}
+
+	private function has_print_publication_selection($account_info) {
+		if (!is_array($account_info)) {
+			return false;
+		}
+
+		$preferences = $this->get_normalized_publication_preferences($account_info);
+		foreach (['aaj_pref', 'anac_pref', 'acj_pref', 'guidebook_pref'] as $field) {
+			if (($preferences[$field] ?? 'Digital') === 'Print') {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private function should_apply_international_print_surcharge($level_id = 0) {
+		return (int) $level_id === 3;
+	}
+
+	private function get_international_print_surcharge_amount($account_info, $level_id = 0) {
+		if (!$this->should_apply_international_print_surcharge($level_id)) {
+			return 0.0;
+		}
+
+		if (!$this->is_international_country($account_info['country'] ?? 'US')) {
+			return 0.0;
+		}
+
+		if (!$this->has_print_publication_selection($account_info)) {
+			return 0.0;
+		}
+
+		return 30.0;
+	}
+
 	private function normalize_money_amount($value) {
 		$normalized = preg_replace('/[^0-9.\-]+/', '', (string) $value);
 		if (!is_string($normalized) || $normalized === '' || !is_numeric($normalized)) {
@@ -1250,16 +1520,19 @@ final class AAC_Member_Portal_Plugin {
 		$membership_id = isset($morder->membership_id) ? (int) $morder->membership_id : 0;
 		$level_name = $this->get_pmpro_level_name($membership_id);
 		$level = $membership_id > 0 && function_exists('pmpro_getLevel') ? pmpro_getLevel($membership_id) : null;
-		$base_membership_amount = max(0, $this->get_level_recurring_total($level));
+		$base_membership_amount = max(0, $this->get_level_checkout_initial_total($level));
 		$membership_discount_type = $this->has_membership_discount_request()
 			? $this->get_requested_membership_discount_type()
 			: $this->get_effective_membership_discount_type($user_id);
 		$membership_discount_catalog = $this->get_membership_discount_catalog();
-		$membership_discount_amount = $this->get_membership_discount_amount($base_membership_amount, $membership_discount_type);
 		$partner_family_config = $this->has_partner_family_request()
 			? $this->get_requested_partner_family_config()
 			: $this->get_effective_partner_family_config($user_id);
-		$partner_family_pricing = $this->get_partner_family_pricing($base_membership_amount);
+		if (($partner_family_config['mode'] ?? '') === 'family') {
+			$membership_discount_type = '';
+		}
+		$membership_discount_amount = $this->get_membership_discount_amount($base_membership_amount, $membership_discount_type);
+		$partner_family_pricing = $this->get_partner_family_pricing(max(0, $this->get_level_recurring_total($level)));
 		$partner_family_additional_adult_amount = !empty($partner_family_config['additional_adult']) ? (float) $partner_family_pricing['additional_adult_price'] : 0.0;
 		$partner_family_dependents_amount = max(0, (int) ($partner_family_config['dependent_count'] ?? 0)) * (float) $partner_family_pricing['dependent_price'];
 		$selected_addons = $this->has_magazine_addon_request()
@@ -1268,19 +1541,37 @@ final class AAC_Member_Portal_Plugin {
 		$catalog = $this->get_magazine_addon_catalog();
 		$magazine_total = $this->get_magazine_addon_total($selected_addons);
 		$donation_amount = $this->get_requested_donation_amount();
+		$account_info = $this->get_checkout_account_info_from_request($user_id > 0 ? get_user_by('id', $user_id) : null);
+		$international_surcharge = $this->get_international_print_surcharge_amount($account_info, $membership_id);
 		$items = [];
 
-		if ($base_membership_amount > 0 || (!$selected_addons && $donation_amount <= 0)) {
+		$membership_label = $this->format_membership_line_item_label($level_name);
+
+		$membership_line_amount = round(
+			max(
+				0,
+				$total_amount
+				- $partner_family_additional_adult_amount
+				- $partner_family_dependents_amount
+				- $international_surcharge
+				- $magazine_total
+				- $donation_amount
+				+ $membership_discount_amount
+			),
+			2
+		);
+
+		if ($membership_line_amount > 0 || (!$selected_addons && $donation_amount <= 0)) {
 			$items[] = [
-				'label' => $level_name !== '' ? sprintf('%s membership', $level_name) : 'Membership',
-				'amount' => $base_membership_amount > 0 ? $base_membership_amount : $total_amount,
+				'label' => $membership_label,
+				'amount' => $membership_line_amount > 0 ? $membership_line_amount : $total_amount,
 			];
 		}
 
 		if ($membership_discount_amount > 0) {
 			$items[] = [
 				'label' => !empty($membership_discount_catalog[$membership_discount_type]['label'])
-					? sprintf('%s (15%%)', $membership_discount_catalog[$membership_discount_type]['label'])
+					? sprintf('%s (35%%)', $membership_discount_catalog[$membership_discount_type]['label'])
 					: 'Membership discount',
 				'amount' => 0 - $membership_discount_amount,
 			];
@@ -1304,6 +1595,13 @@ final class AAC_Member_Portal_Plugin {
 			];
 		}
 
+		if ($international_surcharge > 0) {
+			$items[] = [
+				'label' => 'International surcharge for print copies',
+				'amount' => round($international_surcharge, 2),
+			];
+		}
+
 		foreach ($selected_addons as $slug) {
 			if (empty($catalog[$slug]['price'])) {
 				continue;
@@ -1324,7 +1622,7 @@ final class AAC_Member_Portal_Plugin {
 
 		if (empty($items) && $total_amount > 0) {
 			$items[] = [
-				'label' => $level_name !== '' ? sprintf('%s membership', $level_name) : 'Membership',
+				'label' => $membership_label,
 				'amount' => $total_amount,
 			];
 		}
@@ -1414,6 +1712,26 @@ final class AAC_Member_Portal_Plugin {
 		return $this->format_price($amount);
 	}
 
+	private function format_membership_line_item_label($level_name) {
+		$level_name = trim((string) $level_name);
+		if ($level_name === '') {
+			return 'Membership';
+		}
+
+		$normalized = preg_replace('/\s+membership(?:\s+membership)+$/i', ' Membership', $level_name);
+		$normalized = is_string($normalized) ? trim($normalized) : $level_name;
+
+		if (preg_match('/^membership$/i', $normalized)) {
+			return 'Membership';
+		}
+
+		if (preg_match('/membership$/i', $normalized)) {
+			return $normalized;
+		}
+
+		return sprintf('%s Membership', $normalized);
+	}
+
 	private function get_level_at_checkout() {
 		if (function_exists('pmpro_getLevelAtCheckout')) {
 			$level = pmpro_getLevelAtCheckout();
@@ -1431,12 +1749,59 @@ final class AAC_Member_Portal_Plugin {
 			return 0.0;
 		}
 
+		$aac_membership_total = $this->get_aac_membership_level_base_total($level);
+		if ($aac_membership_total !== null) {
+			return $aac_membership_total;
+		}
+
+		return $this->get_raw_level_recurring_total($level);
+	}
+
+	private function get_level_checkout_initial_total($level) {
+		if (!is_object($level)) {
+			return 0.0;
+		}
+
+		if (isset($level->initial_payment) && $level->initial_payment !== '') {
+			return max(0, (float) $level->initial_payment);
+		}
+
+		return $this->get_raw_level_recurring_total($level);
+	}
+
+	private function get_raw_level_recurring_total($level) {
+		if (!is_object($level)) {
+			return 0.0;
+		}
+
 		$billing_amount = isset($level->billing_amount) ? (float) $level->billing_amount : 0.0;
 		if ($billing_amount > 0) {
 			return $billing_amount;
 		}
 
 		return isset($level->initial_payment) ? (float) $level->initial_payment : 0.0;
+	}
+
+	private function get_aac_membership_level_base_total($level) {
+		if (!is_object($level)) {
+			return null;
+		}
+
+		$level_name = trim((string) ($level->name ?? ''));
+		if ($level_name === '') {
+			return null;
+		}
+
+		$mapped_totals = [
+			'Free' => 0.0,
+			'Supporter' => 45.0,
+			'Partner' => 100.0,
+			'Partner Family' => 100.0,
+			'Leader' => 250.0,
+			'Advocate' => 500.0,
+		];
+
+		return array_key_exists($level_name, $mapped_totals) ? (float) $mapped_totals[$level_name] : null;
 	}
 
 	public function maybe_disable_frontend_admin_bar() {
@@ -1761,7 +2126,7 @@ final class AAC_Member_Portal_Plugin {
 		$stored = $user_id ? get_user_meta($user_id, 'aac_account_info', true) : [];
 		$stored = is_array($stored) ? $stored : [];
 
-		return array_merge([
+		$defaults = [
 			'first_name' => $user instanceof WP_User ? $user->first_name : '',
 			'last_name' => $user instanceof WP_User ? $user->last_name : '',
 			'name' => $user instanceof WP_User ? $user->display_name : '',
@@ -1775,21 +2140,42 @@ final class AAC_Member_Portal_Plugin {
 			'state' => '',
 			'zip' => '',
 			'country' => 'US',
-			'size' => 'M',
-			'publication_pref' => 'Digital',
-			'guidebook_pref' => 'Digital',
+			'size' => 'none',
+			'publication_pref' => 'Print',
+			'aaj_pref' => 'Print',
+			'anac_pref' => 'Print',
+			'acj_pref' => 'Print',
+			'guidebook_pref' => 'Print',
 			'magazine_subscriptions' => [],
 			'membership_discount_type' => '',
 			'partner_family_mode' => '',
 			'partner_family_additional_adult' => false,
 			'partner_family_dependents' => 0,
-			'auto_renew' => false,
+			'auto_renew' => true,
 			'payment_method' => '',
-		], $stored);
+		];
+
+		$merged = array_merge($defaults, $stored);
+
+		return array_merge($merged, $this->get_normalized_publication_preferences($merged));
 	}
 
 	private function normalize_print_digital_value($value, $fallback = 'Digital') {
 		return $value === 'Print' ? 'Print' : ($value === 'Digital' ? 'Digital' : $fallback);
+	}
+
+	private function get_normalized_publication_preferences($values) {
+		$values = is_array($values) ? $values : [];
+		$legacy_publication_pref = $this->normalize_print_digital_value($values['publication_pref'] ?? 'Digital');
+		$guidebook_pref = $this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Digital');
+
+		return [
+			'publication_pref' => $legacy_publication_pref,
+			'aaj_pref' => $this->normalize_print_digital_value($values['aaj_pref'] ?? $legacy_publication_pref),
+			'anac_pref' => $this->normalize_print_digital_value($values['anac_pref'] ?? $legacy_publication_pref),
+			'acj_pref' => $this->normalize_print_digital_value($values['acj_pref'] ?? $legacy_publication_pref),
+			'guidebook_pref' => $guidebook_pref,
+		];
 	}
 
 	private function sync_reportable_member_fields($user_id, $account_info, $magazine_addons = null, $membership_discount_type = null) {
@@ -1802,8 +2188,11 @@ final class AAC_Member_Portal_Plugin {
 		update_user_meta(
 			$user_id,
 			'aac_publication_pref',
-			$this->normalize_print_digital_value($account_info['publication_pref'] ?? 'Digital')
+			$this->normalize_print_digital_value($account_info['publication_pref'] ?? ($account_info['aaj_pref'] ?? 'Digital'))
 		);
+		update_user_meta($user_id, 'aac_aaj_pref', $this->normalize_print_digital_value($account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')));
+		update_user_meta($user_id, 'aac_anac_pref', $this->normalize_print_digital_value($account_info['anac_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')));
+		update_user_meta($user_id, 'aac_acj_pref', $this->normalize_print_digital_value($account_info['acj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')));
 		update_user_meta(
 			$user_id,
 			'aac_guidebook_pref',
@@ -1837,6 +2226,30 @@ final class AAC_Member_Portal_Plugin {
 		update_user_meta($user_id, 'aac_partner_family_mode', $family_config['mode']);
 		update_user_meta($user_id, 'aac_partner_family_additional_adult', !empty($family_config['additional_adult']) ? '1' : '0');
 		update_user_meta($user_id, 'aac_partner_family_dependents', max(0, (int) ($family_config['dependent_count'] ?? 0)));
+		update_user_meta($user_id, 'aac_family_account_role', $this->get_family_account_role($user_id, $family_config));
+	}
+
+	private function get_family_account_role($user_id, $family_config = null) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return '';
+		}
+
+		if ($this->get_linked_parent_user_id($user_id) > 0) {
+			return 'Child';
+		}
+
+		$family_config = is_array($family_config) ? $family_config : $this->get_effective_partner_family_config($user_id);
+		$connected_accounts = get_user_meta($user_id, 'aac_connected_accounts', true);
+		if (($family_config['mode'] ?? '') === 'family' || (is_array($connected_accounts) && !empty($connected_accounts))) {
+			return 'Parent';
+		}
+
+		return '';
+	}
+
+	private function get_linked_parent_user_id($user_id) {
+		return absint(get_user_meta((int) $user_id, 'aac_linked_parent_user_id', true));
 	}
 
 	private function generate_unique_username_from_email($email) {
@@ -1907,6 +2320,8 @@ final class AAC_Member_Portal_Plugin {
 	}
 
 	private function get_runtime_config() {
+		// This object is injected into the frontend so the bundled React app can
+		// discover its API base, nonce, routing mode, and admin-managed UI settings.
 		return [
 			'mountId' => self::MOUNT_ID,
 			'routerMode' => 'hash',
@@ -1922,9 +2337,24 @@ final class AAC_Member_Portal_Plugin {
 	public function get_portal_ui_settings() {
 		$settings = AAC_Member_Portal_Admin::get_settings();
 		$resolved_background_url = $this->get_resolved_sidebar_background_url($settings);
+		// Convert the raw admin settings into a shape that is straightforward for
+		// the frontend to consume without additional mapping in many components.
+		$content_settings = array_merge(
+			$settings['content'],
+			[
+				'discountCards' => array_values(isset($settings['content']['discount_cards']) && is_array($settings['content']['discount_cards']) ? $settings['content']['discount_cards'] : []),
+				'rescueLevels' => array_values(isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels']) ? $settings['content']['rescue_levels'] : []),
+				'publicationViewUrls' => [
+					'aaj' => $settings['content']['publication_view_url_aaj'] ?? '',
+					'anac' => $settings['content']['publication_view_url_anac'] ?? '',
+					'acj' => $settings['content']['publication_view_url_acj'] ?? '',
+					'guidebook' => $settings['content']['publication_view_url_guidebook'] ?? '',
+				],
+			]
+		);
 
 		return [
-			'content' => $settings['content'],
+			'content' => $content_settings,
 			'design' => [
 				'sidebarBackgroundUrl' => $resolved_background_url,
 				'sidebarOverlayStart' => $settings['design']['sidebar_overlay_start'],
@@ -1933,6 +2363,17 @@ final class AAC_Member_Portal_Plugin {
 				'sidebarButtonHoverBackground' => $settings['design']['sidebar_button_hover_background'],
 				'sidebarButtonActiveBackground' => $settings['design']['sidebar_button_active_background'],
 				'sidebarAccentColor' => $settings['design']['sidebar_accent_color'],
+				'primaryActionBackground' => $settings['design']['primary_action_background'],
+				'primaryActionText' => $settings['design']['primary_action_text'],
+				'secondaryActionBackground' => $settings['design']['secondary_action_background'],
+				'secondaryActionText' => $settings['design']['secondary_action_text'],
+				'joinHeroImageUrl' => $settings['design']['join_hero_image_url'],
+				'publicationTileImages' => [
+					'aaj' => $settings['design']['publication_tile_image_aaj'],
+					'anac' => $settings['design']['publication_tile_image_anac'],
+					'acj' => $settings['design']['publication_tile_image_acj'],
+					'guidebook' => $settings['design']['publication_tile_image_guidebook'],
+				],
 			],
 			'navigation' => [
 				'topNavSections' => $this->build_top_nav_sections_for_runtime($settings),
@@ -1969,6 +2410,9 @@ final class AAC_Member_Portal_Plugin {
 		$settings = AAC_Member_Portal_Admin::get_settings();
 		$registry = $this->get_sidebar_item_registry();
 		$sections = [];
+		$billing_url = AAC_Member_Portal_PMPro::is_available() && function_exists('pmpro_url')
+			? pmpro_url('billing')
+			: home_url('/membership-account/membership-billing/');
 
 		foreach ($settings['components']['section_titles'] as $section_id => $section_title) {
 			$sections[$section_id] = [
@@ -1987,7 +2431,12 @@ final class AAC_Member_Portal_Plugin {
 				continue;
 			}
 
-			$href = untrailingslashit($portal_url) . '/#' . ltrim($registry[$item_id]['route'], '/');
+			$href = !empty($registry[$item_id]['href'])
+				? $registry[$item_id]['href']
+				: untrailingslashit($portal_url) . '/#' . ltrim($registry[$item_id]['route'], '/');
+			if ($item_id === 'manage') {
+				$href = $billing_url;
+			}
 			$sections[$section_id]['items'][] = [
 				'id' => $item_id,
 				'label' => $item_settings['label'],
@@ -2021,6 +2470,12 @@ final class AAC_Member_Portal_Plugin {
 			'sidebar_button_hover_background' => $settings['design']['sidebar_button_hover_background'],
 			'sidebar_button_active_background' => $settings['design']['sidebar_button_active_background'],
 			'sidebar_accent_color' => $settings['design']['sidebar_accent_color'],
+			'publication_tile_images' => [
+				'aaj' => $settings['design']['publication_tile_image_aaj'],
+				'anac' => $settings['design']['publication_tile_image_anac'],
+				'acj' => $settings['design']['publication_tile_image_acj'],
+				'guidebook' => $settings['design']['publication_tile_image_guidebook'],
+			],
 		];
 	}
 
@@ -2053,6 +2508,9 @@ final class AAC_Member_Portal_Plugin {
 	private function build_sidebar_sections_for_runtime($settings) {
 		$registry = $this->get_sidebar_item_registry();
 		$sections = [];
+		$billing_url = AAC_Member_Portal_PMPro::is_available() && function_exists('pmpro_url')
+			? pmpro_url('billing')
+			: home_url('/membership-account/membership-billing/');
 
 		foreach ($settings['components']['section_titles'] as $section_id => $section_title) {
 			$sections[$section_id] = [
@@ -2072,13 +2530,22 @@ final class AAC_Member_Portal_Plugin {
 				continue;
 			}
 
-			$sections[$section_id]['items'][] = [
+			$item = [
 				'id' => $item_id,
 				'label' => $item_settings['label'],
-				'to' => $registry[$item_id]['route'],
 				'icon' => $registry[$item_id]['icon'],
 				'order' => (int) $item_settings['order'],
 			];
+			if (!empty($registry[$item_id]['href'])) {
+				$item['href'] = $registry[$item_id]['href'];
+			} else {
+				$item['to'] = $registry[$item_id]['route'];
+			}
+			if ($item_id === 'manage') {
+				$item['href'] = $billing_url;
+				unset($item['to']);
+			}
+			$sections[$section_id]['items'][] = $item;
 		}
 
 		foreach ($sections as &$section) {
@@ -2111,7 +2578,7 @@ final class AAC_Member_Portal_Plugin {
 				'href' => home_url('/membership/'),
 				'children' => [
 					['label' => 'Benefits', 'href' => home_url('/benefits/')],
-					['label' => 'Join', 'href' => $portal_url . '#membership-form'],
+					['label' => 'Join', 'href' => $portal_url . '#/join'],
 					['label' => 'Renew', 'href' => 'https://membership.americanalpineclub.org/renew', 'external' => true],
 				],
 			],
@@ -2162,7 +2629,9 @@ final class AAC_Member_Portal_Plugin {
 			'member_profile' => ['icon' => 'user', 'route' => '/profile'],
 			'store' => ['icon' => 'store', 'route' => '/store'],
 			'rescue' => ['icon' => 'shield', 'route' => '/rescue'],
-			'account' => ['icon' => 'settings', 'route' => '/account'],
+			'account' => ['icon' => 'pen', 'route' => '/account'],
+			'publications' => ['icon' => 'book', 'route' => '/publications'],
+			'manage' => ['icon' => 'settings', 'href' => home_url('/membership-account/membership-billing/')],
 			'discounts' => ['icon' => 'tag', 'route' => '/discounts'],
 			'podcasts' => ['icon' => 'mic', 'route' => '/podcasts'],
 			'events' => ['icon' => 'users', 'route' => '/meetups'],
@@ -2643,4 +3112,5 @@ final class AAC_Member_Portal_Plugin {
 	}
 }
 
+register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Member_Database', 'activate']);
 $GLOBALS['aac_member_portal_plugin'] = new AAC_Member_Portal_Plugin();

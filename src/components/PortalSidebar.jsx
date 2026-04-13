@@ -1,13 +1,17 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { User, Shield, Settings, Store, Tag, Mic2, Users, Mail, ScrollText, BedDouble, X } from 'lucide-react';
+import { User, Shield, Settings, Store, Tag, Mic2, Users, Mail, ScrollText, BedDouble, PenSquare, BookOpen, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
 import { getPortalUiSettings } from '@/lib/portalSettings';
+import { isPartnerOrAboveMembershipTierId } from '@/lib/membershipTiers';
 import { cn } from '@/lib/utils';
 
 export function PortalNavLinks({ onNavigate, className }) {
   const { pathname } = useLocation();
+  const { profile } = useAuth();
   const portalSections = getPortalUiSettings().navigation.sidebarSections;
+  const canAccessPublications = isPartnerOrAboveMembershipTierId(profile?.profile_info?.tier);
   const iconRegistry = {
     user: User,
     store: Store,
@@ -19,6 +23,8 @@ export function PortalNavLinks({ onNavigate, className }) {
     mail: Mail,
     'scroll-text': ScrollText,
     bed: BedDouble,
+    pen: PenSquare,
+    book: BookOpen,
   };
 
   const isItemActive = (to, itemId) => {
@@ -31,6 +37,12 @@ export function PortalNavLinks({ onNavigate, className }) {
     if (itemId === 'account') {
       return pathname === '/account' || pathname === '/change-password';
     }
+    if (itemId === 'publications') {
+      return pathname === '/publications';
+    }
+    if (itemId === 'manage') {
+      return false;
+    }
     return pathname === to;
   };
 
@@ -40,7 +52,13 @@ export function PortalNavLinks({ onNavigate, className }) {
         <div key={section.title}>
           <p className="mb-2 px-3 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-white/85">{section.title}</p>
           <ul className="space-y-1">
-            {section.items.map((item) => {
+            {section.items.filter((item) => {
+              if (item.id === 'publications' && !canAccessPublications) {
+                return false;
+              }
+
+              return true;
+            }).map((item) => {
               const active = isItemActive(item.to, item.id);
               const Icon = iconRegistry[item.icon] || User;
               const itemClasses = cn(
@@ -86,6 +104,10 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
   const sidebarTopoUrl = design.sidebarBackgroundUrl || '/sidebar-topo-v2.svg';
 
   const sidebarSurfaceStyle = {
+    position: 'sticky',
+    top: 'var(--aac-portal-header-height)',
+    height: 'calc(100vh - var(--aac-portal-header-height))',
+    maxHeight: 'calc(100vh - var(--aac-portal-header-height))',
     backgroundColor: '#030000',
     backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, ${design.sidebarOverlayStart || '0.18'}), rgba(5, 2, 2, ${design.sidebarOverlayEnd || '0.30'})), url("${sidebarTopoUrl}")`,
     backgroundPosition: 'center center, center top',
@@ -100,11 +122,13 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
   return (
     <>
       <aside
-        className="portal-sidebar-surface hidden min-h-0 w-[18.5rem] shrink-0 self-stretch overflow-y-auto border-r border-black/8 md:flex"
+        className="portal-sidebar-surface hidden w-[18.5rem] shrink-0 self-stretch border-r border-black/8 md:flex md:flex-col"
         style={sidebarSurfaceStyle}
         aria-label="Member portal navigation"
       >
-        <PortalNavLinks className="pb-6" />
+        <div className="sticky top-0 flex min-h-full flex-1 flex-col justify-start overflow-y-auto">
+          <PortalNavLinks className="pb-6" />
+        </div>
       </aside>
 
       {mobileOpen ? (
@@ -114,7 +138,7 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
           role="presentation"
         >
           <aside
-            className="portal-sidebar-surface absolute left-0 top-0 flex h-full w-[min(100%,19rem)] flex-col overflow-y-auto border-r border-white/10 shadow-xl"
+            className="portal-sidebar-surface absolute left-0 top-0 flex h-full w-[min(100%,19rem)] flex-col border-r border-white/10 shadow-xl"
             style={sidebarSurfaceStyle}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
@@ -134,7 +158,9 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <PortalNavLinks onNavigate={onMobileClose} className="pb-6" />
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <PortalNavLinks onNavigate={onMobileClose} className="pb-6" />
+            </div>
           </aside>
         </div>
       ) : null}

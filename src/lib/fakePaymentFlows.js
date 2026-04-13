@@ -3,18 +3,17 @@ import { normalizeTierId } from '@/lib/membershipTiers';
 export const MEMBERSHIP_PLAN_PRICES = {
   Free: 0,
   Supporter: 45,
-  Partner: 95,
-  'Partner Family': 95,
-  Leader: 150,
+  Partner: 100,
+  Leader: 250,
   Advocate: 500,
   GRF: 0,
 };
 
-export const MEMBERSHIP_PLAN_ORDER = ['Free', 'Supporter', 'Partner', 'Partner Family', 'Leader', 'Advocate', 'GRF'];
+export const MEMBERSHIP_PLAN_ORDER = ['Free', 'Supporter', 'Partner', 'Leader', 'Advocate', 'GRF'];
 
 export const MEMBERSHIP_PLAN_DETAILS = {
   Free: {
-    summary: 'A portal preview tier for prospective members who want an account before choosing a paid plan.',
+    summary: 'A portal preview membership level for prospective members who want an account before choosing a paid plan.',
     bullets: [
       'Create an AAC portal account',
       'Preview your profile and account settings',
@@ -36,30 +35,22 @@ export const MEMBERSHIP_PLAN_DETAILS = {
   Partner: {
     summary: 'Adds essential rescue support and broader benefits for active climbers.',
     bullets: [
-      '$50,000 in rescue coverage',
+      '$7,500 in rescue coverage',
       '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Supporter',
-      'Rescue benefit documentation and support',
       'Eligible for AAC grants and awards (where applicable)',
-    ],
-  },
-  'Partner Family': {
-    summary: 'Partner-level benefits configured for households with connected family members.',
-    bullets: [
-      '$50,000 in rescue coverage',
-      '$5,000 in medical coverage',
-      'Partner-level benefits with family add-ons',
-      'Supports an additional adult and up to three dependents',
-      'Child-account invite codes generated for connected family members',
     ],
   },
   Leader: {
     summary: 'Built for members who want stronger protection and premium club benefits.',
     bullets: [
-      '$100,000 in rescue coverage',
-      '$10,000 in medical coverage',
+      '$300,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Partner',
-      'Higher published benefit ceilings',
       'Priority consideration for select AAC programs',
     ],
   },
@@ -67,19 +58,23 @@ export const MEMBERSHIP_PLAN_DETAILS = {
     summary: 'Built for members who want to contribute at the highest annual level.',
     bullets: [
       'Annual Advocate membership',
-      '$100,000 in rescue coverage',
-      '$10,000 in medical coverage',
+      '$300,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Leader',
       'Expanded support for the AAC mission',
       'Advocate-level member recognition',
     ],
   },
   GRF: {
-    summary: 'A manual donor tier for members who have contributed $1,500 within a single year.',
+    summary: 'A manual donor level for members who have contributed $1,500 within a single year.',
     bullets: [
-      'Manual donor recognition tier',
-      '$100,000 in rescue coverage',
-      '$10,000 in medical coverage',
+      'Manual donor recognition level',
+      '$300,000 in rescue coverage',
+      '$5,000 in medical coverage',
+      '$15,000 in mortal remains transport',
+      'Redpoint rescue reimbursement process included',
       'Everything included in Advocate',
       'Assigned by AAC staff only',
     ],
@@ -94,7 +89,6 @@ export const getNextMembershipTier = (currentTier) => {
     case 'Supporter':
       return 'Partner';
     case 'Partner':
-    case 'Partner Family':
       return 'Leader';
     case 'Leader':
       return 'Advocate';
@@ -106,13 +100,12 @@ export const getNextMembershipTier = (currentTier) => {
 export const getMembershipBenefits = (tier) => {
   const t = normalizeTierId(tier);
   const matrix = {
-    Free: { rescue_amount: 0, medical_amount: 0 },
-    Supporter: { rescue_amount: 0, medical_amount: 0 },
-    Partner: { rescue_amount: 50000, medical_amount: 5000 },
-    'Partner Family': { rescue_amount: 50000, medical_amount: 5000 },
-    Leader: { rescue_amount: 100000, medical_amount: 10000 },
-    Advocate: { rescue_amount: 100000, medical_amount: 10000 },
-    GRF: { rescue_amount: 100000, medical_amount: 10000 },
+    Free: { rescue_amount: 0, medical_amount: 0, mortal_remains_amount: 0, rescue_reimbursement_process: false },
+    Supporter: { rescue_amount: 0, medical_amount: 0, mortal_remains_amount: 0, rescue_reimbursement_process: false },
+    Partner: { rescue_amount: 7500, medical_amount: 5000, mortal_remains_amount: 15000, rescue_reimbursement_process: true },
+    Leader: { rescue_amount: 300000, medical_amount: 5000, mortal_remains_amount: 15000, rescue_reimbursement_process: true },
+    Advocate: { rescue_amount: 300000, medical_amount: 5000, mortal_remains_amount: 15000, rescue_reimbursement_process: true },
+    GRF: { rescue_amount: 300000, medical_amount: 5000, mortal_remains_amount: 15000, rescue_reimbursement_process: true },
   };
 
   return matrix[t] || matrix.Supporter;
@@ -262,8 +255,8 @@ export const createMembershipPaymentIntent = ({ type, currentTier, targetTier })
     renew: amount === 0
       ? `Renew your ${resolvedTargetTier} AAC portal membership.`
       : `Renew your ${resolvedTargetTier} membership with fake card checkout.`,
-    upgrade: `Upgrade your membership benefits to the ${resolvedTargetTier} tier.`,
-    downgrade: `Move your membership to the ${resolvedTargetTier} tier for the next term.`,
+    upgrade: `Upgrade your membership benefits to the ${resolvedTargetTier} membership level.`,
+    downgrade: `Move your membership to the ${resolvedTargetTier} membership level for the next term.`,
     manage_payment: 'Save a fake credit card for future membership charges.',
   };
 
@@ -278,8 +271,8 @@ export const createMembershipPaymentIntent = ({ type, currentTier, targetTier })
   const successMessages = {
     join: `Your ${resolvedTargetTier} membership changes were applied successfully.`,
     renew: `Your ${resolvedTargetTier} membership changes were applied successfully.`,
-    upgrade: `You are now enrolled in the ${resolvedTargetTier} membership tier.`,
-    downgrade: `Your membership was changed to the ${resolvedTargetTier} tier.`,
+    upgrade: `You are now enrolled in the ${resolvedTargetTier} membership level.`,
+    downgrade: `Your membership was changed to the ${resolvedTargetTier} membership level.`,
     manage_payment: 'Your fake card has been saved to the account.',
   };
 

@@ -235,7 +235,7 @@ export function MembershipSignupFormLayout({
         ) : null}
         <Button
           type="submit"
-          className="rounded-full bg-[#f8c235] px-6 text-black hover:bg-[#dda914] sm:min-w-[220px]"
+          className="bg-[#f8c235] px-6 text-black hover:bg-[#dda914] sm:min-w-[220px]"
           disabled={busy}
         >
           {busy ? 'Please wait…' : isSignup ? 'Create account & checkout' : 'Save & checkout'}

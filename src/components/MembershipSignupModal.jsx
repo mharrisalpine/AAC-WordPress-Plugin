@@ -28,12 +28,12 @@ export function MembershipSignupModal({ open, onOpenChange, mode }) {
       <DialogContent className="max-h-[min(90vh,900px)] w-[calc(100%-1.5rem)] max-w-2xl overflow-y-auto sm:w-full">
         <DialogHeader>
           <DialogTitle className="text-2xl">
-            {isSignup ? 'Join the AAC' : 'Verify your membership details'}
+            {isSignup ? 'Join the AAC' : 'Renew your membership'}
           </DialogTitle>
           <DialogDescription>
             {isSignup
               ? 'Choose your level, complete your profile, and optionally add a donation. You will go straight to checkout for dues and any donation (separate from the merchandise cart).'
-              : 'Your renewal is coming up within 90 days. Please confirm your information and chosen membership level. Checkout will charge membership dues only.'}
+              : 'Your membership expires within 30 days. Review your information and continue to checkout to renew before it lapses.'}
           </DialogDescription>
         </DialogHeader>
 

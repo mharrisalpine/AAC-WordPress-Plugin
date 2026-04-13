@@ -1,18 +1,24 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import { MembershipTierSelect } from '@/components/MembershipTierSelect';
 import { getPmproLevelIdForTier, getTierById, normalizeTierId } from '@/lib/membershipTiers';
 import { mainSiteHref } from '@/lib/mainWebsiteNav';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 
 const CHECKOUT_EMBED_MESSAGE = 'aac-pmpro-checkout-height';
-
+const POST_PURCHASE_LOGIN_URL = mainSiteHref('/membership/#/login?purchase_success=1');
+const JOIN_HERO_VIDEO_URL =
+  'https://player.vimeo.com/video/1166009381?h=c4c3248b38&background=1&autoplay=1&muted=1&loop=1&autopause=0&controls=0&title=0&byline=0&portrait=0';
 const buildEmbeddedCheckoutUrl = (tierId) => {
   const normalizedTier = normalizeTierId(tierId);
   const levelId = getPmproLevelIdForTier(normalizedTier);
   const query = new URLSearchParams({
     level: String(levelId),
     aac_embed: '1',
+    aac_rev: '274',
   });
 
   return mainSiteHref(`/membership-checkout/?${query.toString()}`);
@@ -21,6 +27,10 @@ const buildEmbeddedCheckoutUrl = (tierId) => {
 const MemberJoinPage = () => {
   const [selectedTierId, setSelectedTierId] = useState('Partner');
   const [embedHeight, setEmbedHeight] = useState(1440);
+  const checkoutFrameRef = useRef(null);
+  const portalUiSettings = getPortalUiSettings();
+  const portalContent = portalUiSettings.content;
+  const portalDesign = portalUiSettings.design;
 
   const selectedTier = useMemo(() => getTierById(selectedTierId), [selectedTierId]);
   const checkoutUrl = useMemo(() => buildEmbeddedCheckoutUrl(selectedTierId), [selectedTierId]);
@@ -45,101 +55,133 @@ const MemberJoinPage = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  const handleCheckoutFrameLoad = () => {
+    const frameWindow = checkoutFrameRef.current?.contentWindow;
+    if (!frameWindow) {
+      return;
+    }
+
+    try {
+      const frameUrl = new URL(frameWindow.location.href);
+      const postPurchaseUrl = new URL(POST_PURCHASE_LOGIN_URL);
+      const isConfirmationPath = frameUrl.pathname.includes('/membership-checkout/membership-confirmation');
+      const isFramedProfile =
+        frameUrl.pathname === postPurchaseUrl.pathname &&
+        (frameUrl.hash === '#/profile' || frameUrl.hash.startsWith('#/profile?'));
+
+      if (isConfirmationPath || isFramedProfile) {
+        window.location.assign(postPurchaseUrl.toString());
+      }
+    } catch (error) {
+      // Ignore cross-document timing errors and leave the iframe in place.
+    }
+  };
+
   return (
     <>
       <Helmet>
         <title>Join - American Alpine Club</title>
         <meta
           name="description"
-          content="Choose your AAC membership level and complete your application using the live PMPro checkout form."
+          content={portalContent.join_hero_description}
         />
       </Helmet>
       <div className="min-h-screen topo-lines">
-        <section className="hero-break overflow-hidden bg-[#030000] text-white">
-          <div className="mx-auto grid max-w-[1600px] gap-0 xl:grid-cols-[minmax(0,1.05fr),minmax(320px,0.95fr)]">
-            <div className="flex items-center">
-              <div className="w-full px-4 py-12 sm:px-6 sm:py-16 lg:px-10 xl:px-14 xl:py-20">
-                <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.3em] text-[#f8c235]">Membership</p>
+        <section className="hero-break relative min-h-[calc(100svh-5.5rem)] overflow-hidden bg-[#030000] text-white">
+          <div className="absolute inset-0">
+            <iframe
+              title="AAC signup hero video"
+              src={JOIN_HERO_VIDEO_URL}
+              className="pointer-events-none absolute inset-0 h-full w-full scale-[1.32] transform-gpu"
+              frameBorder="0"
+              allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,0,0,0.88)_0%,rgba(3,0,0,0.72)_38%,rgba(3,0,0,0.4)_62%,rgba(3,0,0,0.58)_100%)]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#030000]/56 via-transparent to-[#030000]/18" />
+
+          <div className="relative flex min-h-[calc(100svh-5.5rem)] items-end px-4 py-12 sm:px-6 sm:py-16 lg:px-10 xl:px-14 xl:py-20">
+            <div className="flex w-full items-end">
+              <div className="w-full max-w-5xl">
+                <motion.div
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.45 }}
+                  className="max-w-3xl bg-black/34 px-6 py-7 sm:px-8 sm:py-8"
+                >
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.3em] text-[#f8c235]">{portalContent.join_hero_kicker}</p>
                   <h1 className="mt-4 max-w-3xl text-5xl leading-[0.95] text-white sm:text-6xl lg:text-7xl xl:text-[5.75rem]">
-                    United We Climb.
+                    {portalContent.join_hero_title}
                   </h1>
-                  <p className="mt-5 max-w-2xl text-base leading-7 text-white/72 sm:text-lg">
-                    Join the American Alpine Club to support climbing advocacy, rescue coverage, community grants,
-                    publications, events, and a member experience built for the people who keep showing up for the mountains.
+                  <p className="mt-5 max-w-2xl text-base leading-7 text-white/80 sm:text-lg">
+                    {portalContent.join_hero_description}
                   </p>
 
                   <div className="mt-8 flex flex-wrap gap-3">
                     <a
-                      href="#membership-form"
-                      className="inline-flex min-h-[3rem] items-center justify-center rounded-full bg-[#f8c235] px-6 text-sm font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[#e1ae14]"
+                      href="https://americanalpine.wpenginepowered.com/learn-more/"
+                      className="inline-flex min-h-[3rem] items-center justify-center rounded-none border border-white bg-white px-6 text-sm font-semibold uppercase tracking-[0.16em] text-black transition-colors hover:border-white hover:bg-black hover:text-white"
                     >
-                      Join Now
+                      {portalContent.join_benefits_cta_label}
                     </a>
                     <a
-                      href={mainSiteHref('/benefits')}
-                      className="inline-flex min-h-[3rem] items-center justify-center rounded-full border border-white/20 px-6 text-sm font-semibold uppercase tracking-[0.16em] text-white transition-colors hover:border-white/45 hover:bg-white/8"
+                      href="https://americanalpine.wpenginepowered.com/rescue/"
+                      className="inline-flex min-h-[3rem] items-center justify-center rounded-none border border-[#8f1515] bg-[#8f1515] px-6 text-sm font-semibold uppercase tracking-[0.16em] text-white transition-colors hover:border-[#6b1010] hover:bg-[#6b1010]"
                     >
-                      Member Benefits
-                    </a>
-                    <a
-                      href={mainSiteHref('/rescue')}
-                      className="inline-flex min-h-[3rem] items-center justify-center rounded-full border border-white/20 px-6 text-sm font-semibold uppercase tracking-[0.16em] text-white transition-colors hover:border-white/45 hover:bg-white/8"
-                    >
-                      Rescue Benefits
+                      {portalContent.join_rescue_cta_label}
                     </a>
                   </div>
                 </motion.div>
               </div>
             </div>
-
-            <div className="relative min-h-[300px] overflow-hidden xl:min-h-[520px]">
-              <img
-                src="https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Fillers.jpg"
-                alt="American Alpine Club members in the mountains"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#030000]/60 via-[#030000]/15 to-transparent" />
-              <div className="absolute bottom-0 left-0 max-w-sm px-5 py-5 sm:px-6 sm:py-6">
-                <div className="rounded-[1.5rem] border border-white/14 bg-black/35 px-5 py-4 backdrop-blur-sm">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-[#f8c235]">Built for members</p>
-                  <p className="mt-2 text-sm leading-6 text-white/78">
-                    Membership checkout now uses the live AAC checkout flow directly inside the portal.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <div className="w-full bg-[#f7f1e3] px-4 py-10 sm:px-6 sm:py-14 xl:px-8 2xl:px-10">
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
-            <div className="mb-8 flex flex-col gap-3 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
+            <div className="mb-8 sm:mb-10">
               <div>
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-[#8f1515]">Application</p>
-                <h2 className="mt-2 text-3xl text-[#030000] sm:text-4xl">Choose your membership and complete checkout.</h2>
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-[#f8c235]">{portalContent.join_application_kicker}</p>
+                <h2 className="mt-2 text-3xl text-[#030000] sm:text-4xl">{portalContent.join_application_title}</h2>
               </div>
-              <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-                Select a membership level above, then complete the real AAC checkout form below for {selectedTier.label}.
-              </p>
             </div>
 
-            <div id="membership-form" className="space-y-6">
-              <div className="paper-panel rounded-[2rem] p-5 sm:p-8 lg:p-10">
+            <div
+              id="membership-form"
+              className="space-y-6 text-[#030000]"
+            >
+              <div className="paper-panel rounded-[1.6rem] p-5 text-[#030000] sm:p-8 lg:p-10">
                 <p className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-stone-600">Membership level</p>
                 <MembershipTierSelect
                   variant="full"
                   selectedId={selectedTierId}
                   onSelect={setSelectedTierId}
                 />
+                <div className="mt-6 flex justify-center">
+                  <Button
+                    asChild
+                    type="button"
+                    className="min-h-[3rem] px-6 text-sm font-semibold uppercase tracking-[0.16em]"
+                    style={{
+                      backgroundColor: portalDesign.primaryActionBackground,
+                      color: portalDesign.primaryActionText,
+                    }}
+                  >
+                    <Link to="/linked-accounts">{portalContent.join_redeem_code_button_label}</Link>
+                  </Button>
+                </div>
               </div>
 
               <div>
-                <div className="overflow-hidden bg-white">
+                <div className="overflow-hidden rounded-[1.6rem] border border-black/10 bg-white shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
                   <iframe
+                    ref={checkoutFrameRef}
                     key={checkoutUrl}
                     title={`${selectedTier.label} membership checkout`}
                     src={checkoutUrl}
+                    onLoad={handleCheckoutFrameLoad}
                     className="block w-full bg-white"
                     style={{ height: `${embedHeight}px`, border: 0 }}
                   />

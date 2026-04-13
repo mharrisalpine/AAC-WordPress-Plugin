@@ -16,6 +16,10 @@ import MemberProfilePage from '@/pages/MemberProfilePage';
 import ChangePasswordPage from '@/pages/ChangePasswordPage';
 import GrantApplicationPage from '@/pages/GrantApplicationPage';
 import LodgingPage from '@/pages/LodgingPage';
+import PublicationsPage from '@/pages/PublicationsPage';
+import LinkedAccountsPage from '@/pages/LinkedAccountsPage';
+import MemberJoinPage from '@/pages/MemberJoinPage';
+import HomePage from '@/pages/HomePage';
 import '@/index.css';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/contexts/AppAuthContext';
@@ -56,6 +60,10 @@ ReactDOM.createRoot(mountElement).render(
               <Route path="meetups" element={<MeetupsPage />} />
               <Route path="grants" element={<GrantApplicationPage />} />
               <Route path="lodging" element={<LodgingPage />} />
+              <Route path="home" element={<HomePage />} />
+              <Route path="join" element={<MemberJoinPage />} />
+              <Route path="publications" element={<PublicationsPage />} />
+              <Route path="linked-accounts" element={<LinkedAccountsPage />} />
               <Route path="membership" element={<MembershipManagementPage />} />
               <Route path="contact" element={<ContactPage />} />
               <Route path="account" element={<MemberPortal storeTab="account" />} />

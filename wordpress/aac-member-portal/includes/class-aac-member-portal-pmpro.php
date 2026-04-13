@@ -21,7 +21,7 @@ class AAC_Member_Portal_PMPro {
 	/**
 	 * Primary active membership for portal tier display.
 	 *
-	 * @return array{level_id:int,tier:string,renewal_date:string,expiration_date:string}|null
+	 * @return array{level_id:int,tier:string,renewal_date:string,expiration_date:string,joined_date:string}|null
 	 */
 	public static function get_primary_membership($user_id) {
 		$user_id = (int) $user_id;
@@ -34,22 +34,26 @@ class AAC_Member_Portal_PMPro {
 			return null;
 		}
 
-		$expiration_date = '';
-		if (!empty($membership->enddate)) {
-			$expiration_date = gmdate('Y-m-d', strtotime($membership->enddate));
+		$level_id = (int) $membership->id;
+		$expiration_date = self::normalize_subscription_date_value($membership->enddate ?? '');
+		if ($expiration_date === '') {
+			$expiration_date = self::get_membership_end_date($user_id, $level_id);
 		}
 
 		$renewal_date = '';
-		$subscription_id = self::get_current_subscription_id($user_id, (int) $membership->id);
+		$subscription_id = self::find_subscription_id($user_id, $level_id, ['active', 'trialing']);
 		if ($subscription_id) {
 			$renewal_date = self::get_subscription_next_payment_date($subscription_id);
 		}
 
+		$joined_date = self::get_first_membership_start_date($user_id);
+
 		return [
-			'level_id' => (int) $membership->id,
+			'level_id' => $level_id,
 			'tier' => !empty($membership->name) ? (string) $membership->name : 'Supporter',
 			'renewal_date' => $renewal_date,
 			'expiration_date' => $expiration_date,
+			'joined_date' => $joined_date,
 		];
 	}
 
@@ -288,6 +292,101 @@ class AAC_Member_Portal_PMPro {
 		}
 
 		return self::find_subscription_id($user_id, 0);
+	}
+
+	private static function get_first_membership_start_date($user_id) {
+		global $wpdb;
+
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !$wpdb || empty($wpdb->pmpro_memberships_users)) {
+			return '';
+		}
+
+		$table = $wpdb->pmpro_memberships_users;
+		$available_columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}"); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input.
+		$available_columns = is_array($available_columns) ? array_map('strval', $available_columns) : [];
+
+		if (!in_array('startdate', $available_columns, true)) {
+			return '';
+		}
+
+		$query = $wpdb->prepare(
+			"SELECT startdate
+			FROM {$table}
+			WHERE user_id = %d
+				AND startdate IS NOT NULL
+				AND startdate <> ''
+				AND startdate <> '0000-00-00 00:00:00'
+				AND startdate <> '0000-00-00'
+			ORDER BY startdate ASC, id ASC
+			LIMIT 1",
+			$user_id
+		);
+
+		if (!is_string($query) || $query === '') {
+			return '';
+		}
+
+		$startdate = $wpdb->get_var($query); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+		$startdate = sanitize_text_field((string) $startdate);
+		if ($startdate === '') {
+			return '';
+		}
+
+		$timestamp = strtotime($startdate);
+		if ($timestamp === false) {
+			return '';
+		}
+
+		return gmdate('Y-m-d', $timestamp);
+	}
+
+	private static function get_membership_end_date($user_id, $level_id = 0) {
+		global $wpdb;
+
+		$user_id = (int) $user_id;
+		$level_id = (int) $level_id;
+		if ($user_id <= 0 || !$wpdb || empty($wpdb->pmpro_memberships_users)) {
+			return '';
+		}
+
+		$table = $wpdb->pmpro_memberships_users;
+		$available_columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}"); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input.
+		$available_columns = is_array($available_columns) ? array_map('strval', $available_columns) : [];
+
+		if (!in_array('enddate', $available_columns, true)) {
+			return '';
+		}
+
+		$where = [
+			'user_id = %d',
+			'enddate IS NOT NULL',
+			"enddate <> ''",
+			"enddate <> '0000-00-00 00:00:00'",
+			"enddate <> '0000-00-00'",
+		];
+		$params = [$user_id];
+
+		if ($level_id > 0 && in_array('membership_id', $available_columns, true)) {
+			$where[] = 'membership_id = %d';
+			$params[] = $level_id;
+		}
+
+		$query = $wpdb->prepare(
+			"SELECT enddate
+			FROM {$table}
+			WHERE " . implode(' AND ', $where) . '
+			ORDER BY enddate DESC, id DESC
+			LIMIT 1',
+			$params
+		);
+
+		if (!is_string($query) || $query === '') {
+			return '';
+		}
+
+		$enddate = $wpdb->get_var($query); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+		return self::normalize_subscription_date_value($enddate);
 	}
 
 	private static function get_subscription_next_payment_date($subscription_id) {

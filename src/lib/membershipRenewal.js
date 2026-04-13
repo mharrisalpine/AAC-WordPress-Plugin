@@ -1,26 +1,69 @@
 /**
- * Prompt members to verify / renew when renewal is within this many days (or already past).
+ * Prompt non-auto-renewing members when expiration is within this many days (or already past).
  */
-export const RENEWAL_PROMPT_DAYS = 90;
+export const RENEWAL_PROMPT_DAYS = 30;
 
-export function getDaysUntilRenewal(renewalDateStr) {
-  if (!renewalDateStr || typeof renewalDateStr !== 'string') {
+export function getDaysUntilMembershipDate(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') {
     return null;
   }
-  const end = new Date(`${renewalDateStr.trim()}T23:59:59`);
+
+  const trimmed = dateStr.trim();
+  const end = trimmed.includes('T')
+    ? new Date(trimmed)
+    : new Date(`${trimmed}T23:59:59`);
+
   if (Number.isNaN(end.getTime())) {
     return null;
   }
+
   const now = new Date();
   return Math.ceil((end.getTime() - now.getTime()) / 86400000);
 }
 
 /** @param {object | null | undefined} profile */
 export function shouldPromptMembershipVerification(profile) {
-  const rd = profile?.profile_info?.renewal_date;
-  const days = getDaysUntilRenewal(rd);
+  const autoRenew = Boolean(profile?.account_info?.auto_renew);
+  if (autoRenew) {
+    return false;
+  }
+
+  const expirationDate = profile?.profile_info?.expiration_date;
+  const days = getDaysUntilMembershipDate(expirationDate);
   if (days === null) {
     return false;
   }
+
   return days <= RENEWAL_PROMPT_DAYS;
+}
+
+export function getExpirationWarningDetails(profile) {
+  const autoRenew = Boolean(profile?.account_info?.auto_renew);
+  if (autoRenew) {
+    return null;
+  }
+
+  const expirationDate = profile?.profile_info?.expiration_date;
+  const daysUntilExpiration = getDaysUntilMembershipDate(expirationDate);
+  if (daysUntilExpiration === null || daysUntilExpiration > RENEWAL_PROMPT_DAYS) {
+    return null;
+  }
+
+  const parsedDate = expirationDate.includes('T')
+    ? new Date(expirationDate)
+    : new Date(`${expirationDate}T23:59:59`);
+
+  const formattedDate = Number.isNaN(parsedDate.getTime())
+    ? ''
+    : new Intl.DateTimeFormat(undefined, {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(parsedDate);
+
+  return {
+    daysUntilExpiration,
+    formattedDate,
+    isExpired: daysUntilExpiration < 0,
+  };
 }
