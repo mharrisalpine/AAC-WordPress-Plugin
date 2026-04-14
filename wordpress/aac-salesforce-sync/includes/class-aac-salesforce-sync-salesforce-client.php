@@ -40,6 +40,27 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 		return $this->request('PATCH', $path, $payload);
 	}
 
+	public function test_connection() {
+		return $this->request(
+			'GET',
+			sprintf('/services/data/v%s/limits', rawurlencode($this->settings['salesforce']['api_version']))
+		);
+	}
+
+	public function describe_object($object_name) {
+		if ('' === trim((string) $object_name)) {
+			throw new RuntimeException('Salesforce object name is required to load fields.');
+		}
+
+		$path = sprintf(
+			'/services/data/v%s/sobjects/%s/describe',
+			rawurlencode($this->settings['salesforce']['api_version']),
+			rawurlencode($object_name)
+		);
+
+		return $this->request('GET', $path);
+	}
+
 	public function request($method, $path, $body = null) {
 		$token = $this->get_access_token();
 		$url = untrailingslashit($this->settings['salesforce']['instance_url']) . $path;

@@ -331,46 +331,13 @@ class AAC_Salesforce_Sync_Worker {
 	}
 
 	private function map_contact_payload($user_id, $profile) {
-		$account = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
-
-		return [
-			'WordPress_User_ID__c' => (string) $user_id,
-			'AAC_External_Key__c' => $this->get_external_key($user_id),
-			'FirstName' => sanitize_text_field($account['first_name'] ?? ''),
-			'LastName' => sanitize_text_field($account['last_name'] ?? ''),
-			'Email' => sanitize_email($account['email'] ?? ''),
-			'Phone' => sanitize_text_field($account['phone'] ?? ''),
-			'MailingStreet' => trim(sanitize_text_field(($account['street'] ?? '') . (!empty($account['address2']) ? "\n" . $account['address2'] : ''))),
-			'MailingCity' => sanitize_text_field($account['city'] ?? ''),
-			'MailingState' => sanitize_text_field($account['state'] ?? ''),
-			'MailingPostalCode' => sanitize_text_field($account['zip'] ?? ''),
-			'MailingCountry' => sanitize_text_field($account['country'] ?? ''),
-			'AAC_Family_Account_Role__c' => sanitize_text_field((string) get_user_meta($user_id, 'aac_family_account_role', true)),
-		];
+		$context = $this->build_source_context($user_id, $profile);
+		return $this->build_salesforce_payload_from_mapping('contact', $context);
 	}
 
 	private function map_membership_payload($user_id, $profile) {
-		$profile_info = is_array($profile['profile_info'] ?? null) ? $profile['profile_info'] : [];
-		$account = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
-		$benefits = is_array($profile['benefits_info'] ?? null) ? $profile['benefits_info'] : [];
-		$current_level_id = !empty($profile['membership_actions']['current_level_id']) ? (int) $profile['membership_actions']['current_level_id'] : 0;
-
-		return [
-			'AAC_External_Key__c' => $this->get_external_key($user_id),
-			'WordPress_User_ID__c' => (string) $user_id,
-			'AAC_Member_ID__c' => sanitize_text_field($profile_info['member_id'] ?? ''),
-			'Membership_Level__c' => sanitize_text_field($profile_info['tier'] ?? ''),
-			'Status__c' => sanitize_text_field($profile_info['status'] ?? ''),
-			'Renewal_Date__c' => sanitize_text_field($profile_info['renewal_date'] ?? ''),
-			'Expiration_Date__c' => sanitize_text_field($profile_info['expiration_date'] ?? ''),
-			'Auto_Renew__c' => !empty($account['auto_renew']),
-			'Rescue_Benefit_Amount__c' => (float) ($benefits['rescue_amount'] ?? 0),
-			'Medical_Benefit_Amount__c' => (float) ($benefits['medical_amount'] ?? 0),
-			'Mortal_Remains_Amount__c' => (float) ($benefits['mortal_remains_amount'] ?? 0),
-			'Rescue_Reimbursement_Process__c' => !empty($benefits['rescue_reimbursement_process']),
-			'PMPro_Level_ID__c' => $current_level_id ? (string) $current_level_id : '',
-			'Family_Account_Role__c' => sanitize_text_field((string) get_user_meta($user_id, 'aac_family_account_role', true)),
-		];
+		$context = $this->build_source_context($user_id, $profile);
+		return $this->build_salesforce_payload_from_mapping('membership', $context);
 	}
 
 	private function get_transaction_payload($user_id, $order_id = 0) {
@@ -396,19 +363,148 @@ class AAC_Salesforce_Sync_Worker {
 			return [];
 		}
 
-		return [
-			'PMPro_Order_ID__c' => (string) ($order['id'] ?? ''),
-			'WordPress_User_ID__c' => (string) $user_id,
-			'AAC_External_Key__c' => $this->get_external_key($user_id),
-			'Amount__c' => isset($order['total']) ? (float) $order['total'] : 0,
-			'Status__c' => sanitize_text_field($order['status'] ?? ''),
-			'Gateway__c' => sanitize_text_field($order['gateway'] ?? ''),
-			'Transaction_Date__c' => sanitize_text_field($order['timestamp'] ?? ''),
-			'PMPro_Level_ID__c' => sanitize_text_field((string) ($order['membership_id'] ?? '')),
-			'Code__c' => sanitize_text_field($order['code'] ?? ''),
-			'Payment_Transaction_ID__c' => sanitize_text_field($order['payment_transaction_id'] ?? ''),
-			'Subscription_Transaction_ID__c' => sanitize_text_field($order['subscription_transaction_id'] ?? ''),
+		$profile = $this->get_portal_profile((int) $user_id);
+		$context = $this->build_source_context((int) $user_id, $profile, $order);
+
+		return $this->build_salesforce_payload_from_mapping('transaction', $context);
+	}
+
+	private function build_salesforce_payload_from_mapping($group, $context) {
+		$definitions = AAC_Salesforce_Sync_Settings::get_field_definitions();
+		$settings = AAC_Salesforce_Sync_Settings::get_settings();
+		$group_definitions = isset($definitions[$group]) && is_array($definitions[$group]) ? $definitions[$group] : [];
+		$group_mappings = isset($settings['field_mappings'][$group]) && is_array($settings['field_mappings'][$group]) ? $settings['field_mappings'][$group] : [];
+		$payload = [];
+
+		foreach ($group_definitions as $field_key => $definition) {
+			$salesforce_field = trim((string) ($group_mappings[$field_key] ?? ''));
+			if ($salesforce_field === '') {
+				continue;
+			}
+
+			$value = $this->resolve_context_path($context, (string) ($definition['source_path'] ?? ''));
+			if ($value === null || $value === '') {
+				continue;
+			}
+
+			$payload[$salesforce_field] = $this->normalize_salesforce_field_value($value, (string) ($definition['type'] ?? 'string'));
+		}
+
+		return $payload;
+	}
+
+	private function build_source_context($user_id, $profile, $transaction = []) {
+		$user = get_user_by('id', (int) $user_id);
+		$profile = is_array($profile) ? $profile : [];
+		$account_info = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
+		$profile_info = is_array($profile['profile_info'] ?? null) ? $profile['profile_info'] : [];
+		$benefits_info = is_array($profile['benefits_info'] ?? null) ? $profile['benefits_info'] : [];
+		$membership_actions = is_array($profile['membership_actions'] ?? null) ? $profile['membership_actions'] : [];
+
+		$meta_keys = [
+			'aac_external_key',
+			'aac_member_id',
+			'aac_tshirt_size',
+			'aac_publication_pref',
+			'aac_aaj_pref',
+			'aac_anac_pref',
+			'aac_acj_pref',
+			'aac_guidebook_pref',
+			'aac_magazine_addons',
+			'aac_magazine_subscription_labels',
+			'aac_has_alpinist_subscription',
+			'aac_has_backcountry_subscription',
+			'aac_membership_discount_type',
+			'aac_partner_family_mode',
+			'aac_partner_family_additional_adult',
+			'aac_partner_family_dependents',
+			'aac_family_account_role',
+			'aac_linked_parent_user_id',
+			'aac_linked_account_slot_id',
+			'aac_linked_account_invite_code',
+			'aac_linked_account_type',
+			'aac_linked_account_label',
+			'aac_family_membership_access_until',
+			'aac_family_membership_pending_removal',
+			'aac_sf_contact_id',
+			'aac_sf_membership_id',
 		];
+
+		$meta = [];
+		foreach ($meta_keys as $meta_key) {
+			$meta[$meta_key] = get_user_meta((int) $user_id, $meta_key, true);
+		}
+
+		if ($user instanceof WP_User) {
+			$wp = [
+				'ID' => (int) $user->ID,
+				'user_login' => (string) $user->user_login,
+				'user_email' => (string) $user->user_email,
+				'display_name' => (string) $user->display_name,
+				'first_name' => (string) $user->first_name,
+				'last_name' => (string) $user->last_name,
+			];
+		} else {
+			$wp = [
+				'ID' => (int) $user_id,
+				'user_login' => '',
+				'user_email' => '',
+				'display_name' => '',
+				'first_name' => '',
+				'last_name' => '',
+			];
+		}
+
+		return [
+			'wp' => $wp,
+			'account_info' => $account_info,
+			'profile_info' => $profile_info,
+			'benefits_info' => $benefits_info,
+			'membership_actions' => $membership_actions,
+			'meta' => $meta,
+			'transaction' => is_array($transaction) ? $transaction : [],
+		];
+	}
+
+	private function resolve_context_path($context, $path) {
+		$path = trim((string) $path);
+		if ($path === '') {
+			return null;
+		}
+
+		$segments = explode('.', $path);
+		$current = $context;
+		foreach ($segments as $segment) {
+			if (!is_array($current) || !array_key_exists($segment, $current)) {
+				return null;
+			}
+
+			$current = $current[$segment];
+		}
+
+		return $current;
+	}
+
+	private function normalize_salesforce_field_value($value, $type) {
+		switch ($type) {
+			case 'boolean':
+				return in_array($value, ['1', 1, true, 'true', 'yes', 'on'], true);
+			case 'integer':
+				return (int) $value;
+			case 'decimal':
+				return (float) $value;
+			case 'array':
+				return is_array($value) ? implode(', ', array_map('sanitize_text_field', $value)) : sanitize_text_field((string) $value);
+			case 'email':
+				return sanitize_email((string) $value);
+			case 'url':
+				return esc_url_raw((string) $value);
+			case 'date':
+			case 'datetime':
+			case 'string':
+			default:
+				return sanitize_text_field((string) $value);
+		}
 	}
 
 	private function get_external_key($user_id) {

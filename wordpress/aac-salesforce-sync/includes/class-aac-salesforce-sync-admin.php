@@ -14,6 +14,7 @@ class AAC_Salesforce_Sync_Admin {
 
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('admin_post_aac_salesforce_sync_save_settings', [$this, 'handle_save_settings']);
+		add_action('admin_post_aac_salesforce_sync_connect_salesforce', [$this, 'handle_connect_salesforce']);
 		add_action('admin_post_aac_salesforce_sync_run_queue', [$this, 'handle_run_queue']);
 		add_action('admin_post_aac_salesforce_sync_retry_job', [$this, 'handle_retry_job']);
 	}
@@ -39,6 +40,63 @@ class AAC_Salesforce_Sync_Admin {
 		AAC_Salesforce_Sync_Settings::update_settings($input);
 
 		$this->redirect_with_notice('settings-saved');
+	}
+
+	public function handle_connect_salesforce() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_connect_salesforce');
+
+		try {
+			$settings = AAC_Salesforce_Sync_Settings::get_settings();
+			$client = new AAC_Salesforce_Sync_Salesforce_Client();
+			$client->test_connection();
+
+			$object_map = [
+				'contact' => (string) ($settings['salesforce']['contact_object'] ?? ''),
+				'membership' => (string) ($settings['salesforce']['membership_object'] ?? ''),
+				'transaction' => (string) ($settings['salesforce']['transaction_object'] ?? ''),
+			];
+
+			$catalog = [
+				'connected_at' => current_time('mysql'),
+				'objects' => [],
+			];
+
+			foreach ($object_map as $group => $object_name) {
+				if ('' === trim($object_name)) {
+					continue;
+				}
+
+				$describe = $client->describe_object($object_name);
+				$fields = [];
+				foreach ((array) ($describe['fields'] ?? []) as $field) {
+					if (!is_array($field) || empty($field['name'])) {
+						continue;
+					}
+
+					$fields[] = [
+						'name' => sanitize_text_field((string) $field['name']),
+						'label' => sanitize_text_field((string) ($field['label'] ?? $field['name'])),
+						'type' => sanitize_text_field((string) ($field['type'] ?? 'string')),
+					];
+				}
+
+				usort($fields, static function ($left, $right) {
+					return strcasecmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''));
+				});
+
+				$catalog['objects'][$group] = [
+					'object_name' => sanitize_text_field($object_name),
+					'label' => sanitize_text_field((string) ($describe['label'] ?? $object_name)),
+					'fields' => $fields,
+				];
+			}
+
+			AAC_Salesforce_Sync_Settings::update_field_catalog($catalog);
+			$this->redirect_with_notice('salesforce-connected');
+		} catch (Exception $exception) {
+			$this->redirect_with_notice('salesforce-connect-error:' . rawurlencode($exception->getMessage()));
+		}
 	}
 
 	public function handle_run_queue() {
@@ -69,6 +127,8 @@ class AAC_Salesforce_Sync_Admin {
 		$settings = AAC_Salesforce_Sync_Settings::get_settings();
 		$stats = AAC_Salesforce_Sync_Queue::get_stats();
 		$jobs = AAC_Salesforce_Sync_Queue::list_jobs(30);
+		$field_catalog = AAC_Salesforce_Sync_Settings::get_field_catalog();
+		$field_definitions = AAC_Salesforce_Sync_Settings::get_field_definitions();
 		$notice = isset($_GET[self::NOTICE_QUERY_ARG]) ? sanitize_text_field(wp_unslash($_GET[self::NOTICE_QUERY_ARG])) : '';
 		?>
 		<div class="wrap">
@@ -110,6 +170,8 @@ class AAC_Salesforce_Sync_Admin {
 							<?php $this->render_password_field('Client Secret', 'salesforce', 'client_secret', $settings['salesforce']['client_secret']); ?>
 						</table>
 
+						<p style="margin:12px 0 24px;">Use your Salesforce Connected App credentials here, then use the separate connect action to load real Salesforce field options for the mapping dropdowns below.</p>
+
 						<h2>Object Mapping</h2>
 						<table class="form-table" role="presentation">
 							<?php $this->render_text_field('Contact object', 'salesforce', 'contact_object', $settings['salesforce']['contact_object']); ?>
@@ -119,6 +181,35 @@ class AAC_Salesforce_Sync_Admin {
 							<?php $this->render_text_field('Membership external ID field', 'salesforce', 'membership_external_id_field', $settings['salesforce']['membership_external_id_field']); ?>
 							<?php $this->render_text_field('Transaction external ID field', 'salesforce', 'transaction_external_id_field', $settings['salesforce']['transaction_external_id_field']); ?>
 						</table>
+
+						<h2>Field Mapping</h2>
+						<p>Pick the Salesforce field that should receive each WordPress value. These dropdowns are loaded from your Salesforce object field metadata.</p>
+						<?php
+						$this->render_field_mapping_table(
+							'Contact Field Mapping',
+							'contact',
+							(string) $settings['salesforce']['contact_object'],
+							$field_definitions,
+							$field_catalog,
+							$settings
+						);
+						$this->render_field_mapping_table(
+							'Membership Field Mapping',
+							'membership',
+							(string) $settings['salesforce']['membership_object'],
+							$field_definitions,
+							$field_catalog,
+							$settings
+						);
+						$this->render_field_mapping_table(
+							'Transaction Field Mapping',
+							'transaction',
+							(string) $settings['salesforce']['transaction_object'],
+							$field_definitions,
+							$field_catalog,
+							$settings
+						);
+						?>
 
 						<h2>Inbound Security</h2>
 						<table class="form-table" role="presentation">
@@ -130,6 +221,19 @@ class AAC_Salesforce_Sync_Admin {
 				</div>
 
 				<div style="display:grid;gap:24px;">
+					<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+						<h2 style="margin-top:0;">Connect to Salesforce</h2>
+						<p>After saving your credentials and object names, use this action to authenticate against the org and refresh the field dropdowns.</p>
+						<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:16px;">
+							<input type="hidden" name="action" value="aac_salesforce_sync_connect_salesforce" />
+							<?php wp_nonce_field('aac_salesforce_sync_connect_salesforce'); ?>
+							<?php submit_button('Connect and Refresh Fields', 'secondary', '', false); ?>
+						</form>
+						<?php if (!empty($field_catalog['connected_at'])) : ?>
+							<p style="margin:12px 0 0;color:#50575e;">Last field refresh: <?php echo esc_html((string) $field_catalog['connected_at']); ?></p>
+						<?php endif; ?>
+					</div>
+
 					<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
 						<h2 style="margin-top:0;">Queue</h2>
 						<ul style="margin:0;padding-left:18px;">
@@ -252,6 +356,10 @@ class AAC_Salesforce_Sync_Admin {
 	}
 
 	private function notice_message($notice) {
+		if (0 === strpos($notice, 'salesforce-connect-error:')) {
+			return 'Salesforce connection failed: ' . rawurldecode(substr($notice, strlen('salesforce-connect-error:')));
+		}
+
 		if (0 === strpos($notice, 'queue-ran-')) {
 			return 'Queue processed. Jobs completed: ' . absint(substr($notice, strlen('queue-ran-')));
 		}
@@ -259,8 +367,62 @@ class AAC_Salesforce_Sync_Admin {
 		$messages = [
 			'settings-saved' => 'Salesforce sync settings saved.',
 			'job-retried' => 'Queue job reset for retry.',
+			'salesforce-connected' => 'Salesforce connection succeeded and field metadata was refreshed.',
 		];
 
 		return $messages[$notice] ?? 'Settings updated.';
+	}
+
+	private function render_field_mapping_table($title, $group, $object_name, $field_definitions, $field_catalog, $settings) {
+		$definitions = isset($field_definitions[$group]) && is_array($field_definitions[$group]) ? $field_definitions[$group] : [];
+		$catalog_group = isset($field_catalog['objects'][$group]) && is_array($field_catalog['objects'][$group]) ? $field_catalog['objects'][$group] : [];
+		$salesforce_fields = isset($catalog_group['fields']) && is_array($catalog_group['fields']) ? $catalog_group['fields'] : [];
+		$selected_fields = isset($settings['field_mappings'][$group]) && is_array($settings['field_mappings'][$group]) ? $settings['field_mappings'][$group] : [];
+		?>
+		<div style="margin:20px 0 28px;border:1px solid #dcdcde;border-radius:8px;overflow:hidden;">
+			<div style="padding:14px 16px;background:#f6f7f7;border-bottom:1px solid #dcdcde;">
+				<strong><?php echo esc_html($title); ?></strong>
+				<div style="margin-top:4px;color:#50575e;"><?php echo esc_html($object_name ?: 'No Salesforce object selected yet.'); ?></div>
+			</div>
+			<?php if (empty($salesforce_fields)) : ?>
+				<div style="padding:16px;color:#50575e;">
+					Connect to Salesforce first to load dropdown options for this object.
+				</div>
+			<?php else : ?>
+				<table class="widefat striped" style="border:none;">
+					<thead>
+						<tr>
+							<th style="width:32%;">WordPress Field</th>
+							<th style="width:18%;">Field Type</th>
+							<th>Salesforce Field</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($definitions as $field_key => $definition) : ?>
+							<tr>
+								<td>
+									<strong><?php echo esc_html((string) ($definition['label'] ?? $field_key)); ?></strong>
+									<div style="margin-top:4px;color:#50575e;"><code><?php echo esc_html((string) ($definition['source_path'] ?? '')); ?></code></div>
+								</td>
+								<td><?php echo esc_html((string) ($definition['type'] ?? 'string')); ?></td>
+								<td>
+									<select name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[field_mappings][' . $group . '][' . $field_key . ']'); ?>" style="min-width:320px;max-width:100%;">
+										<option value="">Do not sync</option>
+										<?php foreach ($salesforce_fields as $salesforce_field) : ?>
+											<?php $field_name = (string) ($salesforce_field['name'] ?? ''); ?>
+											<option value="<?php echo esc_attr($field_name); ?>" <?php selected((string) ($selected_fields[$field_key] ?? ''), $field_name); ?>>
+												<?php echo esc_html((string) ($salesforce_field['label'] ?? $field_name)); ?>
+												<?php echo $field_name ? esc_html(' (' . $field_name . ')') : ''; ?>
+											</option>
+										<?php endforeach; ?>
+									</select>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+		</div>
+		<?php
 	}
 }
