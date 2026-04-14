@@ -395,45 +395,8 @@ class AAC_Salesforce_Sync_Worker {
 
 	private function build_source_context($user_id, $profile, $transaction = []) {
 		$user = get_user_by('id', (int) $user_id);
-		$profile = is_array($profile) ? $profile : [];
-		$account_info = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
-		$profile_info = is_array($profile['profile_info'] ?? null) ? $profile['profile_info'] : [];
-		$benefits_info = is_array($profile['benefits_info'] ?? null) ? $profile['benefits_info'] : [];
-		$membership_actions = is_array($profile['membership_actions'] ?? null) ? $profile['membership_actions'] : [];
-
-		$meta_keys = [
-			'aac_external_key',
-			'aac_member_id',
-			'aac_tshirt_size',
-			'aac_publication_pref',
-			'aac_aaj_pref',
-			'aac_anac_pref',
-			'aac_acj_pref',
-			'aac_guidebook_pref',
-			'aac_magazine_addons',
-			'aac_magazine_subscription_labels',
-			'aac_has_alpinist_subscription',
-			'aac_has_backcountry_subscription',
-			'aac_membership_discount_type',
-			'aac_partner_family_mode',
-			'aac_partner_family_additional_adult',
-			'aac_partner_family_dependents',
-			'aac_family_account_role',
-			'aac_linked_parent_user_id',
-			'aac_linked_account_slot_id',
-			'aac_linked_account_invite_code',
-			'aac_linked_account_type',
-			'aac_linked_account_label',
-			'aac_family_membership_access_until',
-			'aac_family_membership_pending_removal',
-			'aac_sf_contact_id',
-			'aac_sf_membership_id',
-		];
-
-		$meta = [];
-		foreach ($meta_keys as $meta_key) {
-			$meta[$meta_key] = get_user_meta((int) $user_id, $meta_key, true);
-		}
+		$member_db = $this->get_member_database_context((int) $user_id);
+		$pmpro = $this->get_pmpro_context((int) $user_id, $transaction);
 
 		if ($user instanceof WP_User) {
 			$wp = [
@@ -457,11 +420,78 @@ class AAC_Salesforce_Sync_Worker {
 
 		return [
 			'wp' => $wp,
-			'account_info' => $account_info,
-			'profile_info' => $profile_info,
-			'benefits_info' => $benefits_info,
-			'membership_actions' => $membership_actions,
-			'meta' => $meta,
+			'member_db' => $member_db,
+			'pmpro' => $pmpro,
+		];
+	}
+
+	private function get_member_database_context($user_id) {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return [
+				'row' => [],
+				'profile' => [],
+			];
+		}
+
+		$table_name = $wpdb->prefix . 'aac_member_db_profiles';
+		$row = $wpdb->get_row(
+			$wpdb->prepare("SELECT * FROM {$table_name} WHERE user_id = %d LIMIT 1", $user_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		if (!is_array($row)) {
+			$profile = $this->get_portal_profile($user_id);
+			$profile = is_array($profile) ? $profile : [];
+			return [
+				'row' => [
+					'user_id' => $user_id,
+				],
+				'profile' => $profile,
+			];
+		}
+
+		$profile = json_decode((string) ($row['raw_profile'] ?? ''), true);
+		$profile = is_array($profile) ? $profile : [];
+		unset($row['raw_profile']);
+
+		return [
+			'row' => $row,
+			'profile' => $profile,
+		];
+	}
+
+	private function get_pmpro_context($user_id, $transaction = []) {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return [
+				'membership' => [],
+				'subscription' => [],
+				'transaction' => is_array($transaction) ? $transaction : [],
+			];
+		}
+
+		$membership = [];
+		if (!empty($wpdb->pmpro_memberships_users)) {
+			$membership = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$wpdb->pmpro_memberships_users} WHERE user_id = %d ORDER BY id DESC LIMIT 1", $user_id),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		$subscription = [];
+		if (!empty($wpdb->pmpro_subscriptions)) {
+			$subscription = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$wpdb->pmpro_subscriptions} WHERE user_id = %d ORDER BY id DESC LIMIT 1", $user_id),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		return [
+			'membership' => is_array($membership) ? $membership : [],
+			'subscription' => is_array($subscription) ? $subscription : [],
 			'transaction' => is_array($transaction) ? $transaction : [],
 		];
 	}

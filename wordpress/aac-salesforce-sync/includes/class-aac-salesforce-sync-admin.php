@@ -183,7 +183,7 @@ class AAC_Salesforce_Sync_Admin {
 						</table>
 
 						<h2>Field Mapping</h2>
-						<p>Pick the Salesforce field that should receive each WordPress value. These dropdowns are loaded from your Salesforce object field metadata.</p>
+						<p>Pick the Salesforce field that should receive each AAC Member Database or PMPro value. These dropdowns are loaded from your Salesforce object field metadata.</p>
 						<?php
 						$this->render_field_mapping_table(
 							'Contact Field Mapping',

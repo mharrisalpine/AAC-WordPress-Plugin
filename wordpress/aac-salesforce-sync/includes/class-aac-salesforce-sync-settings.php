@@ -37,139 +37,61 @@ class AAC_Salesforce_Sync_Settings {
 	}
 
 	public static function get_field_definitions() {
+		$member_db_fields = self::get_member_database_field_definitions();
+		$pmpro_fields = self::get_pmpro_field_definitions();
+
 		return [
-			'contact' => [
-				'wordpress_user_id' => ['label' => 'WordPress User ID', 'source_path' => 'wp.ID', 'type' => 'integer'],
-				'wordpress_user_login' => ['label' => 'WordPress Username', 'source_path' => 'wp.user_login', 'type' => 'string'],
-				'wordpress_user_email' => ['label' => 'WordPress Email', 'source_path' => 'wp.user_email', 'type' => 'email'],
-				'wordpress_display_name' => ['label' => 'WordPress Display Name', 'source_path' => 'wp.display_name', 'type' => 'string'],
-				'wordpress_first_name' => ['label' => 'WordPress First Name', 'source_path' => 'wp.first_name', 'type' => 'string'],
-				'wordpress_last_name' => ['label' => 'WordPress Last Name', 'source_path' => 'wp.last_name', 'type' => 'string'],
-				'aac_external_key' => ['label' => 'AAC External Key', 'source_path' => 'meta.aac_external_key', 'type' => 'string'],
-				'account_first_name' => ['label' => 'AAC Account First Name', 'source_path' => 'account_info.first_name', 'type' => 'string'],
-				'account_last_name' => ['label' => 'AAC Account Last Name', 'source_path' => 'account_info.last_name', 'type' => 'string'],
-				'account_name' => ['label' => 'AAC Account Full Name', 'source_path' => 'account_info.name', 'type' => 'string'],
-				'account_email' => ['label' => 'AAC Account Email', 'source_path' => 'account_info.email', 'type' => 'email'],
-				'account_photo_url' => ['label' => 'Profile Photo URL', 'source_path' => 'account_info.photo_url', 'type' => 'url'],
-				'account_phone' => ['label' => 'Phone', 'source_path' => 'account_info.phone', 'type' => 'string'],
-				'account_phone_type' => ['label' => 'Phone Type', 'source_path' => 'account_info.phone_type', 'type' => 'string'],
-				'account_street' => ['label' => 'Street Address', 'source_path' => 'account_info.street', 'type' => 'string'],
-				'account_address2' => ['label' => 'Address Line 2', 'source_path' => 'account_info.address2', 'type' => 'string'],
-				'account_city' => ['label' => 'City', 'source_path' => 'account_info.city', 'type' => 'string'],
-				'account_state' => ['label' => 'State / Province', 'source_path' => 'account_info.state', 'type' => 'string'],
-				'account_zip' => ['label' => 'Postal Code', 'source_path' => 'account_info.zip', 'type' => 'string'],
-				'account_country' => ['label' => 'Country', 'source_path' => 'account_info.country', 'type' => 'string'],
-				'account_tshirt_size' => ['label' => 'T-Shirt Size', 'source_path' => 'account_info.size', 'type' => 'string'],
-				'account_publication_pref' => ['label' => 'Legacy Publication Preference', 'source_path' => 'account_info.publication_pref', 'type' => 'string'],
-				'account_aaj_pref' => ['label' => 'AAJ Preference', 'source_path' => 'account_info.aaj_pref', 'type' => 'string'],
-				'account_anac_pref' => ['label' => 'ANAC Preference', 'source_path' => 'account_info.anac_pref', 'type' => 'string'],
-				'account_acj_pref' => ['label' => 'ACJ Preference', 'source_path' => 'account_info.acj_pref', 'type' => 'string'],
-				'account_guidebook_pref' => ['label' => 'Guidebook Preference', 'source_path' => 'account_info.guidebook_pref', 'type' => 'string'],
-				'account_magazine_subscriptions' => ['label' => 'Magazine Subscriptions', 'source_path' => 'account_info.magazine_subscriptions', 'type' => 'array'],
-				'account_membership_discount_type' => ['label' => 'Membership Discount Type', 'source_path' => 'account_info.membership_discount_type', 'type' => 'string'],
-				'account_auto_renew' => ['label' => 'Auto Renew', 'source_path' => 'account_info.auto_renew', 'type' => 'boolean'],
-				'account_payment_method' => ['label' => 'Payment Method Label', 'source_path' => 'account_info.payment_method', 'type' => 'string'],
-				'family_account_role' => ['label' => 'Family Account Role', 'source_path' => 'meta.aac_family_account_role', 'type' => 'string'],
-				'linked_parent_user_id' => ['label' => 'Linked Parent User ID', 'source_path' => 'meta.aac_linked_parent_user_id', 'type' => 'integer'],
-				'linked_account_slot_id' => ['label' => 'Linked Account Slot ID', 'source_path' => 'meta.aac_linked_account_slot_id', 'type' => 'string'],
-				'linked_account_type' => ['label' => 'Linked Account Type', 'source_path' => 'meta.aac_linked_account_type', 'type' => 'string'],
-				'linked_account_label' => ['label' => 'Linked Account Label', 'source_path' => 'meta.aac_linked_account_label', 'type' => 'string'],
-				'linked_account_invite_code' => ['label' => 'Linked Account Invite Code', 'source_path' => 'meta.aac_linked_account_invite_code', 'type' => 'string'],
-				'family_access_until' => ['label' => 'Family Access Until', 'source_path' => 'meta.aac_family_membership_access_until', 'type' => 'date'],
-				'family_pending_removal' => ['label' => 'Family Pending Removal', 'source_path' => 'meta.aac_family_membership_pending_removal', 'type' => 'boolean'],
-			],
-			'membership' => [
-				'aac_external_key' => ['label' => 'AAC External Key', 'source_path' => 'meta.aac_external_key', 'type' => 'string'],
-				'wordpress_user_id' => ['label' => 'WordPress User ID', 'source_path' => 'wp.ID', 'type' => 'integer'],
-				'member_id' => ['label' => 'Member ID', 'source_path' => 'profile_info.member_id', 'type' => 'string'],
-				'membership_level' => ['label' => 'Membership Level', 'source_path' => 'profile_info.tier', 'type' => 'string'],
-				'membership_status' => ['label' => 'Membership Status', 'source_path' => 'profile_info.status', 'type' => 'string'],
-				'renewal_date' => ['label' => 'Renewal Date', 'source_path' => 'profile_info.renewal_date', 'type' => 'date'],
-				'expiration_date' => ['label' => 'Expiration Date', 'source_path' => 'profile_info.expiration_date', 'type' => 'date'],
-				'joined_date' => ['label' => 'Joined Date', 'source_path' => 'profile_info.joined_date', 'type' => 'date'],
-				'auto_renew' => ['label' => 'Auto Renew', 'source_path' => 'account_info.auto_renew', 'type' => 'boolean'],
-				'rescue_amount' => ['label' => 'Rescue Benefit Amount', 'source_path' => 'benefits_info.rescue_amount', 'type' => 'integer'],
-				'medical_amount' => ['label' => 'Medical Benefit Amount', 'source_path' => 'benefits_info.medical_amount', 'type' => 'integer'],
-				'mortal_remains_amount' => ['label' => 'Mortal Remains Amount', 'source_path' => 'benefits_info.mortal_remains_amount', 'type' => 'integer'],
-				'rescue_reimbursement_process' => ['label' => 'Rescue Reimbursement Process', 'source_path' => 'benefits_info.rescue_reimbursement_process', 'type' => 'boolean'],
-				'pmpro_level_id' => ['label' => 'PMPro Level ID', 'source_path' => 'membership_actions.current_level_id', 'type' => 'integer'],
-				'family_account_role' => ['label' => 'Family Account Role', 'source_path' => 'meta.aac_family_account_role', 'type' => 'string'],
-				'partner_family_mode' => ['label' => 'Partner Family Mode', 'source_path' => 'meta.aac_partner_family_mode', 'type' => 'string'],
-				'partner_family_additional_adult' => ['label' => 'Partner Family Additional Adult', 'source_path' => 'meta.aac_partner_family_additional_adult', 'type' => 'boolean'],
-				'partner_family_dependents' => ['label' => 'Partner Family Dependents', 'source_path' => 'meta.aac_partner_family_dependents', 'type' => 'integer'],
-				'tshirt_size' => ['label' => 'T-Shirt Size', 'source_path' => 'meta.aac_tshirt_size', 'type' => 'string'],
-				'publication_pref' => ['label' => 'Publication Preference', 'source_path' => 'meta.aac_publication_pref', 'type' => 'string'],
-				'aaj_pref' => ['label' => 'AAJ Preference', 'source_path' => 'meta.aac_aaj_pref', 'type' => 'string'],
-				'anac_pref' => ['label' => 'ANAC Preference', 'source_path' => 'meta.aac_anac_pref', 'type' => 'string'],
-				'acj_pref' => ['label' => 'ACJ Preference', 'source_path' => 'meta.aac_acj_pref', 'type' => 'string'],
-				'guidebook_pref' => ['label' => 'Guidebook Preference', 'source_path' => 'meta.aac_guidebook_pref', 'type' => 'string'],
-				'magazine_addons' => ['label' => 'Magazine Addons', 'source_path' => 'meta.aac_magazine_addons', 'type' => 'array'],
-				'magazine_subscription_labels' => ['label' => 'Magazine Subscription Labels', 'source_path' => 'meta.aac_magazine_subscription_labels', 'type' => 'string'],
-				'has_alpinist_subscription' => ['label' => 'Has Alpinist Subscription', 'source_path' => 'meta.aac_has_alpinist_subscription', 'type' => 'boolean'],
-				'has_backcountry_subscription' => ['label' => 'Has Backcountry Subscription', 'source_path' => 'meta.aac_has_backcountry_subscription', 'type' => 'boolean'],
-				'membership_discount_type' => ['label' => 'Membership Discount Type', 'source_path' => 'meta.aac_membership_discount_type', 'type' => 'string'],
-				'salesforce_membership_id' => ['label' => 'Salesforce Membership ID', 'source_path' => 'meta.aac_sf_membership_id', 'type' => 'string'],
-			],
-			'transaction' => [
-				'pmpro_order_id' => ['label' => 'PMPro Order ID', 'source_path' => 'transaction.id', 'type' => 'integer'],
-				'wordpress_user_id' => ['label' => 'WordPress User ID', 'source_path' => 'wp.ID', 'type' => 'integer'],
-				'aac_external_key' => ['label' => 'AAC External Key', 'source_path' => 'meta.aac_external_key', 'type' => 'string'],
-				'amount' => ['label' => 'Order Total', 'source_path' => 'transaction.total', 'type' => 'decimal'],
-				'status' => ['label' => 'Order Status', 'source_path' => 'transaction.status', 'type' => 'string'],
-				'gateway' => ['label' => 'Gateway', 'source_path' => 'transaction.gateway', 'type' => 'string'],
-				'transaction_date' => ['label' => 'Transaction Timestamp', 'source_path' => 'transaction.timestamp', 'type' => 'datetime'],
-				'pmpro_level_id' => ['label' => 'PMPro Level ID', 'source_path' => 'transaction.membership_id', 'type' => 'integer'],
-				'code' => ['label' => 'Order Code', 'source_path' => 'transaction.code', 'type' => 'string'],
-				'payment_transaction_id' => ['label' => 'Payment Transaction ID', 'source_path' => 'transaction.payment_transaction_id', 'type' => 'string'],
-				'subscription_transaction_id' => ['label' => 'Subscription Transaction ID', 'source_path' => 'transaction.subscription_transaction_id', 'type' => 'string'],
-			],
+			'contact' => $member_db_fields,
+			'membership' => array_merge(
+				$member_db_fields,
+				$pmpro_fields['membership'],
+				$pmpro_fields['subscriptions']
+			),
+			'transaction' => $pmpro_fields['transactions'],
 		];
 	}
 
 	public static function get_default_field_mappings() {
 		return [
 			'contact' => [
-				'wordpress_user_id' => 'WordPress_User_ID__c',
-				'aac_external_key' => 'AAC_External_Key__c',
-				'account_first_name' => 'FirstName',
-				'account_last_name' => 'LastName',
-				'account_email' => 'Email',
-				'account_phone' => 'Phone',
-				'account_street' => 'MailingStreet',
-				'account_city' => 'MailingCity',
-				'account_state' => 'MailingState',
-				'account_zip' => 'MailingPostalCode',
-				'account_country' => 'MailingCountry',
-				'family_account_role' => 'AAC_Family_Account_Role__c',
+				'member_db_row_user_id' => 'WordPress_User_ID__c',
+				'member_db_profile_account_info_first_name' => 'FirstName',
+				'member_db_profile_account_info_last_name' => 'LastName',
+				'member_db_profile_account_info_email' => 'Email',
+				'member_db_profile_account_info_phone' => 'Phone',
+				'member_db_profile_account_info_street' => 'MailingStreet',
+				'member_db_profile_account_info_city' => 'MailingCity',
+				'member_db_profile_account_info_state' => 'MailingState',
+				'member_db_profile_account_info_zip' => 'MailingPostalCode',
+				'member_db_profile_account_info_country' => 'MailingCountry',
+				'member_db_row_account_role' => 'AAC_Family_Account_Role__c',
 			],
 			'membership' => [
-				'aac_external_key' => 'AAC_External_Key__c',
-				'wordpress_user_id' => 'WordPress_User_ID__c',
-				'member_id' => 'AAC_Member_ID__c',
-				'membership_level' => 'Membership_Level__c',
-				'membership_status' => 'Status__c',
-				'renewal_date' => 'Renewal_Date__c',
-				'expiration_date' => 'Expiration_Date__c',
-				'auto_renew' => 'Auto_Renew__c',
-				'rescue_amount' => 'Rescue_Benefit_Amount__c',
-				'medical_amount' => 'Medical_Benefit_Amount__c',
-				'mortal_remains_amount' => 'Mortal_Remains_Amount__c',
-				'rescue_reimbursement_process' => 'Rescue_Reimbursement_Process__c',
-				'pmpro_level_id' => 'PMPro_Level_ID__c',
-				'family_account_role' => 'Family_Account_Role__c',
+				'member_db_row_user_id' => 'WordPress_User_ID__c',
+				'member_db_row_member_id' => 'AAC_Member_ID__c',
+				'member_db_row_membership_level' => 'Membership_Level__c',
+				'member_db_row_membership_status' => 'Status__c',
+				'member_db_row_renewal_date' => 'Renewal_Date__c',
+				'member_db_row_expiration_date' => 'Expiration_Date__c',
+				'member_db_profile_account_info_auto_renew' => 'Auto_Renew__c',
+				'member_db_profile_benefits_info_rescue_amount' => 'Rescue_Benefit_Amount__c',
+				'member_db_profile_benefits_info_medical_amount' => 'Medical_Benefit_Amount__c',
+				'member_db_profile_benefits_info_mortal_remains_amount' => 'Mortal_Remains_Amount__c',
+				'member_db_profile_benefits_info_rescue_reimbursement_process' => 'Rescue_Reimbursement_Process__c',
+				'pmpro_membership_membership_id' => 'PMPro_Level_ID__c',
+				'member_db_row_account_role' => 'Family_Account_Role__c',
 			],
 			'transaction' => [
-				'pmpro_order_id' => 'PMPro_Order_ID__c',
-				'wordpress_user_id' => 'WordPress_User_ID__c',
-				'aac_external_key' => 'AAC_External_Key__c',
-				'amount' => 'Amount__c',
-				'status' => 'Status__c',
-				'gateway' => 'Gateway__c',
-				'transaction_date' => 'Transaction_Date__c',
-				'pmpro_level_id' => 'PMPro_Level_ID__c',
-				'code' => 'Code__c',
-				'payment_transaction_id' => 'Payment_Transaction_ID__c',
-				'subscription_transaction_id' => 'Subscription_Transaction_ID__c',
+				'pmpro_transaction_id' => 'PMPro_Order_ID__c',
+				'pmpro_transaction_user_id' => 'WordPress_User_ID__c',
+				'pmpro_transaction_total' => 'Amount__c',
+				'pmpro_transaction_status' => 'Status__c',
+				'pmpro_transaction_gateway' => 'Gateway__c',
+				'pmpro_transaction_timestamp' => 'Transaction_Date__c',
+				'pmpro_transaction_membership_id' => 'PMPro_Level_ID__c',
+				'pmpro_transaction_code' => 'Code__c',
+				'pmpro_transaction_payment_transaction_id' => 'Payment_Transaction_ID__c',
+				'pmpro_transaction_subscription_transaction_id' => 'Subscription_Transaction_ID__c',
 			],
 		];
 	}
@@ -234,10 +156,11 @@ class AAC_Salesforce_Sync_Settings {
 		}
 
 		$defaults = self::get_default_field_mappings();
+		$definitions = self::get_field_definitions();
 		$settings['field_mappings'] = self::merge($defaults, isset($settings['field_mappings']) && is_array($settings['field_mappings']) ? $settings['field_mappings'] : []);
-		foreach ($defaults as $group => $fields) {
+		foreach ($definitions as $group => $fields) {
 			$group_input = isset($field_mappings[$group]) && is_array($field_mappings[$group]) ? $field_mappings[$group] : [];
-			foreach ($fields as $field_key => $default_field_api_name) {
+			foreach ($fields as $field_key => $definition) {
 				if (!array_key_exists($field_key, $group_input)) {
 					continue;
 				}
@@ -263,5 +186,292 @@ class AAC_Salesforce_Sync_Settings {
 		}
 
 		return $stored;
+	}
+
+	private static function get_member_database_field_definitions() {
+		$definitions = [];
+
+		foreach (self::describe_member_database_profile_table() as $column_name => $column_type) {
+			if ('id' === $column_name || 'raw_profile' === $column_name) {
+				continue;
+			}
+
+			$field_key = 'member_db_row_' . self::sanitize_field_key($column_name);
+			$definitions[$field_key] = [
+				'label' => 'Member Database Row: ' . self::humanize_label($column_name),
+				'source_path' => 'member_db.row.' . $column_name,
+				'type' => self::normalize_column_type($column_type),
+			];
+		}
+
+		foreach (self::discover_member_database_profile_paths() as $path => $type) {
+			$field_key = 'member_db_profile_' . self::sanitize_field_key($path);
+			$definitions[$field_key] = [
+				'label' => 'Member Database Profile: ' . self::humanize_path_label($path),
+				'source_path' => 'member_db.profile.' . $path,
+				'type' => $type,
+			];
+		}
+
+		ksort($definitions);
+		return $definitions;
+	}
+
+	private static function get_pmpro_field_definitions() {
+		return [
+			'membership' => self::build_table_field_definitions(
+				'pmpro_membership',
+				'PMPro Membership',
+				'pmpro.membership',
+				self::get_pmpro_table_name('pmpro_memberships_users')
+			),
+			'subscriptions' => self::build_table_field_definitions(
+				'pmpro_subscription',
+				'PMPro Subscription',
+				'pmpro.subscription',
+				self::get_pmpro_table_name('pmpro_subscriptions')
+			),
+			'transactions' => self::build_table_field_definitions(
+				'pmpro_transaction',
+				'PMPro Order',
+				'pmpro.transaction',
+				self::get_pmpro_table_name('pmpro_membership_orders')
+			),
+		];
+	}
+
+	private static function build_table_field_definitions($field_prefix, $label_prefix, $source_prefix, $table_name) {
+		$definitions = [];
+		foreach (self::describe_table_columns($table_name) as $column_name => $column_type) {
+			$field_key = $field_prefix . '_' . self::sanitize_field_key($column_name);
+			$definitions[$field_key] = [
+				'label' => $label_prefix . ': ' . self::humanize_label($column_name),
+				'source_path' => $source_prefix . '.' . $column_name,
+				'type' => self::normalize_column_type($column_type),
+			];
+		}
+
+		return $definitions;
+	}
+
+	private static function describe_member_database_profile_table() {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return [];
+		}
+
+		return self::describe_table_columns($wpdb->prefix . 'aac_member_db_profiles');
+	}
+
+	private static function discover_member_database_profile_paths() {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return self::get_member_database_profile_fallback_paths();
+		}
+
+		$table_name = $wpdb->prefix . 'aac_member_db_profiles';
+		$rows = $wpdb->get_col("SELECT raw_profile FROM {$table_name} WHERE raw_profile IS NOT NULL AND raw_profile != '' ORDER BY mirrored_at DESC LIMIT 25"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$paths = [];
+
+		foreach ((array) $rows as $raw_profile) {
+			$profile = json_decode((string) $raw_profile, true);
+			if (!is_array($profile)) {
+				continue;
+			}
+
+			$paths = array_merge($paths, self::flatten_definition_paths($profile));
+		}
+
+		if (!$paths) {
+			return self::get_member_database_profile_fallback_paths();
+		}
+
+		ksort($paths);
+		return $paths;
+	}
+
+	private static function get_member_database_profile_fallback_paths() {
+		return [
+			'account_info.first_name' => 'string',
+			'account_info.last_name' => 'string',
+			'account_info.name' => 'string',
+			'account_info.email' => 'email',
+			'account_info.phone' => 'string',
+			'account_info.phone_type' => 'string',
+			'account_info.street' => 'string',
+			'account_info.address2' => 'string',
+			'account_info.city' => 'string',
+			'account_info.state' => 'string',
+			'account_info.zip' => 'string',
+			'account_info.country' => 'string',
+			'account_info.size' => 'string',
+			'account_info.publication_pref' => 'string',
+			'account_info.aaj_pref' => 'string',
+			'account_info.anac_pref' => 'string',
+			'account_info.acj_pref' => 'string',
+			'account_info.guidebook_pref' => 'string',
+			'account_info.membership_discount_type' => 'string',
+			'account_info.auto_renew' => 'boolean',
+			'account_info.payment_method' => 'string',
+			'profile_info.member_id' => 'string',
+			'profile_info.tier' => 'string',
+			'profile_info.status' => 'string',
+			'profile_info.joined_date' => 'date',
+			'profile_info.renewal_date' => 'date',
+			'profile_info.expiration_date' => 'date',
+			'benefits_info.rescue_amount' => 'decimal',
+			'benefits_info.medical_amount' => 'decimal',
+			'benefits_info.mortal_remains_amount' => 'decimal',
+			'benefits_info.rescue_reimbursement_process' => 'boolean',
+			'family_membership.mode' => 'string',
+			'family_membership.additional_adult' => 'boolean',
+			'family_membership.dependent_count' => 'integer',
+			'linked_parent_account.name' => 'string',
+		];
+	}
+
+	private static function flatten_definition_paths($value, $prefix = '') {
+		$paths = [];
+
+		if (!is_array($value)) {
+			if ($prefix !== '') {
+				$paths[$prefix] = self::infer_value_type($value);
+			}
+			return $paths;
+		}
+
+		foreach ($value as $key => $item) {
+			$child_key = $prefix === '' ? (string) $key : $prefix . '.' . $key;
+			if (is_array($item)) {
+				if (self::is_assoc($item)) {
+					$paths = array_merge($paths, self::flatten_definition_paths($item, $child_key));
+				} else {
+					$paths[$child_key] = 'array';
+				}
+				continue;
+			}
+
+			$paths[$child_key] = self::infer_value_type($item);
+		}
+
+		return $paths;
+	}
+
+	private static function infer_value_type($value) {
+		if (is_bool($value)) {
+			return 'boolean';
+		}
+
+		if (is_int($value)) {
+			return 'integer';
+		}
+
+		if (is_float($value) || is_numeric($value) && strpos((string) $value, '.') !== false) {
+			return 'decimal';
+		}
+
+		if (is_array($value)) {
+			return 'array';
+		}
+
+		$string = (string) $value;
+		if ($string !== '' && is_email($string)) {
+			return 'email';
+		}
+
+		if ($string !== '' && filter_var($string, FILTER_VALIDATE_URL)) {
+			return 'url';
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $string)) {
+			return 'date';
+		}
+
+		if (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/', $string)) {
+			return 'datetime';
+		}
+
+		if (is_numeric($string)) {
+			return ctype_digit(ltrim($string, '-')) ? 'integer' : 'decimal';
+		}
+
+		return 'string';
+	}
+
+	private static function describe_table_columns($table_name) {
+		global $wpdb;
+
+		if (!$wpdb || !$table_name) {
+			return [];
+		}
+
+		$table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ($table_exists !== $table_name) {
+			return [];
+		}
+
+		$columns = [];
+		$results = $wpdb->get_results("SHOW COLUMNS FROM {$table_name}", ARRAY_A); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		foreach ((array) $results as $column) {
+			$field_name = sanitize_key($column['Field'] ?? '');
+			if ($field_name === '') {
+				continue;
+			}
+			$columns[$field_name] = sanitize_text_field((string) ($column['Type'] ?? 'varchar'));
+		}
+
+		return $columns;
+	}
+
+	private static function get_pmpro_table_name($property) {
+		global $wpdb;
+
+		if ($wpdb && !empty($wpdb->{$property})) {
+			return $wpdb->{$property};
+		}
+
+		return '';
+	}
+
+	private static function normalize_column_type($column_type) {
+		$column_type = strtolower((string) $column_type);
+
+		if (strpos($column_type, 'tinyint(1)') !== false || strpos($column_type, 'bool') !== false) {
+			return 'boolean';
+		}
+		if (strpos($column_type, 'int') !== false) {
+			return 'integer';
+		}
+		if (strpos($column_type, 'decimal') !== false || strpos($column_type, 'float') !== false || strpos($column_type, 'double') !== false) {
+			return 'decimal';
+		}
+		if (strpos($column_type, 'datetime') !== false || strpos($column_type, 'timestamp') !== false) {
+			return 'datetime';
+		}
+		if (strpos($column_type, 'date') !== false) {
+			return 'date';
+		}
+
+		return 'string';
+	}
+
+	private static function humanize_label($value) {
+		$value = str_replace(['_', '-'], ' ', (string) $value);
+		return ucwords(trim($value));
+	}
+
+	private static function humanize_path_label($path) {
+		$segments = array_map([__CLASS__, 'humanize_label'], explode('.', (string) $path));
+		return implode(' > ', $segments);
+	}
+
+	private static function sanitize_field_key($value) {
+		return strtolower(preg_replace('/[^a-z0-9]+/', '_', (string) $value));
+	}
+
+	private static function is_assoc(array $array) {
+		return array_keys($array) !== range(0, count($array) - 1);
 	}
 }
