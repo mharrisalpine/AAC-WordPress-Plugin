@@ -8,6 +8,7 @@ class AAC_Salesforce_Sync_Settings {
 	const OPTION_KEY = 'aac_salesforce_sync_settings';
 	const PAGE_SLUG = 'aac-salesforce-sync';
 	const FIELD_CATALOG_OPTION = 'aac_salesforce_sync_field_catalog';
+	const AUTH_STATE_OPTION = 'aac_salesforce_sync_auth_state';
 
 	public static function get_defaults() {
 		return [
@@ -17,7 +18,8 @@ class AAC_Salesforce_Sync_Settings {
 				'max_attempts' => 5,
 			],
 			'salesforce' => [
-				'token_url' => '',
+				'auth_url' => 'https://login.salesforce.com/services/oauth2/authorize',
+				'token_url' => 'https://login.salesforce.com/services/oauth2/token',
 				'instance_url' => '',
 				'api_version' => '61.0',
 				'client_id' => '',
@@ -37,24 +39,13 @@ class AAC_Salesforce_Sync_Settings {
 	}
 
 	public static function get_field_definitions() {
-		$member_db_fields = self::get_member_database_field_definitions();
-		$pmpro_fields = self::get_pmpro_field_definitions();
-
-		return [
-			'contact' => $member_db_fields,
-			'membership' => array_merge(
-				$member_db_fields,
-				$pmpro_fields['membership'],
-				$pmpro_fields['subscriptions']
-			),
-			'transaction' => $pmpro_fields['transactions'],
-		];
+		return self::get_member_database_field_definitions();
 	}
 
 	public static function get_default_field_mappings() {
 		return [
 			'contact' => [
-				'member_db_row_user_id' => 'WordPress_User_ID__c',
+				'member_db_profile_row_user_id' => 'WordPress_User_ID__c',
 				'member_db_profile_account_info_first_name' => 'FirstName',
 				'member_db_profile_account_info_last_name' => 'LastName',
 				'member_db_profile_account_info_email' => 'Email',
@@ -64,36 +55,53 @@ class AAC_Salesforce_Sync_Settings {
 				'member_db_profile_account_info_state' => 'MailingState',
 				'member_db_profile_account_info_zip' => 'MailingPostalCode',
 				'member_db_profile_account_info_country' => 'MailingCountry',
-				'member_db_row_account_role' => 'AAC_Family_Account_Role__c',
+				'member_db_profile_row_account_role' => 'AAC_Family_Account_Role__c',
 			],
 			'membership' => [
-				'member_db_row_user_id' => 'WordPress_User_ID__c',
-				'member_db_row_member_id' => 'AAC_Member_ID__c',
-				'member_db_row_membership_level' => 'Membership_Level__c',
-				'member_db_row_membership_status' => 'Status__c',
-				'member_db_row_renewal_date' => 'Renewal_Date__c',
-				'member_db_row_expiration_date' => 'Expiration_Date__c',
+				'member_db_profile_row_user_id' => 'WordPress_User_ID__c',
+				'member_db_profile_row_member_id' => 'AAC_Member_ID__c',
+				'member_db_profile_row_membership_level' => 'Membership_Level__c',
+				'member_db_profile_row_membership_status' => 'Status__c',
+				'member_db_profile_row_renewal_date' => 'Renewal_Date__c',
+				'member_db_profile_row_expiration_date' => 'Expiration_Date__c',
 				'member_db_profile_account_info_auto_renew' => 'Auto_Renew__c',
 				'member_db_profile_benefits_info_rescue_amount' => 'Rescue_Benefit_Amount__c',
 				'member_db_profile_benefits_info_medical_amount' => 'Medical_Benefit_Amount__c',
 				'member_db_profile_benefits_info_mortal_remains_amount' => 'Mortal_Remains_Amount__c',
 				'member_db_profile_benefits_info_rescue_reimbursement_process' => 'Rescue_Reimbursement_Process__c',
-				'pmpro_membership_membership_id' => 'PMPro_Level_ID__c',
-				'member_db_row_account_role' => 'Family_Account_Role__c',
+				'member_db_membership_record_membership_id' => 'PMPro_Level_ID__c',
+				'member_db_profile_row_account_role' => 'Family_Account_Role__c',
 			],
 			'transaction' => [
-				'pmpro_transaction_id' => 'PMPro_Order_ID__c',
-				'pmpro_transaction_user_id' => 'WordPress_User_ID__c',
-				'pmpro_transaction_total' => 'Amount__c',
-				'pmpro_transaction_status' => 'Status__c',
-				'pmpro_transaction_gateway' => 'Gateway__c',
-				'pmpro_transaction_timestamp' => 'Transaction_Date__c',
-				'pmpro_transaction_membership_id' => 'PMPro_Level_ID__c',
-				'pmpro_transaction_code' => 'Code__c',
-				'pmpro_transaction_payment_transaction_id' => 'Payment_Transaction_ID__c',
-				'pmpro_transaction_subscription_transaction_id' => 'Subscription_Transaction_ID__c',
+				'member_db_transaction_record_id' => 'PMPro_Order_ID__c',
+				'member_db_transaction_record_user_id' => 'WordPress_User_ID__c',
+				'member_db_transaction_record_total' => 'Amount__c',
+				'member_db_transaction_row_source_status' => 'Status__c',
+				'member_db_transaction_record_gateway' => 'Gateway__c',
+				'member_db_transaction_record_timestamp' => 'Transaction_Date__c',
+				'member_db_transaction_record_membership_id' => 'PMPro_Level_ID__c',
+				'member_db_transaction_record_code' => 'Code__c',
+				'member_db_transaction_record_payment_transaction_id' => 'Payment_Transaction_ID__c',
+				'member_db_transaction_record_subscription_transaction_id' => 'Subscription_Transaction_ID__c',
 			],
 		];
+	}
+
+	public static function get_auth_state() {
+		$state = get_option(self::AUTH_STATE_OPTION, []);
+		return is_array($state) ? $state : [];
+	}
+
+	public static function update_auth_state($state) {
+		update_option(self::AUTH_STATE_OPTION, is_array($state) ? $state : []);
+	}
+
+	public static function clear_auth_state() {
+		delete_option(self::AUTH_STATE_OPTION);
+	}
+
+	public static function get_oauth_redirect_uri() {
+		return admin_url('admin-post.php?action=aac_salesforce_sync_oauth_callback');
 	}
 
 	public static function get_field_catalog() {
@@ -127,6 +135,7 @@ class AAC_Salesforce_Sync_Settings {
 		$settings['general']['max_attempts'] = max(1, min(20, absint($general['max_attempts'] ?? $settings['general']['max_attempts'])));
 
 		$text_fields = [
+			'auth_url',
 			'token_url',
 			'instance_url',
 			'api_version',
@@ -146,7 +155,7 @@ class AAC_Salesforce_Sync_Settings {
 			}
 
 			$value = (string) $salesforce[$field];
-			$settings['salesforce'][$field] = in_array($field, ['token_url', 'instance_url'], true)
+			$settings['salesforce'][$field] = in_array($field, ['auth_url', 'token_url', 'instance_url'], true)
 				? esc_url_raw($value)
 				: sanitize_text_field($value);
 		}
@@ -189,26 +198,104 @@ class AAC_Salesforce_Sync_Settings {
 	}
 
 	private static function get_member_database_field_definitions() {
-		$definitions = [];
+		$profile_row_fields = self::build_mirror_row_field_definitions(
+			'profile',
+			'Member Database Profile Row',
+			'member_db.profile_row',
+			self::get_mirror_table_name('aac_member_db_profiles'),
+			['id', 'raw_profile']
+		);
+		$profile_payload_fields = self::build_path_field_definitions(
+			'profile',
+			'Member Database Profile',
+			'member_db.profile',
+			self::discover_json_paths_from_table(self::get_mirror_table_name('aac_member_db_profiles'), 'raw_profile', self::get_member_database_profile_fallback_paths())
+		);
+		$membership_row_fields = self::build_mirror_row_field_definitions(
+			'membership_row',
+			'Member Database Membership Row',
+			'member_db.membership_row',
+			self::get_mirror_table_name('aac_member_db_membership_history'),
+			['id', 'raw_record']
+		);
+		$membership_record_fields = self::build_path_field_definitions(
+			'membership_record',
+			'Member Database Membership Record',
+			'member_db.membership_record',
+			self::discover_json_paths_from_table(
+				self::get_mirror_table_name('aac_member_db_membership_history'),
+				'raw_record',
+				self::get_pmpro_membership_fallback_paths()
+			)
+		);
+		$subscription_row_fields = self::build_mirror_row_field_definitions(
+			'subscription_row',
+			'Member Database Subscription Row',
+			'member_db.subscription_row',
+			self::get_mirror_table_name('aac_member_db_subscriptions'),
+			['id', 'raw_record']
+		);
+		$subscription_record_fields = self::build_path_field_definitions(
+			'subscription_record',
+			'Member Database Subscription Record',
+			'member_db.subscription_record',
+			self::discover_json_paths_from_table(
+				self::get_mirror_table_name('aac_member_db_subscriptions'),
+				'raw_record',
+				self::get_pmpro_subscription_fallback_paths()
+			)
+		);
+		$transaction_row_fields = self::build_mirror_row_field_definitions(
+			'transaction_row',
+			'Member Database Transaction Row',
+			'member_db.transaction_row',
+			self::get_mirror_table_name('aac_member_db_transactions'),
+			['id', 'raw_record']
+		);
+		$transaction_record_fields = self::build_path_field_definitions(
+			'transaction_record',
+			'Member Database Transaction Record',
+			'member_db.transaction_record',
+			self::discover_json_paths_from_table(
+				self::get_mirror_table_name('aac_member_db_transactions'),
+				'raw_record',
+				self::get_pmpro_transaction_fallback_paths()
+			)
+		);
 
-		foreach (self::describe_member_database_profile_table() as $column_name => $column_type) {
-			if ('id' === $column_name || 'raw_profile' === $column_name) {
+		return [
+			'contact' => array_merge($profile_row_fields, $profile_payload_fields),
+			'membership' => array_merge($profile_row_fields, $profile_payload_fields, $membership_row_fields, $membership_record_fields, $subscription_row_fields, $subscription_record_fields),
+			'transaction' => array_merge($profile_row_fields, $transaction_row_fields, $transaction_record_fields),
+		];
+	}
+
+	private static function build_mirror_row_field_definitions($field_prefix, $label_prefix, $source_prefix, $table_name, $excluded_columns = []) {
+		$definitions = [];
+		foreach (self::describe_table_columns($table_name) as $column_name => $column_type) {
+			if (in_array($column_name, $excluded_columns, true)) {
 				continue;
 			}
 
-			$field_key = 'member_db_row_' . self::sanitize_field_key($column_name);
+			$field_key = 'member_db_' . $field_prefix . '_' . self::sanitize_field_key($column_name);
 			$definitions[$field_key] = [
-				'label' => 'Member Database Row: ' . self::humanize_label($column_name),
-				'source_path' => 'member_db.row.' . $column_name,
+				'label' => $label_prefix . ': ' . self::humanize_label($column_name),
+				'source_path' => $source_prefix . '.' . $column_name,
 				'type' => self::normalize_column_type($column_type),
 			];
 		}
 
-		foreach (self::discover_member_database_profile_paths() as $path => $type) {
-			$field_key = 'member_db_profile_' . self::sanitize_field_key($path);
+		ksort($definitions);
+		return $definitions;
+	}
+
+	private static function build_path_field_definitions($field_prefix, $label_prefix, $source_prefix, $paths) {
+		$definitions = [];
+		foreach ($paths as $path => $type) {
+			$field_key = 'member_db_' . $field_prefix . '_' . self::sanitize_field_key($path);
 			$definitions[$field_key] = [
-				'label' => 'Member Database Profile: ' . self::humanize_path_label($path),
-				'source_path' => 'member_db.profile.' . $path,
+				'label' => $label_prefix . ': ' . self::humanize_path_label($path),
+				'source_path' => $source_prefix . '.' . $path,
 				'type' => $type,
 			];
 		}
@@ -217,75 +304,32 @@ class AAC_Salesforce_Sync_Settings {
 		return $definitions;
 	}
 
-	private static function get_pmpro_field_definitions() {
-		return [
-			'membership' => self::build_table_field_definitions(
-				'pmpro_membership',
-				'PMPro Membership',
-				'pmpro.membership',
-				self::get_pmpro_table_name('pmpro_memberships_users')
-			),
-			'subscriptions' => self::build_table_field_definitions(
-				'pmpro_subscription',
-				'PMPro Subscription',
-				'pmpro.subscription',
-				self::get_pmpro_table_name('pmpro_subscriptions')
-			),
-			'transactions' => self::build_table_field_definitions(
-				'pmpro_transaction',
-				'PMPro Order',
-				'pmpro.transaction',
-				self::get_pmpro_table_name('pmpro_membership_orders')
-			),
-		];
-	}
-
-	private static function build_table_field_definitions($field_prefix, $label_prefix, $source_prefix, $table_name) {
-		$definitions = [];
-		foreach (self::describe_table_columns($table_name) as $column_name => $column_type) {
-			$field_key = $field_prefix . '_' . self::sanitize_field_key($column_name);
-			$definitions[$field_key] = [
-				'label' => $label_prefix . ': ' . self::humanize_label($column_name),
-				'source_path' => $source_prefix . '.' . $column_name,
-				'type' => self::normalize_column_type($column_type),
-			];
-		}
-
-		return $definitions;
-	}
-
-	private static function describe_member_database_profile_table() {
+	private static function discover_json_paths_from_table($table_name, $column_name, $fallback_paths) {
 		global $wpdb;
 
-		if (!$wpdb) {
-			return [];
+		if (!$wpdb || !$table_name) {
+			return $fallback_paths;
 		}
 
-		return self::describe_table_columns($wpdb->prefix . 'aac_member_db_profiles');
-	}
-
-	private static function discover_member_database_profile_paths() {
-		global $wpdb;
-
-		if (!$wpdb) {
-			return self::get_member_database_profile_fallback_paths();
+		$table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ($table_exists !== $table_name) {
+			return $fallback_paths;
 		}
 
-		$table_name = $wpdb->prefix . 'aac_member_db_profiles';
-		$rows = $wpdb->get_col("SELECT raw_profile FROM {$table_name} WHERE raw_profile IS NOT NULL AND raw_profile != '' ORDER BY mirrored_at DESC LIMIT 25"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_col("SELECT {$column_name} FROM {$table_name} WHERE {$column_name} IS NOT NULL AND {$column_name} != '' ORDER BY mirrored_at DESC LIMIT 25"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$paths = [];
 
-		foreach ((array) $rows as $raw_profile) {
-			$profile = json_decode((string) $raw_profile, true);
-			if (!is_array($profile)) {
+		foreach ((array) $rows as $raw_value) {
+			$decoded = json_decode((string) $raw_value, true);
+			if (!is_array($decoded)) {
 				continue;
 			}
 
-			$paths = array_merge($paths, self::flatten_definition_paths($profile));
+			$paths = array_merge($paths, self::flatten_definition_paths($decoded));
 		}
 
 		if (!$paths) {
-			return self::get_member_database_profile_fallback_paths();
+			return $fallback_paths;
 		}
 
 		ksort($paths);
@@ -329,6 +373,84 @@ class AAC_Salesforce_Sync_Settings {
 			'family_membership.additional_adult' => 'boolean',
 			'family_membership.dependent_count' => 'integer',
 			'linked_parent_account.name' => 'string',
+			'pmpro_membership.membership_id' => 'integer',
+			'pmpro_membership.status' => 'string',
+			'pmpro_membership.startdate' => 'datetime',
+			'pmpro_membership.enddate' => 'datetime',
+			'pmpro_subscription.status' => 'string',
+			'pmpro_subscription.next_payment_date' => 'datetime',
+			'pmpro_subscription.cycle_number' => 'integer',
+			'pmpro_subscription.cycle_period' => 'string',
+			'pmpro_transaction.id' => 'integer',
+			'pmpro_transaction.total' => 'decimal',
+			'pmpro_transaction.gateway' => 'string',
+			'pmpro_transaction.timestamp' => 'datetime',
+		];
+	}
+
+	private static function get_pmpro_membership_fallback_paths() {
+		return [
+			'id' => 'integer',
+			'user_id' => 'integer',
+			'membership_id' => 'integer',
+			'code_id' => 'integer',
+			'initial_payment' => 'decimal',
+			'billing_amount' => 'decimal',
+			'cycle_number' => 'integer',
+			'cycle_period' => 'string',
+			'billing_limit' => 'integer',
+			'trial_amount' => 'decimal',
+			'trial_limit' => 'integer',
+			'status' => 'string',
+			'startdate' => 'datetime',
+			'enddate' => 'datetime',
+			'modified' => 'datetime',
+		];
+	}
+
+	private static function get_pmpro_subscription_fallback_paths() {
+		return [
+			'id' => 'integer',
+			'user_id' => 'integer',
+			'membership_id' => 'integer',
+			'subscription_transaction_id' => 'string',
+			'status' => 'string',
+			'billing_amount' => 'decimal',
+			'cycle_number' => 'integer',
+			'cycle_period' => 'string',
+			'billing_limit' => 'integer',
+			'trial_amount' => 'decimal',
+			'trial_limit' => 'integer',
+			'startdate' => 'datetime',
+			'enddate' => 'datetime',
+			'next_payment_date' => 'datetime',
+			'modified' => 'datetime',
+		];
+	}
+
+	private static function get_pmpro_transaction_fallback_paths() {
+		return [
+			'id' => 'integer',
+			'user_id' => 'integer',
+			'membership_id' => 'integer',
+			'code' => 'string',
+			'subtotal' => 'decimal',
+			'tax' => 'decimal',
+			'total' => 'decimal',
+			'payment_type' => 'string',
+			'cardtype' => 'string',
+			'accountnumber' => 'string',
+			'expirationmonth' => 'integer',
+			'expirationyear' => 'integer',
+			'status' => 'string',
+			'gateway' => 'string',
+			'gateway_environment' => 'string',
+			'payment_transaction_id' => 'string',
+			'subscription_transaction_id' => 'string',
+			'timestamp' => 'datetime',
+			'affiliate_id' => 'integer',
+			'affiliate_subid' => 'string',
+			'notes' => 'string',
 		];
 	}
 
@@ -425,14 +547,14 @@ class AAC_Salesforce_Sync_Settings {
 		return $columns;
 	}
 
-	private static function get_pmpro_table_name($property) {
+	private static function get_mirror_table_name($table_suffix) {
 		global $wpdb;
 
-		if ($wpdb && !empty($wpdb->{$property})) {
-			return $wpdb->{$property};
+		if (!$wpdb) {
+			return '';
 		}
 
-		return '';
+		return $wpdb->prefix . $table_suffix;
 	}
 
 	private static function normalize_column_type($column_type) {

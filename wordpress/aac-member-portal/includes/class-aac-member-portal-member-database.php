@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_Member_Database {
 	const PAGE_SLUG = 'aac-member-portal-member-database';
-	const SCHEMA_VERSION = '1.0.0';
+	const SCHEMA_VERSION = '1.0.1';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
 
 	public function __construct() {
@@ -45,8 +45,9 @@ class AAC_Member_Portal_Member_Database {
 		$subscriptions = self::subscriptions_table();
 		$transactions = self::transactions_table();
 
-		// Profiles stores one flattened current snapshot per user. The other tables
-		// keep mirrored PMPro source rows for admin inspection and reporting.
+		// Profiles keeps one flattened "what does this member look like right now?"
+		// snapshot. The other tables keep mirrored PMPro rows for the moments when
+		// staff need receipts, history, and answers.
 		dbDelta("
 			CREATE TABLE {$profiles} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -153,13 +154,17 @@ class AAC_Member_Portal_Member_Database {
 			return false;
 		}
 
-		// The mirrored database is intentionally built from the same API payload the
-		// frontend uses, so admin views and member-facing views stay aligned.
+		// We build the mirror from the same payload the frontend uses on purpose.
+		// That keeps the admin view and the member-facing view from telling two
+		// different stories about the same person.
 		$api = AAC_Member_Portal_API::get_instance();
 		$profile = $api instanceof AAC_Member_Portal_API ? $api->get_profile_for_user($user_id) : [];
 		$account_info = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
 		$profile_info = is_array($profile['profile_info'] ?? null) ? $profile['profile_info'] : [];
 		$linked_parent = is_array($profile['linked_parent_account'] ?? null) ? $profile['linked_parent_account'] : [];
+		$profile['pmpro_membership'] = $this->get_latest_pmpro_row($user_id, 'pmpro_memberships_users');
+		$profile['pmpro_subscription'] = $this->get_latest_pmpro_row($user_id, 'pmpro_subscriptions');
+		$profile['pmpro_transaction'] = $this->get_latest_pmpro_row($user_id, 'pmpro_membership_orders');
 		$account_role = sanitize_text_field((string) get_user_meta($user_id, 'aac_family_account_role', true));
 		$parent_user_id = absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
 
@@ -194,6 +199,21 @@ class AAC_Member_Portal_Member_Database {
 		return true;
 	}
 
+	private function get_latest_pmpro_row($user_id, $wpdb_property) {
+		global $wpdb;
+
+		if (!$wpdb || empty($wpdb->{$wpdb_property})) {
+			return [];
+		}
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare("SELECT * FROM {$wpdb->{$wpdb_property}} WHERE user_id = %d ORDER BY id DESC LIMIT 1", $user_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+
+		return is_array($row) ? $row : [];
+	}
+
 	private function mirror_pmpro_rows($user_id, $wpdb_property, $mirror_table, $status_column = 'status', $date_candidates = []) {
 		global $wpdb;
 
@@ -203,8 +223,9 @@ class AAC_Member_Portal_Member_Database {
 		}
 
 		$source_table = $wpdb->{$wpdb_property};
-		// We wipe and rebuild the mirrored rows for a user on each sync. This keeps
-		// the reporting tables simple and avoids stale records when PMPro changes.
+		// We wipe and rebuild the mirrored rows for a user on each sync. It is not
+		// the fanciest move in the world, but it is wonderfully hard to lie to and
+		// keeps stale PMPro rows from haunting the reports.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare("SELECT * FROM {$source_table} WHERE user_id = %d ORDER BY id DESC", $user_id),
 			ARRAY_A

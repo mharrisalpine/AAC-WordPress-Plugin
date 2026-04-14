@@ -395,8 +395,7 @@ class AAC_Salesforce_Sync_Worker {
 
 	private function build_source_context($user_id, $profile, $transaction = []) {
 		$user = get_user_by('id', (int) $user_id);
-		$member_db = $this->get_member_database_context((int) $user_id);
-		$pmpro = $this->get_pmpro_context((int) $user_id, $transaction);
+		$member_db = $this->get_member_database_context((int) $user_id, $transaction);
 
 		if ($user instanceof WP_User) {
 			$wp = [
@@ -421,79 +420,106 @@ class AAC_Salesforce_Sync_Worker {
 		return [
 			'wp' => $wp,
 			'member_db' => $member_db,
-			'pmpro' => $pmpro,
 		];
 	}
 
-	private function get_member_database_context($user_id) {
+	private function get_member_database_context($user_id, $transaction = []) {
 		global $wpdb;
 
 		if (!$wpdb) {
 			return [
-				'row' => [],
+				'profile_row' => [],
 				'profile' => [],
+				'membership_row' => [],
+				'membership_record' => [],
+				'subscription_row' => [],
+				'subscription_record' => [],
+				'transaction_row' => [],
+				'transaction_record' => is_array($transaction) ? $transaction : [],
 			];
 		}
 
-		$table_name = $wpdb->prefix . 'aac_member_db_profiles';
-		$row = $wpdb->get_row(
-			$wpdb->prepare("SELECT * FROM {$table_name} WHERE user_id = %d LIMIT 1", $user_id),
+		$profile_table = $wpdb->prefix . 'aac_member_db_profiles';
+		$membership_table = $wpdb->prefix . 'aac_member_db_membership_history';
+		$subscription_table = $wpdb->prefix . 'aac_member_db_subscriptions';
+		$transaction_table = $wpdb->prefix . 'aac_member_db_transactions';
+
+		$profile_row = $wpdb->get_row(
+			$wpdb->prepare("SELECT * FROM {$profile_table} WHERE user_id = %d LIMIT 1", $user_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$membership_row = $wpdb->get_row(
+			$wpdb->prepare("SELECT * FROM {$membership_table} WHERE user_id = %d ORDER BY source_record_id DESC, id DESC LIMIT 1", $user_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$subscription_row = $wpdb->get_row(
+			$wpdb->prepare("SELECT * FROM {$subscription_table} WHERE user_id = %d ORDER BY source_record_id DESC, id DESC LIMIT 1", $user_id),
 			ARRAY_A
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
-		if (!is_array($row)) {
+		$transaction_row = [];
+		if (!empty($transaction['id'])) {
+			$transaction_row = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$transaction_table} WHERE user_id = %d AND source_record_id = %d LIMIT 1", $user_id, (int) $transaction['id']),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+		if (!is_array($transaction_row) || !$transaction_row) {
+			$transaction_row = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$transaction_table} WHERE user_id = %d ORDER BY source_record_id DESC, id DESC LIMIT 1", $user_id),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		if (!is_array($profile_row)) {
 			$profile = $this->get_portal_profile($user_id);
 			$profile = is_array($profile) ? $profile : [];
 			return [
-				'row' => [
+				'profile_row' => [
 					'user_id' => $user_id,
 				],
 				'profile' => $profile,
+				'membership_row' => [],
+				'membership_record' => [],
+				'subscription_row' => [],
+				'subscription_record' => [],
+				'transaction_row' => is_array($transaction_row) ? $this->strip_large_raw_columns($transaction_row) : [],
+				'transaction_record' => is_array($transaction) && $transaction ? $transaction : $this->decode_mirror_row($transaction_row),
 			];
 		}
 
-		$profile = json_decode((string) ($row['raw_profile'] ?? ''), true);
+		$profile = json_decode((string) ($profile_row['raw_profile'] ?? ''), true);
 		$profile = is_array($profile) ? $profile : [];
-		unset($row['raw_profile']);
+		unset($profile_row['raw_profile']);
 
 		return [
-			'row' => $row,
+			'profile_row' => $profile_row,
 			'profile' => $profile,
+			'membership_row' => is_array($membership_row) ? $this->strip_large_raw_columns($membership_row) : [],
+			'membership_record' => $this->decode_mirror_row($membership_row),
+			'subscription_row' => is_array($subscription_row) ? $this->strip_large_raw_columns($subscription_row) : [],
+			'subscription_record' => $this->decode_mirror_row($subscription_row),
+			'transaction_row' => is_array($transaction_row) ? $this->strip_large_raw_columns($transaction_row) : [],
+			'transaction_record' => is_array($transaction) && $transaction ? $transaction : $this->decode_mirror_row($transaction_row),
 		];
 	}
 
-	private function get_pmpro_context($user_id, $transaction = []) {
-		global $wpdb;
-
-		if (!$wpdb) {
-			return [
-				'membership' => [],
-				'subscription' => [],
-				'transaction' => is_array($transaction) ? $transaction : [],
-			];
+	private function decode_mirror_row($row) {
+		if (!is_array($row)) {
+			return [];
 		}
 
-		$membership = [];
-		if (!empty($wpdb->pmpro_memberships_users)) {
-			$membership = $wpdb->get_row(
-				$wpdb->prepare("SELECT * FROM {$wpdb->pmpro_memberships_users} WHERE user_id = %d ORDER BY id DESC LIMIT 1", $user_id),
-				ARRAY_A
-			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$record = json_decode((string) ($row['raw_record'] ?? ''), true);
+		return is_array($record) ? $record : [];
+	}
+
+	private function strip_large_raw_columns($row) {
+		if (!is_array($row)) {
+			return [];
 		}
 
-		$subscription = [];
-		if (!empty($wpdb->pmpro_subscriptions)) {
-			$subscription = $wpdb->get_row(
-				$wpdb->prepare("SELECT * FROM {$wpdb->pmpro_subscriptions} WHERE user_id = %d ORDER BY id DESC LIMIT 1", $user_id),
-				ARRAY_A
-			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		}
-
-		return [
-			'membership' => is_array($membership) ? $membership : [],
-			'subscription' => is_array($subscription) ? $subscription : [],
-			'transaction' => is_array($transaction) ? $transaction : [],
-		];
+		unset($row['raw_record'], $row['raw_profile']);
+		return $row;
 	}
 
 	private function resolve_context_path($context, $path) {
