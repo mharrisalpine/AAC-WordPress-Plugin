@@ -99,6 +99,36 @@ export const updateMemberProfile = (updates) =>
     () => fakeAuthDb.updateMemberProfile(updates)
   );
 
+export const submitGrantApplication = (payload) =>
+  withOptionalFakeBackend(
+    () => apiRequest('/grants', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
+    () => fakeAuthDb.submitGrantApplication(payload)
+  );
+
+export const getGrantApprovalQueue = (params = {}) =>
+  apiRequest(`/grant-approvals?${new URLSearchParams({
+    status: params.status || '',
+    search: params.search || '',
+  }).toString()}`);
+
+export const getGrantApprovalApplication = (applicationId) =>
+  apiRequest(`/grant-approvals/${encodeURIComponent(applicationId)}`);
+
+export const assignGrantApprovalReviewer = (applicationId, assignedReviewerId) =>
+  apiRequest(`/grant-approvals/${encodeURIComponent(applicationId)}/reviewer`, {
+    method: 'POST',
+    body: JSON.stringify({ assigned_reviewer_id: assignedReviewerId ?? 0 }),
+  });
+
+export const updateGrantApprovalWorkflow = (applicationId, payload = {}) =>
+  apiRequest(`/grant-approvals/${encodeURIComponent(applicationId)}/workflow`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
 export const submitContactMessage = ({ name, email, message }) =>
   withOptionalFakeBackend(
     () => apiRequest('/contact', {
@@ -131,6 +161,15 @@ export const getLatestPodcasts = async () => {
     podcasts: podcasts.length ? podcasts : AAC_CUTTING_EDGE_PODCASTS,
   };
 };
+
+export const recordPodcastListen = (payload) =>
+  withOptionalFakeBackend(
+    () => apiRequest('/podcasts/listen', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
+    () => fakeAuthDb.recordPodcastListen(payload)
+  );
 
 export const getMemberTransactions = () =>
   withOptionalFakeBackend(

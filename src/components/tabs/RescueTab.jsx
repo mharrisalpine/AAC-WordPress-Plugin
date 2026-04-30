@@ -203,8 +203,6 @@ const RescueTab = ({ profile }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h2 className="text-3xl font-bold mb-6 text-black">{portalContent.rescue_title}</h2>
-
           <div className="max-w-2xl mx-auto space-y-6">
             <div className="card-gradient rounded-2xl p-6 border border-stone-200 shadow-xl">
               <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#B71C1C]">

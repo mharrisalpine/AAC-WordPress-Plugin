@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, CheckCircle2, ClipboardList, FileText, Mountain, Send } from 'lucide-react';
@@ -7,40 +7,67 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { submitGrantApplication } from '@/lib/memberApi';
 import {
-  buildGrantApplicationRecord,
+  buildGrantFormState,
   formatGrantApplicationDate,
+  getGrantFormFields,
+  getGrantOpportunities,
   getGrantOpportunityBySlug,
-  grantOpportunities,
   grantPortalSourceUrl,
   grantStatusClassName,
   normalizeGrantApplications,
 } from '@/lib/grants';
 import { getFullName } from '@/lib/memberProfile';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
+const GRANT_FIELD_COLUMN_TYPES = new Set(['text', 'email', 'number', 'select']);
+
 const GrantApplicationPage = () => {
-  const { profile, updateProfile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const portalContent = getPortalUiSettings().content;
+  const grantOpportunities = useMemo(() => getGrantOpportunities(), []);
+  const grantFormFields = useMemo(() => getGrantFormFields(), []);
   const applications = useMemo(
     () => normalizeGrantApplications(profile?.grant_applications),
     [profile?.grant_applications],
   );
   const [selectedGrantSlug, setSelectedGrantSlug] = useState(grantOpportunities[0]?.slug || '');
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    projectTitle: '',
-    objectiveLocation: '',
-    discipline: '',
-    requestedAmount: '',
-    teamName: '',
-    summary: '',
-  });
+  const [form, setForm] = useState(() => buildGrantFormState(grantFormFields));
 
-  const selectedOpportunity = getGrantOpportunityBySlug(selectedGrantSlug);
+  useEffect(() => {
+    setForm(buildGrantFormState(grantFormFields));
+  }, [grantFormFields]);
+
+  useEffect(() => {
+    if (!grantOpportunities.length) {
+      setSelectedGrantSlug('');
+      return;
+    }
+
+    if (!grantOpportunities.some((opportunity) => opportunity.slug === selectedGrantSlug)) {
+      setSelectedGrantSlug(grantOpportunities[0].slug);
+    }
+  }, [grantOpportunities, selectedGrantSlug]);
+
+  const selectedOpportunity = useMemo(
+    () => getGrantOpportunityBySlug(selectedGrantSlug, grantOpportunities),
+    [selectedGrantSlug, grantOpportunities],
+  );
+
   const applicantName = getFullName(profile?.account_info);
   const applicantEmail = profile?.account_info?.email || '';
   const applicantPhone = profile?.account_info?.phone || 'Add your phone number in Account Settings to strengthen your application profile.';
+
+  const handleFieldChange = (fieldKey, value) => {
+    setForm((current) => ({
+      ...current,
+      [fieldKey]: value,
+    }));
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -54,47 +81,39 @@ const GrantApplicationPage = () => {
       return;
     }
 
-    if (!form.projectTitle.trim() || !form.summary.trim() || !form.requestedAmount.trim()) {
+    const missingField = grantFormFields.find((field) => field.required && !String(form[field.field_key] || '').trim());
+    if (missingField) {
       toast({
         variant: 'destructive',
         title: 'Complete the required fields',
-        description: 'Project title, amount requested, and project summary are required.',
+        description: `${missingField.label} is required before the application can be submitted.`,
       });
       return;
     }
 
+    const submissionFields = grantFormFields.map((field) => ({
+      field_key: field.field_key,
+      label: field.label,
+      type: field.type,
+      value: String(form[field.field_key] || ''),
+    }));
+
     setSubmitting(true);
     try {
-      const nextApplications = normalizeGrantApplications([
-        buildGrantApplicationRecord({
-          opportunity: selectedOpportunity,
-          form,
-        }),
-        ...applications,
-      ]);
-
-      const { error } = await updateProfile({
-        account_info: profile?.account_info || {},
-        grant_applications: nextApplications,
+      await submitGrantApplication({
+        grant_slug: selectedOpportunity.slug,
+        grant_name: selectedOpportunity.name,
+        category: selectedOpportunity.category,
+        fields: submissionFields,
       });
-
-      if (error) {
-        throw error;
-      }
+      await refreshProfile();
 
       toast({
         title: 'Grant application submitted',
-        description: `${selectedOpportunity.name} has been added to your AAC member record.`,
+        description: `${selectedOpportunity.name} is now in the review workflow and will show live status updates in My Grants.`,
       });
 
-      setForm({
-        projectTitle: '',
-        objectiveLocation: '',
-        discipline: '',
-        requestedAmount: '',
-        teamName: '',
-        summary: '',
-      });
+      setForm(buildGrantFormState(grantFormFields));
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -127,15 +146,13 @@ const GrantApplicationPage = () => {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-[#f8c235]/35 bg-[#f8c235]/10 px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#f8c235]">
                 <Mountain className="h-4 w-4" />
-                AAC Grants
+                {portalContent.grants_page_kicker || 'AAC Grants'}
               </div>
               <h1 className="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-5xl">
-                Support ambitious climbing, research, and community projects.
+                {portalContent.grants_page_title || 'Support ambitious climbing, research, and community projects.'}
               </h1>
               <p className="mt-4 max-w-3xl text-base leading-7 text-white/75">
-                This member-facing application page is modeled on the AAC Submittable experience, with current
-                opportunities, quick-fit guidance, and an in-portal application record you can track from your
-                member profile.
+                {portalContent.grants_page_description || 'Review current AAC grant opportunities, choose the best fit, and submit your application from inside the member portal.'}
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button
@@ -234,93 +251,78 @@ const GrantApplicationPage = () => {
                 <FileText className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-stone-900">{selectedOpportunity.name}</h2>
-                <p className="mt-1 text-sm text-stone-600">{selectedOpportunity.summary}</p>
+                <h2 className="text-xl font-bold text-stone-900">{selectedOpportunity.name || 'Grant Application'}</h2>
+                <p className="mt-1 text-sm text-stone-600">{selectedOpportunity.summary || 'Choose an opportunity to view its description and apply.'}</p>
               </div>
             </div>
 
-            <div className="grid gap-4 rounded-[24px] border border-stone-200 bg-stone-50/90 p-5 md:grid-cols-3">
-              {selectedOpportunity.highlights.map((highlight) => (
-                <div key={highlight} className="rounded-[20px] bg-white px-4 py-4 text-sm leading-6 text-stone-700">
-                  {highlight}
-                </div>
-              ))}
-            </div>
+            {selectedOpportunity.highlights?.length ? (
+              <div className="grid gap-4 rounded-[24px] border border-stone-200 bg-stone-50/90 p-5 md:grid-cols-3">
+                {selectedOpportunity.highlights.map((highlight) => (
+                  <div key={highlight} className="rounded-[20px] bg-white px-4 py-4 text-sm leading-6 text-stone-700">
+                    {highlight}
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="grant-project-title" className="text-black">Project Title</Label>
-                  <Input
-                    id="grant-project-title"
-                    value={form.projectTitle}
-                    onChange={(event) => setForm((current) => ({ ...current, projectTitle: event.target.value }))}
-                    className="mt-1 bg-white border-stone-300 text-black"
-                    placeholder="Example: Wind River Granite Objectives"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="grant-requested-amount" className="text-black">Amount Requested</Label>
-                  <Input
-                    id="grant-requested-amount"
-                    value={form.requestedAmount}
-                    onChange={(event) => setForm((current) => ({ ...current, requestedAmount: event.target.value }))}
-                    className="mt-1 bg-white border-stone-300 text-black"
-                    placeholder="$2,500"
-                  />
-                </div>
-              </div>
+                {grantFormFields.map((field) => {
+                  const inputId = `grant-${field.field_key}`;
+                  const value = form[field.field_key] || '';
+                  const isWide = !GRANT_FIELD_COLUMN_TYPES.has(field.type);
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="grant-location" className="text-black">Objective / Project Location</Label>
-                  <Input
-                    id="grant-location"
-                    value={form.objectiveLocation}
-                    onChange={(event) => setForm((current) => ({ ...current, objectiveLocation: event.target.value }))}
-                    className="mt-1 bg-white border-stone-300 text-black"
-                    placeholder="Tetons, Red Rock, Colorado Plateau..."
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="grant-discipline" className="text-black">Discipline</Label>
-                  <Input
-                    id="grant-discipline"
-                    value={form.discipline}
-                    onChange={(event) => setForm((current) => ({ ...current, discipline: event.target.value }))}
-                    className="mt-1 bg-white border-stone-300 text-black"
-                    placeholder="Alpine, research, access, mixed..."
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="grant-team-name" className="text-black">Team / Partners</Label>
-                <Input
-                  id="grant-team-name"
-                  value={form.teamName}
-                  onChange={(event) => setForm((current) => ({ ...current, teamName: event.target.value }))}
-                  className="mt-1 bg-white border-stone-300 text-black"
-                  placeholder="List your partners, mentors, or collaborators"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="grant-summary" className="text-black">Project Summary</Label>
-                <textarea
-                  id="grant-summary"
-                  value={form.summary}
-                  onChange={(event) => setForm((current) => ({ ...current, summary: event.target.value }))}
-                  rows={7}
-                  className="mt-1 flex w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-black ring-offset-background placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a43a] focus-visible:ring-offset-2"
-                  placeholder="Describe the objective, why this grant fits, what the funding unlocks, and how the project serves the AAC community."
-                />
+                  return (
+                    <div key={field.field_key} className={isWide ? 'md:col-span-2' : ''}>
+                      <Label htmlFor={inputId} className="text-black">
+                        {field.label}
+                        {field.required ? <span className="ml-1 text-[#8f1515]">*</span> : null}
+                      </Label>
+                      {field.type === 'textarea' ? (
+                        <textarea
+                          id={inputId}
+                          value={value}
+                          onChange={(event) => handleFieldChange(field.field_key, event.target.value)}
+                          rows={7}
+                          className="mt-1 flex w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-black ring-offset-background placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a43a] focus-visible:ring-offset-2"
+                          placeholder={field.placeholder}
+                        />
+                      ) : field.type === 'select' ? (
+                        <select
+                          id={inputId}
+                          value={value}
+                          onChange={(event) => handleFieldChange(field.field_key, event.target.value)}
+                          className="mt-1 flex h-10 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-black ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8a43a] focus-visible:ring-offset-2"
+                        >
+                          <option value="">Select an option</option>
+                          {field.options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          id={inputId}
+                          type={field.type === 'number' ? 'text' : field.type}
+                          value={value}
+                          onChange={(event) => handleFieldChange(field.field_key, event.target.value)}
+                          className="mt-1 bg-white border-stone-300 text-black"
+                          placeholder={field.placeholder}
+                        />
+                      )}
+                      {field.help_text ? (
+                        <p className="mt-2 text-sm leading-6 text-stone-500">{field.help_text}</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-stone-200 bg-stone-50/80 px-5 py-4">
                 <p className="text-sm leading-6 text-stone-700">
-                  Submitted applications are stored in your member record and appear on your Member Profile with
-                  review status.
+                  Submitted applications now feed the AAC review workflow directly and the live reviewer status appears in your member profile.
                 </p>
                 <Button
                   type="submit"

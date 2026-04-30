@@ -44,13 +44,21 @@ const ExpirationBanner = ({ details, onRenew }) => {
 };
 
 function App() {
-  const { user, profile, loading, signOut } = useAuth();
+  const { user, profile, loading, authReady, signOut } = useAuth();
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [renewalModalOpen, setRenewalModalOpen] = useState(false);
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('profile');
   const [portalMenuOpen, setPortalMenuOpen] = useState(false);
   const isDonateRoute = location.pathname === '/donate';
+  const publicHeroRoutes = new Set(['/home', '/join', '/login', '/donate', '/photographers']);
+  const isPublicHeroRoute = publicHeroRoutes.has(location.pathname);
+  const sidebarlessRoutes = new Set(['/photographers']);
+  const hideSidebarForRoute = sidebarlessRoutes.has(location.pathname);
+  const fullBleedContentRoutes = new Set(['/donate', '/photographers']);
+  const isFullBleedContentRoute = fullBleedContentRoutes.has(location.pathname);
+  const flushTopMemberRoutes = new Set(['/profile']);
+  const isFlushTopMemberRoute = flushTopMemberRoutes.has(location.pathname);
   const { openMembershipAction } = useMembershipActions();
   const expirationWarning = getExpirationWarningDetails(profile);
 
@@ -59,63 +67,8 @@ function App() {
   }, [location.pathname]);
 
   useEffect(() => {
-    // The WordPress admin bar can bleed into the embedded/fullscreen portal layouts,
-    // so we aggressively hide it on the frontend to keep the app shell consistent.
-    const styleId = 'aac-hide-wordpress-admin-bar';
-    let styleElement = document.getElementById(styleId);
-
-    if (!styleElement) {
-      styleElement = document.createElement('style');
-      styleElement.id = styleId;
-      styleElement.textContent = `
-        html { margin-top: 0 !important; }
-        body { margin-top: 0 !important; padding-top: 0 !important; }
-        body.admin-bar { margin-top: 0 !important; padding-top: 0 !important; }
-        #wpadminbar {
-          display: none !important;
-          visibility: hidden !important;
-          opacity: 0 !important;
-          pointer-events: none !important;
-        }
-      `;
-      document.head.appendChild(styleElement);
-    }
-
-    const hideAdminBar = () => {
-      document.documentElement.style.setProperty('margin-top', '0', 'important');
-
-      if (document.body) {
-        document.body.style.setProperty('margin-top', '0', 'important');
-        document.body.style.setProperty('padding-top', '0', 'important');
-        document.body.classList.remove('admin-bar');
-      }
-
-      const adminBar = document.getElementById('wpadminbar');
-      if (adminBar) {
-        adminBar.style.setProperty('display', 'none', 'important');
-        adminBar.style.setProperty('visibility', 'hidden', 'important');
-        adminBar.style.setProperty('opacity', '0', 'important');
-        adminBar.style.setProperty('pointer-events', 'none', 'important');
-        adminBar.setAttribute('aria-hidden', 'true');
-      }
-    };
-
-    hideAdminBar();
-
-    const observer = new MutationObserver(() => {
-      hideAdminBar();
-    });
-
-    if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    // The renewal modal is meant to appear once per browser session when a member is
-    // approaching expiration and does not have auto-renew enabled.
+    // This reminder should feel helpful, not cursed, so we only show it once per
+    // browser session when a member is nearing expiration without auto-renew.
     if (!user?.id || !profile) {
       return;
     }
@@ -129,12 +82,13 @@ function App() {
     }
   }, [user?.id, profile]);
 
-  if (loading) {
+  if (!authReady) {
     return <div className="min-h-screen member-app-surface flex items-center justify-center text-stone-800">Loading...</div>;
   }
 
-  const publicOutletPaths = new Set(['/donate', '/payment', '/success', '/login', '/linked-accounts', '/home', '/join']);
+  const publicOutletPaths = new Set(['/donate', '/payment', '/success', '/login', '/linked-accounts', '/home', '/join', '/photographers']);
   const showPublicOutlet = publicOutletPaths.has(location.pathname);
+  const shouldRenderPublicShell = !user || showPublicOutlet;
   const handleLogout = async () => {
     const result = await signOut();
     if (!result?.error) {
@@ -143,7 +97,8 @@ function App() {
           .filter((key) => key.startsWith('aac_renewal_modal_'))
           .forEach((key) => sessionStorage.removeItem(key));
       } catch (error) {
-        // Ignore sessionStorage cleanup failures.
+        // If sessionStorage is grumpy or unavailable, that is annoying but not
+        // worth breaking logout over.
       }
 
       const portalPageUrl = window.AAC_MEMBER_PORTAL_CONFIG?.portalPageUrl || '/membership';
@@ -152,16 +107,19 @@ function App() {
     }
   };
 
-  if (!user) {
+  if (shouldRenderPublicShell) {
     return (
       <div className="topo-lines flex min-h-screen flex-col">
         <Header
           variant="public"
-          onLogout={() => {}}
+          onLogout={handleLogout}
           onCartClick={() => {}}
           onOpenPortalMenu={() => {}}
         />
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <main
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+          style={{ paddingTop: isPublicHeroRoute ? '0px' : 'var(--aac-portal-header-height)' }}
+        >
           {showPublicOutlet ? <Outlet context={{ isCartOpen, setIsCartOpen, activeTab, setActiveTab }} /> : <HomePage />}
         </main>
         <Toaster />
@@ -180,8 +138,10 @@ function App() {
       </Helmet>
       
       <div className="member-app-surface flex h-screen min-h-screen flex-col overflow-hidden">
-        {/* Authenticated members stay inside the full app shell: header, banner, sticky
-            sidebar, and a scrollable main content pane. Public routes render above. */}
+        {/* Logged-in members get the full portal shell here: header, alerts,
+            sidebar, and the scrollable content pane. Public pages stay outside
+            this wrapper so they can behave more like marketing pages and less
+            like a dashboard wearing a fake mustache. */}
         {showHeader ? (
           <>
             <Header
@@ -194,12 +154,14 @@ function App() {
               onRenew={() => void openMembershipAction('renew', { targetTier: profile?.profile_info?.tier || 'Partner' })}
             />
             <div className="flex min-h-0 flex-1 overflow-hidden">
-              <PortalSidebar mobileOpen={portalMenuOpen} onMobileClose={() => setPortalMenuOpen(false)} />
+              {!hideSidebarForRoute ? (
+                <PortalSidebar mobileOpen={portalMenuOpen} onMobileClose={() => setPortalMenuOpen(false)} />
+              ) : null}
               <main
-                className={`mx-auto min-h-0 min-w-0 flex-1 overflow-y-auto ${isDonateRoute ? 'px-0 py-0' : 'px-4 py-6 md:pb-8'}`}
-                style={{ paddingBottom: isDonateRoute ? 'env(safe-area-inset-bottom, 0px)' : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
+                className={`portal-main-surface mx-auto min-h-0 min-w-0 flex-1 overflow-y-auto ${isFullBleedContentRoute ? 'px-0 py-0' : isFlushTopMemberRoute ? 'px-4 pb-6 pt-0 md:pb-8' : 'px-4 py-6 md:pb-8'}`}
+                style={{ paddingBottom: isFullBleedContentRoute ? 'env(safe-area-inset-bottom, 0px)' : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
               >
-                <div className={isDonateRoute ? '' : 'mx-auto max-w-7xl'}>
+                <div className={isDonateRoute || hideSidebarForRoute ? '' : 'mx-auto max-w-7xl'}>
                   <Outlet context={{ isCartOpen, setIsCartOpen, activeTab, setActiveTab }} />
                 </div>
               </main>

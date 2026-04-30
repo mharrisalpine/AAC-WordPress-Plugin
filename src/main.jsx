@@ -1,12 +1,14 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { Routes, Route } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import App from '@/App';
+import BabiYarTourPage from '@/pages/BabiYarTourPage';
 import ProductDetailPage from '@/pages/ProductDetailPage';
 import SuccessPage from '@/pages/SuccessPage';
 import FakePaymentPage from '@/pages/FakePaymentPage';
 import MemberPortal from '@/pages/MemberPortal';
+import RescuePageRedirect from '@/pages/RescuePageRedirect';
 import MeetupsPage from '@/pages/MeetupsPage';
 import ContactPage from '@/pages/ContactPage';
 import DonationPage from '@/pages/DonationPage';
@@ -20,6 +22,8 @@ import PublicationsPage from '@/pages/PublicationsPage';
 import LinkedAccountsPage from '@/pages/LinkedAccountsPage';
 import MemberJoinPage from '@/pages/MemberJoinPage';
 import HomePage from '@/pages/HomePage';
+import FeaturedPhotographersPage from '@/pages/FeaturedPhotographersPage';
+import GrantApprovalsPage from '@/pages/GrantApprovalsPage';
 import '@/index.css';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/contexts/AppAuthContext';
@@ -33,6 +37,9 @@ const mountElement =
   document.getElementById(preferredId) ||
   document.getElementById(WP_PORTAL_MOUNT_ID) ||
   document.getElementById('root');
+const isMobileRuntime =
+  import.meta.env.VITE_APP_RUNTIME === 'mobile' ||
+  (typeof window !== 'undefined' && Boolean(window.Capacitor));
 
 if (!mountElement) {
   throw new Error(
@@ -46,30 +53,37 @@ ReactDOM.createRoot(mountElement).render(
       <AuthProvider>
         <CartProvider>
           <Routes>
-            <Route path="/" element={<App />}>
-              <Route index element={<MemberProfilePage />} />
-              <Route path="profile" element={<MemberProfilePage />} />
-              <Route path="change-password" element={<ChangePasswordPage />} />
-              <Route path="product/:id" element={<ProductDetailPage />} />
-              <Route path="success" element={<SuccessPage />} />
-              <Route path="payment" element={<FakePaymentPage />} />
-              <Route path="store" element={<MemberPortal storeTab="store" />} />
-              <Route path="rescue" element={<MemberPortal storeTab="rescue" />} />
-              <Route path="discounts" element={<MemberPortal storeTab="discounts" />} />
-              <Route path="podcasts" element={<MemberPortal storeTab="podcasts" />} />
-              <Route path="meetups" element={<MeetupsPage />} />
-              <Route path="grants" element={<GrantApplicationPage />} />
-              <Route path="lodging" element={<LodgingPage />} />
-              <Route path="home" element={<HomePage />} />
-              <Route path="join" element={<MemberJoinPage />} />
-              <Route path="publications" element={<PublicationsPage />} />
-              <Route path="linked-accounts" element={<LinkedAccountsPage />} />
-              <Route path="membership" element={<MembershipManagementPage />} />
-              <Route path="contact" element={<ContactPage />} />
-              <Route path="account" element={<MemberPortal storeTab="account" />} />
-              <Route path="donate" element={<DonationPage />} />
-              <Route path="login" element={<LoginPage />} />
-            </Route>
+            <Route path="/tour" element={<BabiYarTourPage />} />
+            {isMobileRuntime ? (
+              <Route path="*" element={<Navigate replace to="/tour" />} />
+            ) : (
+              <Route path="/" element={<App />}>
+                <Route index element={<MemberProfilePage />} />
+                <Route path="profile" element={<MemberProfilePage />} />
+                <Route path="change-password" element={<ChangePasswordPage />} />
+                <Route path="product/:id" element={<ProductDetailPage />} />
+                <Route path="success" element={<SuccessPage />} />
+                <Route path="payment" element={<FakePaymentPage />} />
+                <Route path="store" element={<MemberPortal storeTab="store" />} />
+                <Route path="rescue" element={<RescuePageRedirect />} />
+                <Route path="discounts" element={<MemberPortal storeTab="discounts" />} />
+                <Route path="podcasts" element={<MemberPortal storeTab="podcasts" />} />
+                <Route path="meetups" element={<MeetupsPage />} />
+                <Route path="grants" element={<GrantApplicationPage />} />
+                <Route path="grant-approvals" element={<GrantApprovalsPage />} />
+                <Route path="lodging" element={<LodgingPage />} />
+                <Route path="home" element={<HomePage />} />
+                <Route path="photographers" element={<FeaturedPhotographersPage />} />
+                <Route path="join" element={<MemberJoinPage />} />
+                <Route path="publications" element={<PublicationsPage />} />
+                <Route path="linked-accounts" element={<LinkedAccountsPage />} />
+                <Route path="membership" element={<MembershipManagementPage />} />
+                <Route path="contact" element={<ContactPage />} />
+                <Route path="account" element={<MemberPortal storeTab="account" />} />
+                <Route path="donate" element={<DonationPage />} />
+                <Route path="login" element={<LoginPage />} />
+              </Route>
+            )}
           </Routes>
           <Toaster />
         </CartProvider>

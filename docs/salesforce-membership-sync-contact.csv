@@ -1,0 +1,15 @@
+salesforce_object,field_label,field_api_name,field_type,field_kind,relationship_or_record_type,external_id,unique,required,recommended_wordpress_source,sync_direction,notes
+Contact,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",Custom field,,Yes,Yes,Yes,member_db.profile_row.user_id,WordPress -> Salesforce,Primary cross-system key for Contact matching.
+Contact,AAC Member ID,AAC_Member_ID__c,Text(255),Custom field,,No,No,No,member_db.profile_row.member_id,WordPress -> Salesforce,Member-facing AAC ID if available.
+Contact,Current Membership Level,Current_Membership_Level__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_level,Bidirectional,Current active level snapshot for reporting and segmentation.
+Contact,Current Membership Status,Current_Membership_Status__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_status,Bidirectional,Snapshot field only; historical term status belongs on Membership_Term__c.
+Contact,Current Term Start Date,Current_Term_Start_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.renewal_date or membership term start,Bidirectional,Prefer to derive from current active membership term.
+Contact,Current Term End Date,Current_Term_End_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.expiration_date,Bidirectional,Prefer to derive from current active membership term.
+Contact,Family Membership,Family_Membership__c,Checkbox,Custom field,,No,No,No,member_db.profile.family_membership.mode,Bidirectional,True when the member purchased or currently holds a family plan.
+Contact,Family Account Role,Family_Account_Role__c,Picklist,Custom field,,No,No,No,member_db.profile_row.account_role,Bidirectional,Values like Parent or Child.
+Contact,Discount Group,Discount_Group__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.membership_discount_type,Bidirectional,Student/Military or other AAC-defined discount grouping.
+Contact,Auto Renew,Auto_Renew__c,Checkbox,Custom field,,No,No,No,member_db.profile.account_info.auto_renew,Bidirectional,Helpful contact-level snapshot even though billing system owns the real subscription.
+Contact,Publication Preference,Publication_Preference__c,Text(255),Custom field,,No,No,No,member_db.profile.account_info.publication_pref,Bidirectional,Top-level publication preference snapshot.
+Contact,T-Shirt Size,T_Shirt_Size__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.size,Bidirectional,Use the current WordPress picklist labels exactly if possible.
+Contact,Profile Photo URL,AAC_Profile_Photo_URL__c,URL,Custom field,,No,No,No,member_db.profile.account_info.photo_url,WordPress -> Salesforce,Use a custom writable URL field; do not map to Salesforce standard PhotoUrl.
+Contact,Birthdate,Birthdate,Date,Standard field,,No,No,No,member_db.profile.account_info.birthdate,Bidirectional,Standard Salesforce Contact birthdate field.

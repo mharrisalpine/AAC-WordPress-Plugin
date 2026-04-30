@@ -1,0 +1,52 @@
+member_database_field,member_database_section,current_source,current_storage_or_table,classification,target_pmpro_or_wp_field,recommendation,notes
+first_name,Profile,WordPress core user,user.first_name,WP core,first_name,keep as is,Already synced through portal save path.
+last_name,Profile,WordPress core user,user.last_name,WP core,last_name,keep as is,Already synced through portal save path.
+display_name,Profile,WordPress core user,user.display_name,WP core,display_name,keep as is,Derived from first and last name.
+email,Profile,WordPress core user,user.user_email,WP core,user_email,keep as is,Already canonical in WordPress.
+phone,Profile,PMPro core member meta,user_meta,PMPro core,bphone,keep as is,Member Database should mirror PMPro.
+street,Profile,PMPro core member meta,user_meta,PMPro core,baddress1,keep as is,Member Database should mirror PMPro.
+address2,Profile,PMPro core member meta,user_meta,PMPro core,baddress2,keep as is,Member Database should mirror PMPro.
+city,Profile,PMPro core member meta,user_meta,PMPro core,bcity,keep as is,Member Database should mirror PMPro.
+state,Profile,PMPro core member meta,user_meta,PMPro core,bstate,keep as is,Member Database should mirror PMPro.
+zip,Profile,PMPro core member meta,user_meta,PMPro core,bzipcode,keep as is,Member Database should mirror PMPro.
+country,Profile,PMPro core member meta,user_meta,PMPro core,bcountry,keep as is,Member Database should mirror PMPro.
+birthdate,Profile / Preferences,PMPro user field,user_meta,PMPro user field,birthdate,keep as is,Already synced into PMPro user fields.
+size,Preferences,PMPro user field,user_meta,PMPro user field,t_shirt,keep as is,Stored in legacy AAC key too for compatibility.
+email_opt_out,Preferences,PMPro user field,user_meta,PMPro user field,email_opt_out,keep as is,Should treat PMPro user field as source of truth.
+do_not_call,Preferences,PMPro user field,user_meta,PMPro user field,do_not_call,keep as is,Should treat PMPro user field as source of truth.
+do_not_contact,Preferences,PMPro user field,user_meta,PMPro user field,do_not_contact,keep as is,Should treat PMPro user field as source of truth.
+aaj_pref,Preferences,PMPro user field,user_meta,PMPro user field,aaj_preference,keep as is,Individual publication preference.
+anac_pref,Preferences,PMPro user field,user_meta,PMPro user field,anac_preference,keep as is,Individual publication preference.
+acj_pref,Preferences,PMPro user field,user_meta,PMPro user field,american_climbing_journal_preference,keep as is,Individual publication preference.
+guidebook_pref,Preferences,PMPro user field,user_meta,PMPro user field,guidebook_preferences,keep as is,Individual publication preference.
+publication_pref,Preferences,Legacy AAC account blob,user_meta aac_publication_pref,Custom migrate or deprecate,,deprecate,Legacy unified preference should not be the primary field if individual PMPro publication fields exist.
+member_id,Current Membership,Portal / PMPro-derived profile snapshot,aac_member_db_profiles.member_id,Custom keep,,keep custom,Useful AAC identifier but not a native PMPro user field.
+membership_level,Current Membership,PMPro level / mirror,aac_member_db_profiles.membership_level,PMPro-derived,,keep derived,Comes from PMPro membership state, not a PMPro user field.
+membership_status,Current Membership,PMPro status / mirror,aac_member_db_profiles.membership_status,PMPro-derived,,keep derived,Comes from PMPro membership state/history.
+renewal_date,Current Membership,PMPro-derived,aac_member_db_profiles.renewal_date,PMPro-derived,,keep derived,Not a PMPro editable user field.
+expiration_date,Current Membership,PMPro-derived,aac_member_db_profiles.expiration_date,PMPro-derived,,keep derived,Not a PMPro editable user field.
+account_role,Current Membership / Family,Custom AAC family logic,aac_member_db_profiles.account_role,Custom keep,,keep custom,Parent/child/standard family role is AAC-specific.
+photo_url,Profile,WordPress avatar / AAC profile blob,aac_account_info / raw_profile,Custom keep,,keep custom,Not a PMPro field.
+phone_type,Profile,Legacy AAC profile blob,aac_account_info / raw_profile,Custom migrate or remove,,remove unless truly needed,Not part of PMPro and not surfaced as a standard PMPro field.
+magazine_subscriptions,Preferences,Custom AAC add-on selection,user_meta aac_magazine_addons,Custom keep,,keep custom,Represents AAC-specific add-on catalog state.
+membership_discount_type,Preferences / Checkout,Custom AAC discount logic,user_meta aac_membership_discount_type,Custom keep,,keep custom,Discount program logic is AAC-specific.
+auto_renew,Preferences / Billing,PMPro / gateway-derived with AAC mirror,aac_account_info / profile,Custom keep,,keep custom,Operationally derived from PMPro/subscription state, not a standard PMPro user field.
+payment_method,Preferences / Billing,Legacy AAC profile blob,aac_account_info / raw_profile,Custom migrate or remove,,remove as profile source,Payment method details should come from gateway/PMPro billing screens, not stored as profile text.
+partner_family_mode,Preferences / Family,Custom AAC family config,user_meta aac_partner_family_mode,Custom keep,,keep custom,AAC checkout extension, not PMPro native.
+partner_family_additional_adult,Preferences / Family,Custom AAC family config,user_meta aac_partner_family_additional_adult,Custom keep,,keep custom,AAC checkout extension, not PMPro native.
+partner_family_dependents,Preferences / Family,Custom AAC family config,user_meta aac_partner_family_dependents,Custom keep,,keep custom,AAC checkout extension, not PMPro native.
+family_membership.mode,Preferences / Family,Custom AAC family structure,raw_profile family_membership,Custom keep,,keep custom,Derived household structure outside PMPro core.
+family_membership.additional_adult,Preferences / Family,Custom AAC family structure,raw_profile family_membership,Custom keep,,keep custom,Derived household structure outside PMPro core.
+family_membership.dependent_count,Preferences / Family,Custom AAC family structure,raw_profile family_membership,Custom keep,,keep custom,Derived household structure outside PMPro core.
+connected_accounts,Preferences / Family,Custom AAC linked accounts,raw_profile connected_accounts,Custom keep,,keep custom,Family account relationship data is AAC-specific.
+linked_parent_account,Preferences / Family,Custom AAC linked accounts,raw_profile linked_parent_account,Custom keep,,keep custom,Family account relationship data is AAC-specific.
+benefits_info.rescue_amount,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
+benefits_info.medical_amount,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
+benefits_info.mortal_remains_amount,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
+benefits_info.rescue_reimbursement_process,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
+grant_applications,Grant Applications,AAC Grants Review plugin,aac_grants_review tables / Member Database tab,Custom keep,,keep custom,Separate domain object; should not move into PMPro user fields.
+membership_history_rows,Membership History,Mirrored PMPro records,aac_member_db_membership_history,PMPro mirror,,keep as reporting mirror,These rows reflect PMPro history and should stay mirrored for reporting/review.
+subscription_rows,Subscriptions,Mirrored PMPro records,aac_member_db_subscriptions,PMPro mirror,,keep as reporting mirror,These rows reflect PMPro subscription records and should stay mirrored.
+transaction_rows,Transactions,Mirrored PMPro records,aac_member_db_transactions,PMPro mirror,,keep as reporting mirror,These rows reflect PMPro order records and should stay mirrored.
+podcast_listens,Podcast Listens,AAC custom listens tracker,aac_member_db_podcast_listens,Custom keep,,keep custom,Separate engagement dataset unrelated to PMPro profile fields.
+raw_profile,Profile Snapshot,Flattened AAC portal profile mirror,aac_member_db_profiles.raw_profile,Custom keep,,keep custom,Useful cache/reporting snapshot but should not be treated as source of truth.

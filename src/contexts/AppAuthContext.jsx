@@ -9,6 +9,7 @@ import {
   requestPasswordReset,
   updateMemberProfile,
 } from '@/lib/memberApi';
+import { normalizeAccountInfo } from '@/lib/memberProfile';
 
 export const AuthContext = createContext(undefined);
 
@@ -20,6 +21,7 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
 
   const applyAuthState = useCallback((data) => {
     const nextUser = data?.user ?? null;
@@ -70,6 +72,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       if (isLatestAuthRequest(requestId)) {
         setLoading(false);
+        setAuthReady(true);
       }
     }
   }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
@@ -154,7 +157,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
-  const signIn = useCallback(async (email, password) => {
+  const signIn = useCallback(async (email, password, options = {}) => {
     const requestId = beginAuthRequest();
     setLoading(true);
     try {
@@ -170,11 +173,20 @@ export const AuthProvider = ({ children }) => {
         return { error: null };
       }
 
-      toast({
-        variant: 'destructive',
-        title: 'Sign in Failed',
-        description: error.message || 'Incorrect password. Please try again.',
-      });
+      if (error?.status === 401) {
+        applyAuthState(null);
+      }
+
+      if (!options?.suppressToast) {
+        toast({
+          variant: 'destructive',
+          title: 'Sign in Failed',
+          description:
+            error?.status === 401
+              ? 'Password is Incorrect.'
+              : (error.message || 'We could not sign you in right now.'),
+        });
+      }
       return { error };
     } finally {
       if (isLatestAuthRequest(requestId)) {
@@ -230,7 +242,35 @@ export const AuthProvider = ({ children }) => {
     try {
       const data = await updateMemberProfile(updates);
       if (data?.profile) {
-        setProfile(data.profile);
+        const mergedProfile = {
+          ...(profile || {}),
+          ...data.profile,
+          account_info: updates?.account_info
+            ? normalizeAccountInfo({
+                ...(profile?.account_info || {}),
+                ...(data.profile?.account_info || {}),
+                ...updates.account_info,
+              })
+            : (data.profile?.account_info ?? profile?.account_info ?? null),
+          profile_info: updates?.profile_info
+            ? {
+                ...(profile?.profile_info || {}),
+                ...(data.profile?.profile_info || {}),
+                ...updates.profile_info,
+              }
+            : (data.profile?.profile_info ?? profile?.profile_info ?? null),
+          benefits_info: updates?.benefits_info
+            ? {
+                ...(profile?.benefits_info || {}),
+                ...(data.profile?.benefits_info || {}),
+                ...updates.benefits_info,
+              }
+            : (data.profile?.benefits_info ?? profile?.benefits_info ?? null),
+          grant_applications: Array.isArray(updates?.grant_applications)
+            ? updates.grant_applications
+            : (data.profile?.grant_applications ?? profile?.grant_applications ?? []),
+        };
+        setProfile(mergedProfile);
       } else {
         await refreshProfile();
       }
@@ -239,7 +279,7 @@ export const AuthProvider = ({ children }) => {
       toast({ variant: 'destructive', title: 'Update failed', description: error.message });
       return { error };
     }
-  }, [refreshProfile, toast, user]);
+  }, [profile, refreshProfile, toast, user]);
 
   const resetPassword = useCallback(async (email) => {
     const requestId = beginAuthRequest();
@@ -319,6 +359,7 @@ export const AuthProvider = ({ children }) => {
     session,
     profile,
     loading,
+    authReady,
     signUp,
     signUpWithProfile,
     signIn,
@@ -327,7 +368,7 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     changePassword,
     refreshProfile,
-  }), [user, session, profile, loading, signUp, signUpWithProfile, signIn, signOut, updateProfile, resetPassword, changePassword, refreshProfile]);
+  }), [user, session, profile, loading, authReady, signUp, signUpWithProfile, signIn, signOut, updateProfile, resetPassword, changePassword, refreshProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

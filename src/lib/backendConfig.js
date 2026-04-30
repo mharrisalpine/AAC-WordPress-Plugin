@@ -58,6 +58,39 @@ export const getPortalPageUrl = () => {
   return trimTrailingSlash(`${window.location.origin}${window.location.pathname}`);
 };
 
+export const getRescuePageUrl = () => {
+  const runtimeRescueUrl = getRuntimeConfig().rescuePageUrl;
+  if (runtimeRescueUrl) {
+    return trimTrailingSlash(runtimeRescueUrl);
+  }
+
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  return trimTrailingSlash(`${window.location.origin}/rescue/`);
+};
+
+export const getGrantReviewPageUrl = () => {
+  const runtimeGrantReviewUrl = getRuntimeConfig().grantReviewPageUrl;
+  if (runtimeGrantReviewUrl) {
+    return trimTrailingSlash(runtimeGrantReviewUrl);
+  }
+
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  return trimTrailingSlash(`${window.location.origin}/grant-review/`);
+};
+
+export const canManageGrantApprovals = () => Boolean(getRuntimeConfig().canManageGrantApprovals);
+
+export const getPmproSocialLoginHtml = () => {
+  const runtimeMarkup = getRuntimeConfig().pmproSocialLoginHtml;
+  return typeof runtimeMarkup === 'string' ? runtimeMarkup : '';
+};
+
 export const getCommerceProvider = () =>
   getRuntimeConfig().commerceProvider ||
   import.meta.env.VITE_COMMERCE_PROVIDER ||

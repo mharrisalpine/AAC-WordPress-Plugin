@@ -1,0 +1,53 @@
+object,field_label,api_name,field_type,external_id,unique,wordpress_source_field,sync_direction,notes
+Contact,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",yes,yes,member_db.profile_row.user_id,WordPress -> Salesforce,Primary external ID for contact upsert
+Contact,AAC Member ID,AAC_Member_ID__c,"Number(18,0)",no,no,member_db.profile_row.member_id,WordPress -> Salesforce,Numeric-only AAC member ID
+Contact,Current Membership Level,Current_Membership_Level__c,Picklist,no,no,member_db.profile_row.membership_level,WordPress -> Salesforce,Current member snapshot field
+Contact,Current Membership Status,Current_Membership_Status__c,Picklist,no,no,member_db.profile_row.membership_status,WordPress -> Salesforce,Current member snapshot field
+Contact,Current Term Start Date,Current_Term_Start_Date__c,Date,no,no,member_db.profile_row.start_date,WordPress -> Salesforce,Current active term start
+Contact,Current Term End Date,Current_Term_End_Date__c,Date,no,no,member_db.profile_row.expiration_date,WordPress -> Salesforce,Current active term end
+Contact,Auto Renew,Auto_Renew__c,Checkbox,no,no,member_db.profile.account_info.auto_renew,WordPress -> Salesforce,Current recurring status
+Contact,Discount Group,Discount_Group__c,Picklist,no,no,member_db.profile.account_info.membership_discount_type,WordPress -> Salesforce,Student/Military/etc.
+Contact,Birthdate,Birthdate,Date,no,no,member_db.profile.account_info.birthdate,WordPress -> Salesforce,Use standard Contact Birthdate
+Contact,T-Shirt Size,T_Shirt_Size__c,Picklist,no,no,member_db.profile.account_info.tshirt_size,WordPress -> Salesforce,Unisex shirt size labels
+Contact,Publication Preference,Publication_Preference__c,Text,no,no,member_db.profile.preferences.publication_preference,WordPress -> Salesforce,Can be changed to picklist if desired
+Contact,Email Opt Out,Email_Opt_Out__c,Checkbox,no,no,member_db.profile.preferences.email_opt_out,WordPress -> Salesforce,Communication preference
+Contact,Do Not Call,Do_Not_Call__c,Checkbox,no,no,member_db.profile.preferences.do_not_call,WordPress -> Salesforce,Communication preference
+Contact,Do Not Contact,Do_Not_Contact__c,Checkbox,no,no,member_db.profile.preferences.do_not_contact,WordPress -> Salesforce,Communication preference
+Contact,AAC Profile Photo URL,AAC_Profile_Photo_URL__c,URL,no,no,member_db.profile.account_info.photo_url,WordPress -> Salesforce,Use custom field instead of standard PhotoUrl
+Opportunity,Opportunity Name,Name,Text,no,no,,Salesforce managed,Can use automation or formula naming
+Opportunity,Amount,Amount,Currency,no,no,member_db.transaction_record.total,WordPress -> Salesforce,Membership order amount
+Opportunity,Close Date,CloseDate,Date,no,no,member_db.transaction_record.timestamp,WordPress -> Salesforce,Payment date
+Opportunity,Stage Name,StageName,Picklist,no,no,,WordPress -> Salesforce,Recommended fixed value Closed Won
+Opportunity,WordPress Order ID,WordPress_Order_ID__c,"Number(18,0)",yes,yes,member_db.transaction_record.id,WordPress -> Salesforce,Primary external ID for opportunity upsert
+Opportunity,AAC External Key,AAC_External_Key__c,"Text(100)",no,no,member_db.transaction_record.aac_external_key,WordPress -> Salesforce,Optional cross-system key
+Opportunity,Membership Level,Membership_Level__c,Picklist,no,no,member_db.profile_row.membership_level,WordPress -> Salesforce,Level sold on purchase/renewal
+Opportunity,Membership Action,Membership_Action__c,Picklist,no,no,member_db.transaction_record.membership_action,WordPress -> Salesforce,New/Renewal/Upgrade/Downgrade
+Opportunity,Membership Term Start Date,Membership_Term_Start_Date__c,Date,no,no,member_db.profile_row.start_date,WordPress -> Salesforce,Start date of term associated with the transaction
+Opportunity,Membership Term End Date,Membership_Term_End_Date__c,Date,no,no,member_db.profile_row.expiration_date,WordPress -> Salesforce,End date of term associated with the transaction
+Opportunity,Discount Group,Discount_Group__c,Picklist,no,no,member_db.profile.account_info.membership_discount_type,WordPress -> Salesforce,Student/Military/etc.
+Opportunity,Auto Renew,Auto_Renew__c,Checkbox,no,no,member_db.profile.account_info.auto_renew,WordPress -> Salesforce,Recurring status at purchase time
+Opportunity,Gateway,Gateway__c,Text,no,no,member_db.transaction_record.gateway,WordPress -> Salesforce,Stripe or other gateway source
+Opportunity,PMPro Code,PMPro_Code__c,Text,no,no,member_db.transaction_record.code,WordPress -> Salesforce,PMPro order code
+Opportunity,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",no,no,member_db.profile_row.user_id,WordPress -> Salesforce,Useful for contact matching/reporting
+Opportunity,AAC Member ID,AAC_Member_ID__c,"Number(18,0)",no,no,member_db.profile_row.member_id,WordPress -> Salesforce,Useful for contact matching/reporting
+Membership_Term__c,Term Name,Name,Auto Number,no,yes,,Salesforce managed,Recommended auto number field
+Membership_Term__c,Contact Lookup,Contact__c,Lookup(Contact),no,no,,WordPress -> Salesforce,Populate from matched Salesforce contact
+Membership_Term__c,Opportunity Lookup,Opportunity__c,Lookup(Opportunity),no,no,,WordPress -> Salesforce,Populate from related membership opportunity
+Membership_Term__c,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",no,no,member_db.profile_row.user_id,WordPress -> Salesforce,Useful for contact matching/reporting
+Membership_Term__c,AAC Member ID,AAC_Member_ID__c,"Number(18,0)",no,no,member_db.profile_row.member_id,WordPress -> Salesforce,Numeric-only AAC member ID
+Membership_Term__c,AAC External Key,AAC_External_Key__c,"Text(100)",yes,yes,member_db.profile_row.aac_external_key,WordPress -> Salesforce,Primary external ID for term upsert
+Membership_Term__c,Membership Level,Membership_Level__c,Picklist,no,no,member_db.profile_row.membership_level,WordPress -> Salesforce,Level active for this term
+Membership_Term__c,Status,Status__c,Picklist,no,no,member_db.profile_row.membership_status,WordPress -> Salesforce,Active/Superseded/Expired/etc.
+Membership_Term__c,Start Date,Start_Date__c,Date,no,no,member_db.profile_row.start_date,WordPress -> Salesforce,Term start date
+Membership_Term__c,End Date,End_Date__c,Date,no,no,member_db.profile_row.expiration_date,WordPress -> Salesforce,Term end date
+Membership_Term__c,Renewal Date,Renewal_Date__c,Date,no,no,member_db.profile_row.renewal_date,WordPress -> Salesforce,Expected renewal point
+Membership_Term__c,Auto Renew,Auto_Renew__c,Checkbox,no,no,member_db.profile.account_info.auto_renew,WordPress -> Salesforce,Recurring status for this term
+Membership_Term__c,Discount Group,Discount_Group__c,Picklist,no,no,member_db.profile.account_info.membership_discount_type,WordPress -> Salesforce,Student/Military/etc.
+Membership_Term__c,Family Membership,Family_Membership__c,Checkbox,no,no,member_db.profile.family.family_membership,WordPress -> Salesforce,Whether term is family membership
+Membership_Term__c,Family Account Role,Family_Account_Role__c,Picklist,no,no,member_db.profile.family.account_role,WordPress -> Salesforce,Primary/linked child/etc.
+Membership_Term__c,Rescue Benefit Amount,Rescue_Benefit_Amount__c,Currency,no,no,member_db.profile.benefits_info.rescue_amount,WordPress -> Salesforce,Redpoint rescue amount
+Membership_Term__c,Medical Benefit Amount,Medical_Benefit_Amount__c,Currency,no,no,member_db.profile.benefits_info.medical_amount,WordPress -> Salesforce,Redpoint medical amount
+Membership_Term__c,Mortal Remains Amount,Mortal_Remains_Amount__c,Currency,no,no,member_db.profile.benefits_info.mortal_remains_amount,WordPress -> Salesforce,Redpoint transport amount
+Membership_Term__c,Rescue Reimbursement Process,Rescue_Reimbursement_Process__c,Checkbox,no,no,member_db.profile.benefits_info.rescue_reimbursement_process,WordPress -> Salesforce,Whether reimbursement process applies
+Membership_Term__c,Previous Term,Previous_Term__c,Lookup(Membership_Term__c),no,no,,Salesforce managed,Optional automation-managed relationship
+Membership_Term__c,Superseded By,Superseded_By__c,Lookup(Membership_Term__c),no,no,,Salesforce managed,Optional automation-managed relationship

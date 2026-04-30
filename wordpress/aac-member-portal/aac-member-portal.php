@@ -40,10 +40,11 @@ final class AAC_Member_Portal_Plugin {
 	private $is_rendering_managed_fullscreen = false;
 
 	public function __construct() {
-		// The plugin bootstraps three major concerns:
-		// 1. the REST/API layer used by the React app
-		// 2. the admin/settings UI used by staff
-		// 3. the mirrored member database used for reporting/admin review
+		// This plugin is juggling three jobs at once:
+		// 1. be the backend/API for the React app
+		// 2. give staff an admin/settings home
+		// 3. keep a mirrored member database around for reporting and review
+		// It is a lot, but at least the chaos is organized.
 		new AAC_Member_Portal_API();
 		new AAC_Member_Portal_Admin();
 		new AAC_Member_Portal_Member_Database();
@@ -57,16 +58,14 @@ final class AAC_Member_Portal_Plugin {
 		add_action('wp_enqueue_scripts', [$this, 'register_assets']);
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_portal_for_shortcode'], 15);
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_shell_styles'], 15);
-		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_frontend_admin_bar_hiding_style'], 99);
 		add_action('send_headers', [$this, 'maybe_send_nocache_headers'], 0);
-		add_action('template_redirect', [$this, 'maybe_disable_frontend_admin_bar'], 0);
 		add_action('template_redirect', [$this, 'maybe_render_managed_fullscreen_template'], 0);
 		add_action('template_redirect', [$this, 'maybe_redirect_frontend_login_to_portal'], 1);
 		add_action('template_redirect', [$this, 'maybe_redirect_pmpro_change_password_to_portal'], 1);
 		add_action('init', [$this, 'maybe_seed_pmpro_checkout_username'], 1);
 		add_action('init', [$this, 'maybe_apply_partner_family_checkout_level_override'], 2);
 		add_action('shutdown', [$this, 'capture_relevant_fatal'], PHP_INT_MAX);
-		add_action('wp_footer', [$this, 'maybe_render_frontend_admin_bar_removal_script'], 1001);
+		add_filter('the_content', [$this, 'maybe_replace_pmpro_checkout_publication_fields'], 15);
 		add_filter('the_content', [$this, 'maybe_wrap_managed_pmpro_content'], 20);
 		add_action('admin_init', [$this, 'maybe_restore_pmpro_admin_capabilities']);
 		add_filter('user_has_cap', [$this, 'maybe_grant_pmpro_admin_capabilities'], 20, 4);
@@ -75,13 +74,19 @@ final class AAC_Member_Portal_Plugin {
 		add_filter('pmpro_required_billing_fields', [$this, 'filter_pmpro_required_billing_fields']);
 		add_filter('pmpro_checkout_new_user_array', [$this, 'filter_pmpro_checkout_new_user_array']);
 		add_action('pmpro_checkout_after_user_fields', [$this, 'render_pmpro_membership_discounts'], 9);
+		add_action('pmpro_checkout_after_user_fields', [$this, 'render_pmpro_checkout_publication_preferences'], 10);
 		add_action('pmpro_checkout_after_user_fields', [$this, 'render_pmpro_partner_family_options'], 12);
 		add_action('pmpro_checkout_after_user_fields', [$this, 'render_pmpro_magazine_addons']);
 		add_filter('pmpro_checkout_level', [$this, 'filter_pmpro_checkout_level_for_magazine_addons']);
+		add_filter('pmpro_checkout_start_date', [$this, 'filter_pmpro_checkout_start_date_for_autorenew_reactivation'], 20, 2);
+		add_filter('pmpro_level_cost_text', [$this, 'filter_pmpro_level_cost_text_for_autorenew_reactivation'], 20, 4);
 		add_action('pmpro_after_checkout', [$this, 'capture_pmpro_checkout_order_breakdown'], 20, 2);
 		add_action('pmpro_after_change_membership_level', [$this, 'sync_pmpro_checkout_profile_fields'], 20, 2);
+		add_action('show_user_profile', [$this, 'render_pmpro_member_address_fields']);
+		add_action('edit_user_profile', [$this, 'render_pmpro_member_address_fields']);
+		add_action('personal_options_update', [$this, 'save_pmpro_member_address_fields']);
+		add_action('edit_user_profile_update', [$this, 'save_pmpro_member_address_fields']);
 		add_filter('pmpro_confirmation_message', [$this, 'append_pmpro_confirmation_line_items'], 20, 2);
-		add_filter('show_admin_bar', [$this, 'maybe_hide_frontend_admin_bar'], 20);
 		add_filter('template_include', [$this, 'maybe_use_fullscreen_template'], 99);
 		add_action('admin_notices', [$this, 'maybe_render_missing_build_notice']);
 		add_filter('script_loader_tag', [$this, 'mark_script_as_module'], 10, 3);
@@ -270,6 +275,377 @@ final class AAC_Member_Portal_Plugin {
 		ob_start();
 		include $shell_template;
 		return ob_get_clean();
+	}
+
+	public function maybe_replace_pmpro_checkout_publication_fields($content) {
+		if (is_admin() || !in_the_loop() || !is_main_query()) {
+			return $content;
+		}
+
+		if (!$this->is_pmpro_checkout_request() || trim((string) $content) === '') {
+			return $content;
+		}
+
+		if (
+			strpos($content, 'aaj_preference_div') === false &&
+			strpos($content, 'anac_preference_div') === false &&
+			strpos($content, 'american_climbing_journal_preference_div') === false &&
+			strpos($content, 'guidebook_preferences_div') === false
+		) {
+			return $content;
+		}
+
+		$level = $this->get_level_at_checkout();
+		$level_id = isset($level->id) ? (int) $level->id : 0;
+		if ($level_id <= 2 || !class_exists('DOMDocument')) {
+			return $content;
+		}
+
+		$previous_use_internal_errors = libxml_use_internal_errors(true);
+		$dom = new DOMDocument('1.0', 'UTF-8');
+		$wrapped = '<div id="aac-pmpro-content-root">' . $content . '</div>';
+		$loaded = $dom->loadHTML(mb_convert_encoding($wrapped, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+		if (!$loaded) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$xpath = new DOMXPath($dom);
+		$fieldset_nodes = $xpath->query("//*[@id='pmpro_form_fieldset-member-preferences' or @id='pmpro_form_fieldset-more-information']");
+		$fieldset = ($fieldset_nodes instanceof DOMNodeList && $fieldset_nodes->length > 0) ? $fieldset_nodes->item(0) : null;
+		if (!$fieldset instanceof DOMElement) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$existing_server_cards = $xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' aac-server-member-preferences ')]", $fieldset);
+		if ($existing_server_cards instanceof DOMNodeList && $existing_server_cards->length > 0) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$fields_nodes = $xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' pmpro_form_fields ')]", $fieldset);
+		$fields_container = ($fields_nodes instanceof DOMNodeList && $fields_nodes->length > 0) ? $fields_nodes->item(0) : null;
+		if (!$fields_container instanceof DOMElement) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$publication_definitions = [
+			[
+				'id' => 'aaj_preference_div',
+				'name' => 'aaj_preference',
+				'eyebrow' => 'Annual',
+				'title' => 'American Alpine Journal',
+				'description' => 'Annual climbing journal. Choose print delivery or digital-only access.',
+				'image_key' => 'aaj',
+				'theme_class' => 'aac-member-preferences__card--journal',
+			],
+			[
+				'id' => 'anac_preference_div',
+				'name' => 'anac_preference',
+				'eyebrow' => 'Annual',
+				'title' => 'Accidents in North American Climbing',
+				'description' => 'Annual accident review. Choose print delivery or digital-only access.',
+				'image_key' => 'anac',
+				'theme_class' => 'aac-member-preferences__card--accidents',
+			],
+			[
+				'id' => 'american_climbing_journal_preference_div',
+				'name' => 'american_climbing_journal_preference',
+				'eyebrow' => 'Journal',
+				'title' => 'American Climbing Journal',
+				'description' => 'Member stories and club updates. Choose print delivery or digital-only access.',
+				'image_key' => 'acj',
+				'theme_class' => 'aac-member-preferences__card--journal',
+			],
+			[
+				'id' => 'guidebook_preferences_div',
+				'name' => 'guidebook_preferences',
+				'eyebrow' => 'Quarterly',
+				'title' => 'Guidebook to Membership',
+				'description' => 'Quarterly member publication. Choose print delivery or digital-only access.',
+				'image_key' => 'guidebook',
+				'theme_class' => 'aac-member-preferences__card--guidebook',
+			],
+		];
+
+		$publication_images = $this->get_template_design_settings()['publication_tile_images'] ?? [];
+		$fallback_images = [
+			'aaj' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-95.jpeg',
+			'anac' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-28.jpeg',
+			'acj' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-4.jpg',
+			'guidebook' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-2.jpg',
+		];
+
+		$cards = [];
+		foreach ($publication_definitions as $definition) {
+			$field_nodes = $xpath->query(".//*[@id='" . $definition['id'] . "']", $fieldset);
+			$field_node = ($field_nodes instanceof DOMNodeList && $field_nodes->length > 0) ? $field_nodes->item(0) : null;
+			if (!$field_node instanceof DOMElement) {
+				continue;
+			}
+
+			$select_nodes = $xpath->query(".//select[@name='" . $definition['name'] . "']", $field_node);
+			$select_node = ($select_nodes instanceof DOMNodeList && $select_nodes->length > 0) ? $select_nodes->item(0) : null;
+			if (!$select_node instanceof DOMElement) {
+				continue;
+			}
+
+			$selected_value = 'Digital';
+			foreach ($select_node->getElementsByTagName('option') as $option_node) {
+				if (!$option_node instanceof DOMElement) {
+					continue;
+				}
+
+				if ($option_node->hasAttribute('selected')) {
+					$selected_value = trim((string) $option_node->getAttribute('value')) ?: 'Digital';
+					break;
+				}
+			}
+
+			if ($selected_value !== 'Print') {
+				$selected_value = 'Digital';
+			}
+
+			$image_url = trim((string) ($publication_images[$definition['image_key']] ?? ''));
+			if ($image_url === '') {
+				$image_url = $fallback_images[$definition['image_key']] ?? '';
+			}
+
+			$cards[] = [
+				'name' => $definition['name'],
+				'eyebrow' => $definition['eyebrow'],
+				'title' => $definition['title'],
+				'description' => $definition['description'],
+				'image_url' => $image_url,
+				'theme_class' => $definition['theme_class'],
+				'selected_value' => $selected_value,
+			];
+
+			$field_node->parentNode->removeChild($field_node);
+		}
+
+		if (empty($cards)) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$fragment = $dom->createDocumentFragment();
+		$fragment->appendXML($this->build_pmpro_publication_preferences_markup($cards));
+		$fields_container->appendChild($fragment);
+
+		$root_nodes = $xpath->query("//*[@id='aac-pmpro-content-root']");
+		$root = ($root_nodes instanceof DOMNodeList && $root_nodes->length > 0) ? $root_nodes->item(0) : null;
+		$result = $root instanceof DOMElement ? $this->get_dom_inner_html($root) : $content;
+
+		libxml_clear_errors();
+		libxml_use_internal_errors($previous_use_internal_errors);
+
+		return $result;
+	}
+
+	public function render_pmpro_checkout_publication_preferences() {
+		if (is_admin() || !$this->is_pmpro_checkout_request()) {
+			return;
+		}
+
+		$level = $this->get_level_at_checkout();
+		$level_id = isset($level->id) ? (int) $level->id : 0;
+		if ($level_id <= 2) {
+			return;
+		}
+
+		$cards = $this->get_pmpro_checkout_publication_preference_cards();
+		if (empty($cards)) {
+			return;
+		}
+
+		echo $this->build_pmpro_publication_preferences_markup($cards); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	private function get_pmpro_checkout_publication_preference_cards() {
+		$publication_definitions = [
+			[
+				'name' => 'aaj_preference',
+				'eyebrow' => 'Annual',
+				'title' => 'American Alpine Journal',
+				'description' => 'Annual climbing journal. Choose print delivery or digital-only access.',
+				'image_key' => 'aaj',
+				'theme_class' => 'aac-member-preferences__card--journal',
+			],
+			[
+				'name' => 'anac_preference',
+				'eyebrow' => 'Annual',
+				'title' => 'Accidents in North American Climbing',
+				'description' => 'Annual accident review. Choose print delivery or digital-only access.',
+				'image_key' => 'anac',
+				'theme_class' => 'aac-member-preferences__card--accidents',
+			],
+			[
+				'name' => 'american_climbing_journal_preference',
+				'eyebrow' => 'Journal',
+				'title' => 'American Climbing Journal',
+				'description' => 'Member stories and club updates. Choose print delivery or digital-only access.',
+				'image_key' => 'acj',
+				'theme_class' => 'aac-member-preferences__card--journal',
+			],
+			[
+				'name' => 'guidebook_preferences',
+				'eyebrow' => 'Quarterly',
+				'title' => 'Guidebook to Membership',
+				'description' => 'Quarterly member publication. Choose print delivery or digital-only access.',
+				'image_key' => 'guidebook',
+				'theme_class' => 'aac-member-preferences__card--guidebook',
+			],
+		];
+
+		$publication_images = $this->get_template_design_settings()['publication_tile_images'] ?? [];
+		$fallback_images = [
+			'aaj' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-95.jpeg',
+			'anac' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-28.jpeg',
+			'acj' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-4.jpg',
+			'guidebook' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-2.jpg',
+		];
+
+		$current_user_id = get_current_user_id();
+		$cards = [];
+		foreach ($publication_definitions as $definition) {
+			$request_value = '';
+			if (isset($_REQUEST[$definition['name']])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$request_value = sanitize_text_field(wp_unslash($_REQUEST[$definition['name']])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			}
+
+			$stored_value = $current_user_id ? (string) get_user_meta($current_user_id, $definition['name'], true) : '';
+			$selected_value = $request_value !== '' ? $request_value : $stored_value;
+			$selected_value = $selected_value === 'Digital' ? 'Digital' : 'Print';
+
+			$image_url = trim((string) ($publication_images[$definition['image_key']] ?? ''));
+			if ($image_url === '') {
+				$image_url = $fallback_images[$definition['image_key']] ?? '';
+			}
+
+			$cards[] = [
+				'name' => $definition['name'],
+				'eyebrow' => $definition['eyebrow'],
+				'title' => $definition['title'],
+				'description' => $definition['description'],
+				'image_url' => $image_url,
+				'theme_class' => $definition['theme_class'],
+				'selected_value' => $selected_value,
+			];
+		}
+
+		return $cards;
+	}
+
+	private function build_pmpro_publication_preferences_markup($cards) {
+		$markup = '<div class="aac-server-member-preferences">';
+		$markup .= '<p class="aac-member-preferences__intro">' . esc_html__('Choose how you would like to receive each AAC publication. Print keeps the mailed edition on your membership, while digital keeps the experience paperless.', 'aac-member-portal') . '</p>';
+		$markup .= '<div class="aac-member-preferences__grid">';
+
+		foreach ($cards as $card) {
+			$markup .= '<article class="aac-member-preferences__card ' . esc_attr($card['theme_class']) . '">';
+			$markup .= '<div class="aac-member-preferences__art">';
+			if (!empty($card['image_url'])) {
+				$markup .= '<img src="' . esc_url($card['image_url']) . '" alt="' . esc_attr($card['title'] . ' cover') . '" class="aac-member-preferences__cover-image" />';
+			}
+			$markup .= '</div>';
+			$markup .= '<div class="aac-member-preferences__content">';
+			$markup .= '<div class="aac-member-preferences__title-block">';
+			$markup .= '<span class="aac-member-preferences__eyebrow">' . esc_html($card['eyebrow']) . '</span>';
+			$markup .= '<h3 class="aac-member-preferences__title">' . esc_html($card['title']) . '</h3>';
+			$markup .= '</div>';
+			$markup .= '<p class="aac-member-preferences__description">' . esc_html($card['description']) . '</p>';
+			$markup .= '<div class="aac-member-preferences__choices">';
+
+			foreach (['Print', 'Digital'] as $option) {
+				$markup .= '<label class="aac-member-preferences__option">';
+				$markup .= '<input class="aac-member-preferences__input" type="radio" name="' . esc_attr($card['name']) . '" value="' . esc_attr($option) . '" ' . checked($card['selected_value'], $option, false) . ' required />';
+				$markup .= '<span class="aac-member-preferences__choice">' . esc_html($option) . '</span>';
+				$markup .= '</label>';
+			}
+
+			$markup .= '</div></div></article>';
+		}
+
+		$markup .= '</div></div>';
+		return $markup;
+	}
+
+	private function get_dom_inner_html(DOMNode $node) {
+		$html = '';
+		foreach ($node->childNodes as $child_node) {
+			$html .= $node->ownerDocument->saveHTML($child_node);
+		}
+		return $html;
+	}
+
+	public function normalize_pmpro_checkout_publication_markup($content) {
+		if (!is_string($content) || $content === '') {
+			return $content;
+		}
+
+		if (
+			strpos($content, 'aac-server-member-preferences') === false ||
+			strpos($content, 'pmpro_form_fieldset-publication-preferences') === false ||
+			!class_exists('DOMDocument')
+		) {
+			return $content;
+		}
+
+		$previous_use_internal_errors = libxml_use_internal_errors(true);
+		$dom = new DOMDocument('1.0', 'UTF-8');
+		$wrapped = '<div id="aac-publication-normalize-root">' . $content . '</div>';
+		$loaded = $dom->loadHTML(mb_convert_encoding($wrapped, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+		if (!$loaded) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$xpath = new DOMXPath($dom);
+		$server_block_nodes = $xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' aac-server-member-preferences ')]");
+		$publication_fieldset_nodes = $xpath->query("//*[@id='pmpro_form_fieldset-publication-preferences']");
+		$server_block = ($server_block_nodes instanceof DOMNodeList && $server_block_nodes->length > 0) ? $server_block_nodes->item(0) : null;
+		$publication_fieldset = ($publication_fieldset_nodes instanceof DOMNodeList && $publication_fieldset_nodes->length > 0) ? $publication_fieldset_nodes->item(0) : null;
+
+		if (!$server_block instanceof DOMElement || !$publication_fieldset instanceof DOMElement) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		$publication_fields_nodes = $xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' pmpro_form_fields ')]", $publication_fieldset);
+		$publication_fields = ($publication_fields_nodes instanceof DOMNodeList && $publication_fields_nodes->length > 0) ? $publication_fields_nodes->item(0) : null;
+		if (!$publication_fields instanceof DOMElement) {
+			libxml_clear_errors();
+			libxml_use_internal_errors($previous_use_internal_errors);
+			return $content;
+		}
+
+		if ($server_block->parentNode) {
+			$server_block->parentNode->removeChild($server_block);
+		}
+		if ($publication_fields->firstChild) {
+			$publication_fields->insertBefore($server_block, $publication_fields->firstChild);
+		} else {
+			$publication_fields->appendChild($server_block);
+		}
+
+		$root_nodes = $xpath->query("//*[@id='aac-publication-normalize-root']");
+		$root = ($root_nodes instanceof DOMNodeList && $root_nodes->length > 0) ? $root_nodes->item(0) : null;
+		$result = $root instanceof DOMElement ? $this->get_dom_inner_html($root) : $content;
+
+		libxml_clear_errors();
+		libxml_use_internal_errors($previous_use_internal_errors);
+
+		return $result;
 	}
 
 	public function maybe_redirect_frontend_login_to_portal() {
@@ -753,7 +1129,14 @@ final class AAC_Member_Portal_Plugin {
 		$addon_total = $this->get_magazine_addon_total($selected_addons);
 		$checkout_account_info = $this->get_checkout_account_info_from_request();
 		$international_surcharge = $this->get_international_print_surcharge_amount($checkout_account_info, isset($level->id) ? (int) $level->id : 0);
-		if ($addon_total <= 0 && $membership_discount_amount_initial <= 0 && $partner_family_total <= 0 && $international_surcharge <= 0) {
+		$autorenew_reactivation_context = $this->get_autorenew_reactivation_checkout_context($level);
+		if (
+			$addon_total <= 0
+			&& $membership_discount_amount_initial <= 0
+			&& $partner_family_total <= 0
+			&& $international_surcharge <= 0
+			&& !$autorenew_reactivation_context
+		) {
 			return $level;
 		}
 
@@ -765,6 +1148,11 @@ final class AAC_Member_Portal_Plugin {
 			max(0, $base_membership_recurring_total - $membership_discount_amount_recurring) + $partner_family_total + $addon_total + $international_surcharge,
 			2
 		);
+		if ($autorenew_reactivation_context) {
+			// Reactivating auto-renew should not double-charge the already-paid current term.
+			$adjusted_initial_total = 0.0;
+			$level->startdate = $autorenew_reactivation_context['start_date'];
+		}
 
 		if (isset($level->initial_payment)) {
 			$level->initial_payment = $adjusted_initial_total;
@@ -775,6 +1163,36 @@ final class AAC_Member_Portal_Plugin {
 		}
 
 		return $level;
+	}
+
+	public function filter_pmpro_checkout_start_date_for_autorenew_reactivation($startdate, $user_id = null) {
+		$context = $this->get_autorenew_reactivation_checkout_context();
+		if (!$context) {
+			return $startdate;
+		}
+
+		return $context['start_date'];
+	}
+
+	public function filter_pmpro_level_cost_text_for_autorenew_reactivation($text, $level, $tags = true, $short = false) {
+		$context = $this->get_autorenew_reactivation_checkout_context($level);
+		if (!$context) {
+			return $text;
+		}
+
+		$renewal_amount = $this->format_price($context['renewal_amount']);
+		$renewal_date = date_i18n(get_option('date_format'), strtotime($context['start_date']));
+		$message = sprintf(
+			'$0 today. Your recurring renewal will restart on %1$s at %2$s.',
+			$renewal_date,
+			$renewal_amount
+		);
+
+		if (!$tags) {
+			return wp_strip_all_tags($message);
+		}
+
+		return sprintf('<span class="pmpro_level-cost">%s</span>', esc_html($message));
 	}
 
 	public function sync_pmpro_checkout_profile_fields($level_id, $user_id) {
@@ -794,28 +1212,29 @@ final class AAC_Member_Portal_Plugin {
 			'last_name' => isset($_REQUEST['blastname']) ? sanitize_text_field(wp_unslash($_REQUEST['blastname'])) : ($stored_account_info['last_name'] ?? ''),
 			'email' => $user->user_email,
 			'phone' => isset($_REQUEST['bphone']) ? sanitize_text_field(wp_unslash($_REQUEST['bphone'])) : ($stored_account_info['phone'] ?? ''),
-			'phone_type' => $stored_account_info['phone_type'] ?? '',
+			'birthdate' => isset($_REQUEST['birthdate']) ? $this->sanitize_birthdate_value(wp_unslash($_REQUEST['birthdate'])) : ($stored_account_info['birthdate'] ?? ''),
 			'street' => isset($_REQUEST['baddress1']) ? sanitize_text_field(wp_unslash($_REQUEST['baddress1'])) : ($stored_account_info['street'] ?? ''),
 			'address2' => isset($_REQUEST['baddress2']) ? sanitize_text_field(wp_unslash($_REQUEST['baddress2'])) : ($stored_account_info['address2'] ?? ''),
 			'city' => isset($_REQUEST['bcity']) ? sanitize_text_field(wp_unslash($_REQUEST['bcity'])) : ($stored_account_info['city'] ?? ''),
 			'state' => isset($_REQUEST['bstate']) ? sanitize_text_field(wp_unslash($_REQUEST['bstate'])) : ($stored_account_info['state'] ?? ''),
 			'zip' => isset($_REQUEST['bzipcode']) ? sanitize_text_field(wp_unslash($_REQUEST['bzipcode'])) : ($stored_account_info['zip'] ?? ''),
 			'country' => isset($_REQUEST['bcountry']) ? sanitize_text_field(wp_unslash($_REQUEST['bcountry'])) : ($stored_account_info['country'] ?? ''),
-			'size' => isset($_REQUEST['t_shirt']) ? sanitize_text_field(wp_unslash($_REQUEST['t_shirt'])) : ($stored_account_info['size'] ?? ''),
+			'email_opt_out' => isset($_REQUEST['email_opt_out']) ? !empty($_REQUEST['email_opt_out']) : !empty($stored_account_info['email_opt_out']),
+			'do_not_call' => isset($_REQUEST['do_not_call']) ? !empty($_REQUEST['do_not_call']) : !empty($stored_account_info['do_not_call']),
+			'do_not_contact' => isset($_REQUEST['do_not_contact']) ? !empty($_REQUEST['do_not_contact']) : !empty($stored_account_info['do_not_contact']),
+			'size' => isset($_REQUEST['t_shirt'])
+				? $this->normalize_tshirt_size_value(wp_unslash($_REQUEST['t_shirt']))
+				: $this->normalize_tshirt_size_value($stored_account_info['size'] ?? ''),
 			'photo_url' => $stored_account_info['photo_url'] ?? get_avatar_url($user_id),
 			'auto_renew' => isset($_REQUEST['autorenew_present'])
 				? !empty($_REQUEST['autorenew'])
 				: true,
-			'payment_method' => $stored_account_info['payment_method'] ?? '',
 		];
 
-		$next_account_info = array_merge($next_account_info, $this->get_normalized_publication_preferences([
-			'publication_pref' => isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($stored_account_info['publication_pref'] ?? 'Digital'),
-			'aaj_pref' => isset($_REQUEST['aac_aaj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref'])) : ($stored_account_info['aaj_pref'] ?? ($stored_account_info['publication_pref'] ?? 'Digital')),
-			'anac_pref' => isset($_REQUEST['aac_anac_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref'])) : ($stored_account_info['anac_pref'] ?? ($stored_account_info['publication_pref'] ?? 'Digital')),
-			'acj_pref' => isset($_REQUEST['aac_acj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref'])) : ($stored_account_info['acj_pref'] ?? ($stored_account_info['publication_pref'] ?? 'Digital')),
-			'guidebook_pref' => isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($stored_account_info['guidebook_pref'] ?? 'Digital'),
-		]));
+		$next_account_info = array_merge(
+			$next_account_info,
+			$this->get_checkout_publication_preferences($stored_account_info, 'Digital')
+		);
 
 		$next_account_info['name'] = trim($next_account_info['first_name'] . ' ' . $next_account_info['last_name']);
 		if ($next_account_info['name'] === '') {
@@ -855,7 +1274,7 @@ final class AAC_Member_Portal_Plugin {
 			update_user_meta($user_id, 'aac_partner_family_config', $partner_family_config);
 		}
 
-		update_user_meta($user_id, 'aac_account_info', $next_account_info);
+		update_user_meta($user_id, 'aac_account_info', $this->strip_pmpro_managed_account_fields_for_storage($next_account_info));
 		$this->sync_reportable_member_fields($user_id, $next_account_info, $selected_magazine_addons, $membership_discount_type);
 		$this->sync_partner_family_member_slots($user_id, $partner_family_config, $this->get_level_recurring_total($this->get_level_at_checkout()));
 
@@ -880,6 +1299,66 @@ final class AAC_Member_Portal_Plugin {
 		foreach ($this->get_pmpro_order_breakdown_storage_keys($morder) as $storage_key) {
 			update_option($storage_key, $order_breakdown, false);
 		}
+	}
+
+	public function sync_member_record_to_pmpro_fields($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return false;
+		}
+
+		$user = get_user_by('id', $user_id);
+		if (!$user instanceof WP_User || !$user->exists()) {
+			return false;
+		}
+
+		$account_info = $this->get_account_info_defaults_for_user($user);
+		return $this->sync_account_info_to_pmpro_fields($user_id, $account_info);
+	}
+
+	public function sync_account_info_to_pmpro_fields($user_id, $account_info) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !is_array($account_info)) {
+			return false;
+		}
+
+		$user = get_user_by('id', $user_id);
+		if (!$user instanceof WP_User || !$user->exists()) {
+			return false;
+		}
+
+		$selected_magazine_addons = $this->get_effective_magazine_addon_selection($user_id);
+		$membership_discount_type = $this->get_effective_membership_discount_type($user_id);
+
+		update_user_meta($user_id, 'aac_account_info', $this->strip_pmpro_managed_account_fields_for_storage($account_info));
+		$this->sync_reportable_member_fields($user_id, $account_info, $selected_magazine_addons, $membership_discount_type);
+
+		wp_update_user([
+			'ID' => $user_id,
+			'first_name' => $account_info['first_name'] ?? '',
+			'last_name' => $account_info['last_name'] ?? '',
+			'display_name' => $account_info['name'] ?? trim(($account_info['first_name'] ?? '') . ' ' . ($account_info['last_name'] ?? '')),
+		]);
+
+		return true;
+	}
+
+	public function backfill_pmpro_fields_from_member_database() {
+		$user_ids = $this->get_member_ids_for_pmpro_field_backfill();
+		$synced = 0;
+
+		foreach (array_chunk($user_ids, 200) as $user_id_batch) {
+			foreach ($user_id_batch as $user_id) {
+				if ($this->sync_member_record_to_pmpro_fields($user_id)) {
+					$synced++;
+				}
+			}
+		}
+
+		return [
+			'candidate_count' => count($user_ids),
+			'synced_count' => $synced,
+		];
 	}
 
 	public function append_pmpro_confirmation_line_items($confirmation_message, $pmpro_invoice) {
@@ -908,16 +1387,13 @@ final class AAC_Member_Portal_Plugin {
 		$user = wp_get_current_user();
 		$account_info = $this->get_account_info_defaults_for_user($user instanceof WP_User && $user->exists() ? $user : null);
 
-		$account_info = array_merge($account_info, $this->get_normalized_publication_preferences([
-			'publication_pref' => isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($account_info['publication_pref'] ?? 'Print'),
-			'aaj_pref' => isset($_REQUEST['aac_aaj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref'])) : ($account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? 'Print')),
-			'anac_pref' => isset($_REQUEST['aac_anac_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref'])) : ($account_info['anac_pref'] ?? ($account_info['publication_pref'] ?? 'Print')),
-			'acj_pref' => isset($_REQUEST['aac_acj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref'])) : ($account_info['acj_pref'] ?? ($account_info['publication_pref'] ?? 'Print')),
-			'guidebook_pref' => isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($account_info['guidebook_pref'] ?? 'Print'),
-		]));
+		$account_info = array_merge(
+			$account_info,
+			$this->get_checkout_publication_preferences($account_info, 'Print')
+		);
 
 		if (isset($_REQUEST['t_shirt'])) {
-			$account_info['size'] = sanitize_text_field(wp_unslash($_REQUEST['t_shirt']));
+			$account_info['size'] = $this->normalize_tshirt_size_value(wp_unslash($_REQUEST['t_shirt']));
 		}
 
 		return [
@@ -928,6 +1404,66 @@ final class AAC_Member_Portal_Plugin {
 			'guidebook_pref' => $account_info['guidebook_pref'],
 			'size' => $account_info['size'],
 		];
+	}
+
+	public function render_pmpro_member_address_fields($user) {
+		if (!$user instanceof WP_User || !$user->exists()) {
+			return;
+		}
+
+		$address_fields = [
+			'baddress1' => ['label' => 'Address Line 1', 'autocomplete' => 'address-line1'],
+			'baddress2' => ['label' => 'Address Line 2', 'autocomplete' => 'address-line2'],
+			'bcity' => ['label' => 'City', 'autocomplete' => 'address-level2'],
+			'bstate' => ['label' => 'State / Province', 'autocomplete' => 'address-level1'],
+			'bzipcode' => ['label' => 'Postal Code', 'autocomplete' => 'postal-code'],
+			'bcountry' => ['label' => 'Country', 'autocomplete' => 'country-name'],
+		];
+		?>
+		<h2>AAC / PMPro Address</h2>
+		<table class="form-table" role="presentation">
+			<tbody>
+				<?php foreach ($address_fields as $meta_key => $field) : ?>
+					<tr>
+						<th>
+							<label for="<?php echo esc_attr($meta_key); ?>">
+								<?php echo esc_html($field['label']); ?>
+							</label>
+						</th>
+						<td>
+							<input
+								type="text"
+								name="<?php echo esc_attr($meta_key); ?>"
+								id="<?php echo esc_attr($meta_key); ?>"
+								value="<?php echo esc_attr((string) get_user_meta($user->ID, $meta_key, true)); ?>"
+								class="regular-text"
+								autocomplete="<?php echo esc_attr($field['autocomplete']); ?>"
+							/>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	public function save_pmpro_member_address_fields($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !current_user_can('edit_user', $user_id)) {
+			return;
+		}
+
+		foreach (['baddress1', 'baddress2', 'bcity', 'bstate', 'bzipcode', 'bcountry'] as $meta_key) {
+			if (!isset($_POST[$meta_key])) {
+				continue;
+			}
+
+			update_user_meta(
+				$user_id,
+				$meta_key,
+				sanitize_text_field(wp_unslash($_POST[$meta_key]))
+			);
+		}
 	}
 
 	private function get_membership_discount_catalog() {
@@ -1426,13 +1962,39 @@ final class AAC_Member_Portal_Plugin {
 			? sanitize_text_field(wp_unslash($_REQUEST['bcountry']))
 			: ($account_info['country'] ?? 'US');
 
-		return array_merge($account_info, $this->get_normalized_publication_preferences([
-			'publication_pref' => isset($_REQUEST['aac_publication_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_publication_pref'])) : ($account_info['publication_pref'] ?? 'Digital'),
-			'aaj_pref' => isset($_REQUEST['aac_aaj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref'])) : ($account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')),
-			'anac_pref' => isset($_REQUEST['aac_anac_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref'])) : ($account_info['anac_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')),
-			'acj_pref' => isset($_REQUEST['aac_acj_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref'])) : ($account_info['acj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')),
-			'guidebook_pref' => isset($_REQUEST['aac_guidebook_pref']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref'])) : ($account_info['guidebook_pref'] ?? 'Digital'),
-		]));
+		return array_merge(
+			$account_info,
+			$this->get_checkout_publication_preferences($account_info, 'Digital')
+		);
+	}
+
+	private function get_checkout_publication_preferences($account_info = [], $default = 'Digital') {
+		$account_info = is_array($account_info) ? $account_info : [];
+		$default = $this->normalize_print_digital_value($default, 'Digital');
+		$legacy_fallback = $account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? $default);
+
+		return $this->get_normalized_publication_preferences([
+			'aaj_pref' => isset($_REQUEST['aaj_preference'])
+				? sanitize_text_field(wp_unslash($_REQUEST['aaj_preference']))
+				: (isset($_REQUEST['aac_aaj_pref'])
+					? sanitize_text_field(wp_unslash($_REQUEST['aac_aaj_pref']))
+					: ($account_info['aaj_pref'] ?? $legacy_fallback)),
+			'anac_pref' => isset($_REQUEST['anac_preference'])
+				? sanitize_text_field(wp_unslash($_REQUEST['anac_preference']))
+				: (isset($_REQUEST['aac_anac_pref'])
+					? sanitize_text_field(wp_unslash($_REQUEST['aac_anac_pref']))
+					: ($account_info['anac_pref'] ?? $legacy_fallback)),
+			'acj_pref' => isset($_REQUEST['american_climbing_journal_preference'])
+				? sanitize_text_field(wp_unslash($_REQUEST['american_climbing_journal_preference']))
+				: (isset($_REQUEST['aac_acj_pref'])
+					? sanitize_text_field(wp_unslash($_REQUEST['aac_acj_pref']))
+					: ($account_info['acj_pref'] ?? $legacy_fallback)),
+			'guidebook_pref' => isset($_REQUEST['guidebook_preferences'])
+				? sanitize_text_field(wp_unslash($_REQUEST['guidebook_preferences']))
+				: (isset($_REQUEST['aac_guidebook_pref'])
+					? sanitize_text_field(wp_unslash($_REQUEST['aac_guidebook_pref']))
+					: ($account_info['guidebook_pref'] ?? $default)),
+		]);
 	}
 
 	private function is_international_country($country) {
@@ -1732,6 +2294,72 @@ final class AAC_Member_Portal_Plugin {
 		return sprintf('%s Membership', $normalized);
 	}
 
+	private function get_autorenew_reactivation_checkout_context($level = null) {
+		if (!$this->is_pmpro_checkout_request()) {
+			return null;
+		}
+
+		$flag = isset($_REQUEST['aac_reactivate_autorenew']) ? sanitize_text_field(wp_unslash($_REQUEST['aac_reactivate_autorenew'])) : '';
+		if ($flag !== '1') {
+			return null;
+		}
+
+		$user_id = get_current_user_id();
+		if ($user_id <= 0 || !AAC_Member_Portal_PMPro::is_available()) {
+			return null;
+		}
+
+		$level = is_object($level) ? $level : $this->get_level_at_checkout();
+		$level_id = isset($level->id) ? (int) $level->id : 0;
+		if ($level_id <= 0) {
+			return null;
+		}
+
+		$current_membership = AAC_Member_Portal_PMPro::get_primary_membership($user_id);
+		if (
+			!is_array($current_membership)
+			|| (int) ($current_membership['level_id'] ?? 0) !== $level_id
+			|| empty($current_membership['expiration_date'])
+		) {
+			return null;
+		}
+
+		if (AAC_Member_Portal_PMPro::has_active_auto_renewal($user_id, $level_id)) {
+			return null;
+		}
+
+		$start_date = $this->normalize_deferred_checkout_date($current_membership['expiration_date']);
+		if ($start_date === '') {
+			return null;
+		}
+
+		return [
+			'level_id' => $level_id,
+			'start_date' => $start_date,
+			'renewal_amount' => max(0, $this->get_level_recurring_total($level)),
+		];
+	}
+
+	private function normalize_deferred_checkout_date($date_string) {
+		$date_string = sanitize_text_field((string) $date_string);
+		$date_string = trim($date_string);
+		if ($date_string === '') {
+			return '';
+		}
+
+		$unix = strtotime($date_string);
+		if ($unix === false) {
+			return '';
+		}
+
+		$today = strtotime(current_time('Y-m-d'));
+		if ($today === false || $unix < $today) {
+			return '';
+		}
+
+		return gmdate('Y-m-d', $unix);
+	}
+
 	private function get_level_at_checkout() {
 		if (function_exists('pmpro_getLevelAtCheckout')) {
 			$level = pmpro_getLevelAtCheckout();
@@ -1802,76 +2430,6 @@ final class AAC_Member_Portal_Plugin {
 		];
 
 		return array_key_exists($level_name, $mapped_totals) ? (float) $mapped_totals[$level_name] : null;
-	}
-
-	public function maybe_disable_frontend_admin_bar() {
-		if (is_admin()) {
-			return;
-		}
-
-		show_admin_bar(false);
-		remove_action('wp_body_open', 'wp_admin_bar_render', 0);
-		remove_action('wp_footer', 'wp_admin_bar_render', 1000);
-	}
-
-	public function maybe_hide_frontend_admin_bar($show_admin_bar) {
-		if (is_admin()) {
-			return $show_admin_bar;
-		}
-
-		return false;
-	}
-
-	public function maybe_enqueue_frontend_admin_bar_hiding_style() {
-		if (is_admin()) {
-			return;
-		}
-
-		$handle = 'aac-member-portal-admin-bar-fix';
-		if (!wp_style_is($handle, 'registered')) {
-			wp_register_style($handle, false, [], AAC_MEMBER_PORTAL_VERSION);
-		}
-
-		wp_enqueue_style($handle);
-		wp_add_inline_style(
-			$handle,
-			'html{margin-top:0!important;}' .
-			'body{margin-top:0!important;padding-top:0!important;}' .
-			'body.admin-bar{margin-top:0!important;padding-top:0!important;}' .
-			'#wpadminbar{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}'
-		);
-	}
-
-	public function maybe_render_frontend_admin_bar_removal_script() {
-		if (is_admin()) {
-			return;
-		}
-
-		?>
-		<script id="aac-member-portal-remove-admin-bar">
-			(function () {
-				function removeAdminBar() {
-					var adminBar = document.getElementById('wpadminbar');
-					if (adminBar) {
-						adminBar.remove();
-					}
-
-					document.documentElement.style.marginTop = '0';
-					if (document.body) {
-						document.body.style.marginTop = '0';
-						document.body.style.paddingTop = '0';
-						document.body.classList.remove('admin-bar');
-					}
-				}
-
-				if (document.readyState === 'loading') {
-					document.addEventListener('DOMContentLoaded', removeAdminBar, { once: true });
-				} else {
-					removeAdminBar();
-				}
-			})();
-		</script>
-		<?php
 	}
 
 	public function capture_relevant_fatal() {
@@ -2125,6 +2683,8 @@ final class AAC_Member_Portal_Plugin {
 		$user_id = $user instanceof WP_User && $user->exists() ? $user->ID : 0;
 		$stored = $user_id ? get_user_meta($user_id, 'aac_account_info', true) : [];
 		$stored = is_array($stored) ? $stored : [];
+		$stored = $this->strip_pmpro_managed_account_fields_for_storage($stored);
+		$member_database_fallback = $user_id > 0 ? $this->get_member_database_account_info_fallback($user_id) : [];
 
 		$defaults = [
 			'first_name' => $user instanceof WP_User ? $user->first_name : '',
@@ -2133,14 +2693,17 @@ final class AAC_Member_Portal_Plugin {
 			'email' => $user instanceof WP_User ? $user->user_email : '',
 			'photo_url' => $user_id ? get_avatar_url($user_id) : '',
 			'phone' => '',
-			'phone_type' => '',
+			'birthdate' => '',
 			'street' => '',
 			'address2' => '',
 			'city' => '',
 			'state' => '',
 			'zip' => '',
 			'country' => 'US',
-			'size' => 'none',
+			'size' => 'No T-shirt',
+			'email_opt_out' => false,
+			'do_not_call' => false,
+			'do_not_contact' => false,
 			'publication_pref' => 'Print',
 			'aaj_pref' => 'Print',
 			'anac_pref' => 'Print',
@@ -2152,12 +2715,262 @@ final class AAC_Member_Portal_Plugin {
 			'partner_family_additional_adult' => false,
 			'partner_family_dependents' => 0,
 			'auto_renew' => true,
-			'payment_method' => '',
 		];
 
 		$merged = array_merge($defaults, $stored);
+		if (!empty($member_database_fallback)) {
+			$merged = array_merge($merged, array_filter(
+				$member_database_fallback,
+				static function ($value) {
+					if (is_bool($value)) {
+						return true;
+					}
+
+					if (is_array($value)) {
+						return !empty($value);
+					}
+
+					return trim((string) $value) !== '';
+				}
+			));
+		}
+		unset($merged['phone_type'], $merged['payment_method']);
+		if ($user_id > 0) {
+			$merged['phone'] = $this->get_preferred_user_meta_value($user_id, ['bphone'], $merged['phone']);
+			$merged['birthdate'] = $this->sanitize_birthdate_value(
+				$this->get_preferred_user_meta_value($user_id, ['birthdate'], $merged['birthdate'])
+			);
+			$merged['street'] = $this->get_preferred_user_meta_value($user_id, ['baddress1'], $merged['street']);
+			$merged['address2'] = $this->get_preferred_user_meta_value($user_id, ['baddress2'], $merged['address2']);
+			$merged['city'] = $this->get_preferred_user_meta_value($user_id, ['bcity'], $merged['city']);
+			$merged['state'] = $this->get_preferred_user_meta_value($user_id, ['bstate'], $merged['state']);
+			$merged['zip'] = $this->get_preferred_user_meta_value($user_id, ['bzipcode'], $merged['zip']);
+			$merged['country'] = $this->get_preferred_user_meta_value($user_id, ['bcountry'], $merged['country']);
+			$merged['size'] = $this->get_preferred_user_meta_value($user_id, ['t_shirt'], $merged['size']);
+			$merged['email_opt_out'] = $this->get_preferred_user_meta_flag($user_id, ['email_opt_out'], $merged['email_opt_out']);
+			$merged['do_not_call'] = $this->get_preferred_user_meta_flag($user_id, ['do_not_call'], $merged['do_not_call']);
+			$merged['do_not_contact'] = $this->get_preferred_user_meta_flag($user_id, ['do_not_contact'], $merged['do_not_contact']);
+			$merged['aaj_pref'] = $this->get_preferred_user_meta_value($user_id, ['aaj_preference'], $merged['aaj_pref']);
+			$merged['anac_pref'] = $this->get_preferred_user_meta_value($user_id, ['anac_preference'], $merged['anac_pref']);
+			$merged['acj_pref'] = $this->get_preferred_user_meta_value($user_id, ['american_climbing_journal_preference'], $merged['acj_pref']);
+			$merged['guidebook_pref'] = $this->get_preferred_user_meta_value($user_id, ['guidebook_preferences'], $merged['guidebook_pref']);
+		}
+		$merged['size'] = $this->normalize_tshirt_size_value($merged['size'] ?? 'No T-shirt');
 
 		return array_merge($merged, $this->get_normalized_publication_preferences($merged));
+	}
+
+	private function get_member_database_account_info_fallback($user_id) {
+		global $wpdb;
+
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !$wpdb) {
+			return [];
+		}
+
+		$table = $wpdb->prefix . 'aac_member_db_profiles';
+		$table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ($table_exists !== $table) {
+			return [];
+		}
+
+		$raw_profile = $wpdb->get_var(
+			$wpdb->prepare("SELECT raw_profile FROM {$table} WHERE user_id = %d LIMIT 1", $user_id)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		$decoded = json_decode((string) $raw_profile, true);
+		if (!is_array($decoded)) {
+			return [];
+		}
+
+		$account_info = is_array($decoded['account_info'] ?? null) ? $decoded['account_info'] : [];
+		if (!$account_info) {
+			return [];
+		}
+
+		return [
+			'phone' => sanitize_text_field((string) ($account_info['phone'] ?? '')),
+			'birthdate' => $this->sanitize_birthdate_value($account_info['birthdate'] ?? ''),
+			'street' => sanitize_text_field((string) ($account_info['street'] ?? '')),
+			'address2' => sanitize_text_field((string) ($account_info['address2'] ?? '')),
+			'city' => sanitize_text_field((string) ($account_info['city'] ?? '')),
+			'state' => sanitize_text_field((string) ($account_info['state'] ?? '')),
+			'zip' => sanitize_text_field((string) ($account_info['zip'] ?? '')),
+			'country' => sanitize_text_field((string) ($account_info['country'] ?? '')),
+			'size' => $this->normalize_tshirt_size_value($account_info['size'] ?? 'No T-shirt'),
+			'email_opt_out' => !empty($account_info['email_opt_out']),
+			'do_not_call' => !empty($account_info['do_not_call']),
+			'do_not_contact' => !empty($account_info['do_not_contact']),
+			'aaj_pref' => sanitize_text_field((string) ($account_info['aaj_pref'] ?? '')),
+			'anac_pref' => sanitize_text_field((string) ($account_info['anac_pref'] ?? '')),
+			'acj_pref' => sanitize_text_field((string) ($account_info['acj_pref'] ?? '')),
+			'guidebook_pref' => sanitize_text_field((string) ($account_info['guidebook_pref'] ?? '')),
+		];
+	}
+
+	private function get_member_ids_for_pmpro_field_backfill() {
+		$user_ids = get_users([
+			'fields' => 'ids',
+			'number' => -1,
+			'orderby' => 'ID',
+			'order' => 'ASC',
+			'count_total' => false,
+		]);
+
+		global $wpdb;
+		if ($wpdb) {
+			$table = $wpdb->prefix . 'aac_member_db_profiles';
+			$table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ($table_exists === $table) {
+				$mirror_user_ids = $wpdb->get_col("SELECT user_id FROM {$table} WHERE user_id > 0"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				if (is_array($mirror_user_ids) && !empty($mirror_user_ids)) {
+					$user_ids = array_merge($user_ids, $mirror_user_ids);
+				}
+			}
+		}
+
+		return array_values(array_unique(array_map('intval', is_array($user_ids) ? $user_ids : [])));
+	}
+
+	private function get_pmpro_managed_account_info_keys() {
+		return [
+			'phone',
+			'birthdate',
+			'street',
+			'address2',
+			'city',
+			'state',
+			'zip',
+			'country',
+			'size',
+			'email_opt_out',
+			'do_not_call',
+			'do_not_contact',
+			'publication_pref',
+			'aaj_pref',
+			'anac_pref',
+			'acj_pref',
+			'guidebook_pref',
+			'phone_type',
+			'payment_method',
+		];
+	}
+
+	private function strip_pmpro_managed_account_fields_for_storage($account_info) {
+		if (!is_array($account_info)) {
+			return [];
+		}
+
+		foreach ($this->get_pmpro_managed_account_info_keys() as $key) {
+			unset($account_info[$key]);
+		}
+
+		return $account_info;
+	}
+
+	private function get_preferred_user_meta_value($user_id, $keys, $fallback = '') {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !is_array($keys)) {
+			return $fallback;
+		}
+
+		foreach ($keys as $key) {
+			$key = sanitize_key((string) $key);
+			if ($key === '') {
+				continue;
+			}
+
+			$value = get_user_meta($user_id, $key, true);
+			if (is_array($value)) {
+				if (!empty($value)) {
+					return $value;
+				}
+				continue;
+			}
+
+			if ($value === null) {
+				continue;
+			}
+
+			if (is_string($value)) {
+				if (trim($value) === '') {
+					continue;
+				}
+				return $value;
+			}
+
+			if ($value !== '') {
+				return $value;
+			}
+		}
+
+		return $fallback;
+	}
+
+	private function get_preferred_user_meta_flag($user_id, $keys, $fallback = false) {
+		$value = $this->get_preferred_user_meta_value($user_id, $keys, null);
+		if ($value === null) {
+			return (bool) $fallback;
+		}
+
+		if (is_bool($value)) {
+			return $value;
+		}
+
+		if (is_numeric($value)) {
+			return (int) $value === 1;
+		}
+
+		$normalized = strtolower(trim((string) $value));
+		return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+	}
+
+	private function normalize_tshirt_size_value($value, $fallback = 'No T-shirt') {
+		$normalized = sanitize_text_field((string) $value);
+		$normalized = trim($normalized);
+		if ($normalized === '') {
+			return $fallback;
+		}
+
+		$lowered = strtolower($normalized);
+		if (in_array($lowered, ['none', 'no t-shirt', 'no t shirt', 'n/a', 'na'], true)) {
+			return 'No T-shirt';
+		}
+
+		$direct_label_map = [
+			'unisex x-small' => 'Unisex X-Small',
+			'unisex small' => 'Unisex Small',
+			'unisex medium' => 'Unisex Medium',
+			'unisex large' => 'Unisex Large',
+			'unisex x-large' => 'Unisex X-Large',
+			'unisex xx-large' => 'Unisex XX-Large',
+		];
+		if (isset($direct_label_map[$lowered])) {
+			return $direct_label_map[$lowered];
+		}
+
+		$compact_size_map = [
+			'xs' => 'Unisex X-Small',
+			'xsmall' => 'Unisex X-Small',
+			's' => 'Unisex Small',
+			'm' => 'Unisex Medium',
+			'l' => 'Unisex Large',
+			'xl' => 'Unisex X-Large',
+			'xlarge' => 'Unisex X-Large',
+			'xxl' => 'Unisex XX-Large',
+			'xxlarge' => 'Unisex XX-Large',
+			'2xl' => 'Unisex XX-Large',
+		];
+		if (isset($compact_size_map[$lowered])) {
+			return $compact_size_map[$lowered];
+		}
+
+		if (strpos($lowered, 'unisex ') === 0) {
+			$compact = str_replace([' ', '-'], '', substr($lowered, 8));
+			return $compact_size_map[$compact] ?? $fallback;
+		}
+
+		return $fallback;
 	}
 
 	private function normalize_print_digital_value($value, $fallback = 'Digital') {
@@ -2166,7 +2979,19 @@ final class AAC_Member_Portal_Plugin {
 
 	private function get_normalized_publication_preferences($values) {
 		$values = is_array($values) ? $values : [];
-		$legacy_publication_pref = $this->normalize_print_digital_value($values['publication_pref'] ?? 'Digital');
+		$legacy_publication_pref = $this->normalize_print_digital_value(
+			$values['publication_pref'] ?? '',
+			$this->normalize_print_digital_value(
+				$values['aaj_pref'] ?? '',
+				$this->normalize_print_digital_value(
+					$values['anac_pref'] ?? '',
+					$this->normalize_print_digital_value(
+						$values['acj_pref'] ?? '',
+						$this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Digital')
+					)
+				)
+			)
+		);
 		$guidebook_pref = $this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Digital');
 
 		return [
@@ -2184,20 +3009,32 @@ final class AAC_Member_Portal_Plugin {
 			return;
 		}
 
-		update_user_meta($user_id, 'aac_tshirt_size', sanitize_text_field($account_info['size'] ?? ''));
-		update_user_meta(
-			$user_id,
-			'aac_publication_pref',
-			$this->normalize_print_digital_value($account_info['publication_pref'] ?? ($account_info['aaj_pref'] ?? 'Digital'))
-		);
-		update_user_meta($user_id, 'aac_aaj_pref', $this->normalize_print_digital_value($account_info['aaj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')));
-		update_user_meta($user_id, 'aac_anac_pref', $this->normalize_print_digital_value($account_info['anac_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')));
-		update_user_meta($user_id, 'aac_acj_pref', $this->normalize_print_digital_value($account_info['acj_pref'] ?? ($account_info['publication_pref'] ?? 'Digital')));
-		update_user_meta(
-			$user_id,
-			'aac_guidebook_pref',
-			$this->normalize_print_digital_value($account_info['guidebook_pref'] ?? 'Digital')
-		);
+		update_user_meta($user_id, 't_shirt', sanitize_text_field($account_info['size'] ?? ''));
+		update_user_meta($user_id, 'birthdate', $this->sanitize_birthdate_value($account_info['birthdate'] ?? ''));
+		update_user_meta($user_id, 'email_opt_out', !empty($account_info['email_opt_out']) ? '1' : '0');
+		update_user_meta($user_id, 'do_not_call', !empty($account_info['do_not_call']) ? '1' : '0');
+		update_user_meta($user_id, 'do_not_contact', !empty($account_info['do_not_contact']) ? '1' : '0');
+		update_user_meta($user_id, 'bphone', sanitize_text_field($account_info['phone'] ?? ''));
+		update_user_meta($user_id, 'baddress1', sanitize_text_field($account_info['street'] ?? ''));
+		update_user_meta($user_id, 'baddress2', sanitize_text_field($account_info['address2'] ?? ''));
+		update_user_meta($user_id, 'bcity', sanitize_text_field($account_info['city'] ?? ''));
+		update_user_meta($user_id, 'bstate', sanitize_text_field($account_info['state'] ?? ''));
+		update_user_meta($user_id, 'bzipcode', sanitize_text_field($account_info['zip'] ?? ''));
+		update_user_meta($user_id, 'bcountry', sanitize_text_field($account_info['country'] ?? ''));
+		update_user_meta($user_id, 'aaj_preference', $this->normalize_print_digital_value($account_info['aaj_pref'] ?? 'Digital'));
+		update_user_meta($user_id, 'anac_preference', $this->normalize_print_digital_value($account_info['anac_pref'] ?? 'Digital'));
+		update_user_meta($user_id, 'american_climbing_journal_preference', $this->normalize_print_digital_value($account_info['acj_pref'] ?? 'Digital'));
+		update_user_meta($user_id, 'guidebook_preferences', $this->normalize_print_digital_value($account_info['guidebook_pref'] ?? 'Digital'));
+		delete_user_meta($user_id, 'aac_tshirt_size');
+		delete_user_meta($user_id, 'aac_birthdate');
+		delete_user_meta($user_id, 'aac_email_opt_out');
+		delete_user_meta($user_id, 'aac_do_not_call');
+		delete_user_meta($user_id, 'aac_do_not_contact');
+		delete_user_meta($user_id, 'aac_publication_pref');
+		delete_user_meta($user_id, 'aac_aaj_pref');
+		delete_user_meta($user_id, 'aac_anac_pref');
+		delete_user_meta($user_id, 'aac_acj_pref');
+		delete_user_meta($user_id, 'aac_guidebook_pref');
 
 		$selected_addons = $magazine_addons === null
 			? $this->get_effective_magazine_addon_selection($user_id)
@@ -2227,6 +3064,16 @@ final class AAC_Member_Portal_Plugin {
 		update_user_meta($user_id, 'aac_partner_family_additional_adult', !empty($family_config['additional_adult']) ? '1' : '0');
 		update_user_meta($user_id, 'aac_partner_family_dependents', max(0, (int) ($family_config['dependent_count'] ?? 0)));
 		update_user_meta($user_id, 'aac_family_account_role', $this->get_family_account_role($user_id, $family_config));
+	}
+
+	private function sanitize_birthdate_value($value) {
+		$normalized = sanitize_text_field((string) $value);
+		$normalized = trim($normalized);
+		if ($normalized === '') {
+			return '';
+		}
+
+		return preg_match('/^\d{4}-\d{2}-\d{2}$/', $normalized) ? $normalized : '';
 	}
 
 	private function get_family_account_role($user_id, $family_config = null) {
@@ -2320,29 +3167,77 @@ final class AAC_Member_Portal_Plugin {
 	}
 
 	private function get_runtime_config() {
-		// This object is injected into the frontend so the bundled React app can
-		// discover its API base, nonce, routing mode, and admin-managed UI settings.
+		// This config blob is the frontend's treasure map. Without it, the React app
+		// would have no clue where the API lives, which nonce to use, or what staff
+		// just changed in WordPress.
 		return [
 			'mountId' => self::MOUNT_ID,
 			'routerMode' => 'hash',
 			'apiBase' => untrailingslashit(rest_url('aac/v1')),
 			'restNonce' => wp_create_nonce('wp_rest'),
 			'isLoggedIn' => is_user_logged_in(),
+			'canManageGrantApprovals' => current_user_can('manage_options'),
 			'portalPageUrl' => untrailingslashit($this->get_portal_page_url()),
+			'rescuePageUrl' => untrailingslashit($this->get_rescue_page_url()),
+			'grantReviewPageUrl' => untrailingslashit($this->get_grant_review_page_url()),
 			'mainWebsiteBaseUrl' => untrailingslashit(home_url()),
+			'assetBaseUrl' => trailingslashit(AAC_MEMBER_PORTAL_URL . 'app/assets'),
+			'pmproSocialLoginHtml' => $this->get_pmpro_social_login_markup(),
 			'portalSettings' => $this->get_portal_ui_settings(),
 		];
+	}
+
+	private function get_pmpro_social_login_markup() {
+		$candidate_shortcodes = [
+			'pmpro_social_login',
+			'pmpro_social_logins',
+			'pmprosl_login',
+			'pmprosl_social_login',
+			'nextend_social_login',
+		];
+
+		foreach ($candidate_shortcodes as $shortcode_tag) {
+			if (!shortcode_exists($shortcode_tag)) {
+				continue;
+			}
+
+			$markup = trim((string) do_shortcode('[' . $shortcode_tag . ']'));
+			if (strpos($markup, '[nextend_social_login]') !== false && shortcode_exists('nextend_social_login')) {
+				$markup = trim((string) do_shortcode($markup));
+			}
+			if ($markup !== '') {
+				return $markup;
+			}
+		}
+
+		if (shortcode_exists('nextend_social_login')) {
+			$markup = trim((string) do_shortcode('[nextend_social_login]'));
+			if ($markup !== '') {
+				return $markup;
+			}
+		}
+
+		return '';
 	}
 
 	public function get_portal_ui_settings() {
 		$settings = AAC_Member_Portal_Admin::get_settings();
 		$resolved_background_url = $this->get_resolved_sidebar_background_url($settings);
-		// Convert the raw admin settings into a shape that is straightforward for
-		// the frontend to consume without additional mapping in many components.
+		// The raw admin settings are very WordPress-shaped. We smooth them into a
+		// frontend-friendly structure here so each component does not have to become
+		// a tiny translation service.
 		$content_settings = array_merge(
 			$settings['content'],
 			[
 				'discountCards' => array_values(isset($settings['content']['discount_cards']) && is_array($settings['content']['discount_cards']) ? $settings['content']['discount_cards'] : []),
+				'homeInvolvementCards' => array_values(isset($settings['content']['home_involvement_cards']) && is_array($settings['content']['home_involvement_cards']) ? $settings['content']['home_involvement_cards'] : []),
+				'homePublicationCards' => array_values(isset($settings['content']['home_publication_cards']) && is_array($settings['content']['home_publication_cards']) ? $settings['content']['home_publication_cards'] : []),
+				'homePartnerLogos' => array_values(isset($settings['content']['home_partner_logos']) && is_array($settings['content']['home_partner_logos']) ? $settings['content']['home_partner_logos'] : []),
+				'featuredPhotographers' => array_values(isset($settings['content']['featured_photographers']) && is_array($settings['content']['featured_photographers']) ? $settings['content']['featured_photographers'] : []),
+				'grantOpportunities' => array_values(isset($settings['content']['grant_opportunities']) && is_array($settings['content']['grant_opportunities']) ? $settings['content']['grant_opportunities'] : []),
+				'grantFormFields' => array_values(isset($settings['content']['grant_form_fields']) && is_array($settings['content']['grant_form_fields']) ? $settings['content']['grant_form_fields'] : []),
+				'memberProfileBlocks' => array_values(isset($settings['content']['member_profile_blocks']) && is_array($settings['content']['member_profile_blocks']) ? $settings['content']['member_profile_blocks'] : []),
+				'memberProfileCardSections' => isset($settings['content']['member_profile_card_sections']) && is_array($settings['content']['member_profile_card_sections']) ? $settings['content']['member_profile_card_sections'] : [],
 				'rescueLevels' => array_values(isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels']) ? $settings['content']['rescue_levels'] : []),
 				'publicationViewUrls' => [
 					'aaj' => $settings['content']['publication_view_url_aaj'] ?? '',
@@ -2367,7 +3262,32 @@ final class AAC_Member_Portal_Plugin {
 				'primaryActionText' => $settings['design']['primary_action_text'],
 				'secondaryActionBackground' => $settings['design']['secondary_action_background'],
 				'secondaryActionText' => $settings['design']['secondary_action_text'],
+				'pageBackground' => $settings['design']['page_background'],
+				'panelBackground' => $settings['design']['panel_background'],
+				'panelBorderColor' => $settings['design']['panel_border_color'],
+				'heroPanelBackground' => $settings['design']['hero_panel_background'],
+				'heroPanelBorderColor' => $settings['design']['hero_panel_border_color'],
+				'heroChipBackground' => $settings['design']['hero_chip_background'],
+				'heroChipBorderColor' => $settings['design']['hero_chip_border_color'],
+				'loginFormBackground' => $settings['design']['login_form_background'],
+				'loginOverlay' => $settings['design']['login_overlay'],
+				'homeHeroOverlay' => $settings['design']['home_hero_overlay'],
+				'homeHeroTintOverlay' => $settings['design']['home_hero_tint_overlay'],
+				'joinHeroOverlay' => $settings['design']['join_hero_overlay'],
+				'joinHeroTintOverlay' => $settings['design']['join_hero_tint_overlay'],
+				'navBackground' => $settings['design']['nav_background'],
+				'navTextColor' => $settings['design']['nav_text_color'],
+				'navHoverTextColor' => $settings['design']['nav_hover_text_color'],
+				'navIconColor' => $settings['design']['nav_icon_color'],
+				'navDropdownBackground' => $settings['design']['nav_dropdown_background'],
+				'navDropdownTextColor' => $settings['design']['nav_dropdown_text_color'],
 				'joinHeroImageUrl' => $settings['design']['join_hero_image_url'],
+				'homeHeroVideoUrl' => $settings['design']['home_hero_video_url'],
+				'joinHeroVideoUrl' => $settings['design']['join_hero_video_url'],
+				'loginBackgroundImageUrl' => $settings['design']['login_background_image_url'],
+				'homeIntroImageUrl' => $settings['design']['home_intro_image_url'],
+				'homeIntroAccentImageUrl' => $settings['design']['home_intro_accent_image_url'],
+				'homeStoreImageUrl' => $settings['design']['home_store_image_url'],
 				'publicationTileImages' => [
 					'aaj' => $settings['design']['publication_tile_image_aaj'],
 					'anac' => $settings['design']['publication_tile_image_anac'],
@@ -2379,7 +3299,30 @@ final class AAC_Member_Portal_Plugin {
 				'topNavSections' => $this->build_top_nav_sections_for_runtime($settings),
 				'sidebarSections' => $this->build_sidebar_sections_for_runtime($settings),
 			],
+			'layout' => [
+				'homeSections' => $this->build_home_sections_for_runtime($settings),
+			],
 		];
+	}
+
+	private function build_home_sections_for_runtime($settings) {
+		$sections = [];
+		foreach ($settings['components']['home_sections'] as $section_id => $section_settings) {
+			if (empty($section_settings['visible'])) {
+				continue;
+			}
+			$sections[] = [
+				'id' => $section_id,
+				'label' => $section_settings['label'],
+				'order' => (int) ($section_settings['order'] ?? 0),
+			];
+		}
+
+		usort($sections, static function ($left, $right) {
+			return ($left['order'] ?? 0) <=> ($right['order'] ?? 0);
+		});
+
+		return $sections;
 	}
 
 	public function get_template_top_nav_sections($portal_url) {
@@ -2388,6 +3331,10 @@ final class AAC_Member_Portal_Plugin {
 		$sections = [];
 
 		foreach ($settings['components']['top_nav_items'] as $item_id => $item_settings) {
+			if ($item_id === 'get_involved') {
+				continue;
+			}
+
 			if (empty($item_settings['visible']) || empty($registry[$item_id])) {
 				continue;
 			}
@@ -2395,6 +3342,9 @@ final class AAC_Member_Portal_Plugin {
 			$section = $registry[$item_id];
 			$section['id'] = $item_id;
 			$section['label'] = $item_settings['label'];
+			$section['children'] = isset($item_settings['children']) && is_array($item_settings['children']) && !empty($item_settings['children'])
+				? array_values($item_settings['children'])
+				: $section['children'];
 			$section['order'] = (int) $item_settings['order'];
 			$sections[] = $section;
 		}
@@ -2416,6 +3366,7 @@ final class AAC_Member_Portal_Plugin {
 
 		foreach ($settings['components']['section_titles'] as $section_id => $section_title) {
 			$sections[$section_id] = [
+				'id' => $section_id,
 				'title' => $section_title,
 				'items' => [],
 			];
@@ -2454,6 +3405,8 @@ final class AAC_Member_Portal_Plugin {
 		}
 		unset($section);
 
+		$sections = $this->append_admin_approval_sidebar_item($sections, true);
+
 		return array_values(array_filter($sections, static function ($section) {
 			return !empty($section['items']);
 		}));
@@ -2484,6 +3437,10 @@ final class AAC_Member_Portal_Plugin {
 		$sections = [];
 
 		foreach ($settings['components']['top_nav_items'] as $item_id => $item_settings) {
+			if ($item_id === 'get_involved') {
+				continue;
+			}
+
 			if (empty($item_settings['visible']) || empty($registry[$item_id])) {
 				continue;
 			}
@@ -2493,7 +3450,9 @@ final class AAC_Member_Portal_Plugin {
 				'id' => $item_id,
 				'label' => $item_settings['label'],
 				'href' => $section['href'],
-				'children' => $section['children'],
+				'children' => isset($item_settings['children']) && is_array($item_settings['children']) && !empty($item_settings['children'])
+					? array_values($item_settings['children'])
+					: $section['children'],
 				'order' => (int) $item_settings['order'],
 			];
 		}
@@ -2555,12 +3514,14 @@ final class AAC_Member_Portal_Plugin {
 		}
 		unset($section);
 
+		$sections = $this->append_admin_approval_sidebar_item($sections, false);
+
 		return array_values(array_filter($sections, static function ($section) {
 			return !empty($section['items']);
 		}));
 	}
 
-	private function get_top_nav_item_registry($portal_url) {
+	public function get_top_nav_item_registry($portal_url) {
 		$portal_url = untrailingslashit((string) $portal_url);
 
 		return [
@@ -2587,6 +3548,7 @@ final class AAC_Member_Portal_Plugin {
 				'href' => home_url('/stories/'),
 				'children' => [
 					['label' => 'Articles & News', 'href' => home_url('/stories/')],
+					['label' => 'Featured Photographers', 'href' => $portal_url . '#/photographers'],
 					['label' => 'The Prescription', 'href' => home_url('/prescription/')],
 					['label' => 'The Line', 'href' => home_url('/line-archive/')],
 				],
@@ -2628,7 +3590,7 @@ final class AAC_Member_Portal_Plugin {
 		return [
 			'member_profile' => ['icon' => 'user', 'route' => '/profile'],
 			'store' => ['icon' => 'store', 'route' => '/store'],
-			'rescue' => ['icon' => 'shield', 'route' => '/rescue'],
+			'rescue' => ['icon' => 'shield', 'href' => $this->get_rescue_page_url()],
 			'account' => ['icon' => 'pen', 'route' => '/account'],
 			'publications' => ['icon' => 'book', 'route' => '/publications'],
 			'manage' => ['icon' => 'settings', 'href' => home_url('/membership-account/membership-billing/')],
@@ -2637,8 +3599,62 @@ final class AAC_Member_Portal_Plugin {
 			'events' => ['icon' => 'users', 'route' => '/meetups'],
 			'lodging' => ['icon' => 'bed', 'route' => '/lodging'],
 			'grants' => ['icon' => 'scroll-text', 'route' => '/grants'],
+			'grant_approval' => ['icon' => 'scroll-text', 'route' => '/grant-approvals'],
 			'contact' => ['icon' => 'mail', 'route' => '/contact'],
 		];
+	}
+
+	private function append_admin_approval_sidebar_item($sections, $template_mode = false) {
+		if (!current_user_can('manage_options')) {
+			return $sections;
+		}
+
+		$item = $template_mode
+			? [
+				'id' => 'grant_approval',
+				'label' => 'Grant Approvals',
+				'href' => $this->build_portal_app_url('/grant-approvals'),
+				'icon' => 'scroll-text',
+				'order' => 55,
+				'active' => false,
+			]
+			: [
+				'id' => 'grant_approval',
+				'label' => 'Grant Approvals',
+				'icon' => 'scroll-text',
+				'route' => '/grant-approvals',
+				'order' => 55,
+			];
+
+		$target_section_id = 'explore';
+
+		foreach ($sections as &$section) {
+			$section_id = $template_mode ? ($section['id'] ?? '') : ($section['id'] ?? '');
+			if ($section_id !== $target_section_id) {
+				continue;
+			}
+
+			foreach ($section['items'] as $existing_item) {
+				if (($existing_item['id'] ?? '') === 'grant_approval') {
+					return $sections;
+				}
+			}
+
+			$section['items'][] = $item;
+			usort($section['items'], static function ($left, $right) {
+				return ($left['order'] ?? 0) <=> ($right['order'] ?? 0);
+			});
+			return $sections;
+		}
+		unset($section);
+
+		$sections[] = [
+			'id' => $target_section_id,
+			'title' => 'Explore',
+			'items' => [$item],
+		];
+
+		return $sections;
 	}
 
 	private function get_resolved_sidebar_background_url($settings) {
@@ -2648,6 +3664,32 @@ final class AAC_Member_Portal_Plugin {
 		}
 
 		return AAC_MEMBER_PORTAL_URL . 'app/sidebar-topo-v2.svg';
+	}
+
+	private function get_rescue_page_url() {
+		$rescue_page = get_page_by_path('rescue', OBJECT, 'page');
+		if ($rescue_page instanceof WP_Post) {
+			return get_permalink($rescue_page);
+		}
+
+		return home_url('/rescue/');
+	}
+
+	private function get_grant_review_page_url() {
+		$page_id = absint(get_option('aac_grants_review_page_id', 0));
+		if ($page_id > 0) {
+			$page_url = get_permalink($page_id);
+			if ($page_url) {
+				return $page_url;
+			}
+		}
+
+		$review_page = get_page_by_path('grant-review', OBJECT, 'page');
+		if ($review_page instanceof WP_Post) {
+			return get_permalink($review_page);
+		}
+
+		return home_url('/grant-review/');
 	}
 
 	private function get_shortcode_post() {
@@ -3114,3 +4156,9 @@ final class AAC_Member_Portal_Plugin {
 
 register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Member_Database', 'activate']);
 $GLOBALS['aac_member_portal_plugin'] = new AAC_Member_Portal_Plugin();
+
+function aac_member_portal() {
+	return isset($GLOBALS['aac_member_portal_plugin']) && $GLOBALS['aac_member_portal_plugin'] instanceof AAC_Member_Portal_Plugin
+		? $GLOBALS['aac_member_portal_plugin']
+		: null;
+}

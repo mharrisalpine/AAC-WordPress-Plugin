@@ -125,7 +125,15 @@ export const PHONE_TYPE_OPTIONS = [
   { value: 'work', label: 'Work' },
 ];
 
-export const TSHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+export const TSHIRT_SIZES = [
+  'No T-shirt',
+  'Unisex X-Small',
+  'Unisex Small',
+  'Unisex Medium',
+  'Unisex Large',
+  'Unisex X-Large',
+  'Unisex XX-Large',
+];
 
 const MEMBERSHIP_ACCESS_RANK = {
   Free: 0,

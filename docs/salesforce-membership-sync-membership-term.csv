@@ -1,0 +1,21 @@
+salesforce_object,field_label,field_api_name,field_type,field_kind,relationship_or_record_type,external_id,unique,required,recommended_wordpress_source,sync_direction,notes
+Membership_Term__c,Name,Name,Auto Number,Standard field,,No,No,Yes,system assigned,Salesforce internal,Use auto number rather than text naming.
+Membership_Term__c,Contact,Contact__c,Lookup(Contact),Custom field,Contact,No,No,Yes,member matched by WordPress user id,Bidirectional,Each term belongs to one member contact.
+Membership_Term__c,Opportunity,Opportunity__c,Lookup(Opportunity),Custom field,Opportunity,No,No,Yes,created membership Opportunity,Bidirectional,Financial parent for the membership term.
+Membership_Term__c,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",Custom field,,No,No,Yes,member_db.profile_row.user_id,WordPress -> Salesforce,Helpful denormalized matching field on the term record.
+Membership_Term__c,AAC External Key,AAC_External_Key__c,Text(255),Custom field,,Yes,Yes,Yes,generated per term,WordPress -> Salesforce,Best external key for term upsert and superseding logic.
+Membership_Term__c,Membership Level,Membership_Level__c,Picklist,Custom field,,No,No,Yes,member_db.profile_row.membership_level,Bidirectional,Level for this specific term.
+Membership_Term__c,Status,Status__c,Picklist,Custom field,,No,No,Yes,member_db.profile_row.membership_status,Bidirectional,Values like Active/Scheduled/Expired/Cancelled/Superseded.
+Membership_Term__c,Start Date,Start_Date__c,Date,Custom field,,No,No,Yes,current term start,Bidirectional,The actual start of coverage/access.
+Membership_Term__c,End Date,End_Date__c,Date,Custom field,,No,No,Yes,member_db.profile_row.expiration_date,Bidirectional,The actual end of coverage/access.
+Membership_Term__c,Renewal Date,Renewal_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.renewal_date,Bidirectional,Optional if AAC distinguishes renewal from start date.
+Membership_Term__c,Auto Renew,Auto_Renew__c,Checkbox,Custom field,,No,No,No,member_db.profile.account_info.auto_renew,Bidirectional,Subscription intent for this term.
+Membership_Term__c,Family Membership,Family_Membership__c,Checkbox,Custom field,,No,No,No,member_db.profile.family_membership.mode,Bidirectional,Whether this term includes family-plan treatment.
+Membership_Term__c,Family Account Role,Family_Account_Role__c,Picklist,Custom field,,No,No,No,member_db.profile_row.account_role,Bidirectional,Parent/Child role at the time of the term.
+Membership_Term__c,Discount Group,Discount_Group__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.membership_discount_type,Bidirectional,Discount bucket attached to the term.
+Membership_Term__c,Rescue Benefit Amount,Rescue_Benefit_Amount__c,Currency,Custom field,,No,No,No,member_db.profile.benefits_info.rescue_amount,WordPress -> Salesforce,Current rescue coverage for the term.
+Membership_Term__c,Medical Benefit Amount,Medical_Benefit_Amount__c,Currency,Custom field,,No,No,No,member_db.profile.benefits_info.medical_amount,WordPress -> Salesforce,Current medical coverage for the term.
+Membership_Term__c,Mortal Remains Amount,Mortal_Remains_Amount__c,Currency,Custom field,,No,No,No,member_db.profile.benefits_info.mortal_remains_amount,WordPress -> Salesforce,Current mortal remains transport coverage for the term.
+Membership_Term__c,Rescue Reimbursement Process,Rescue_Reimbursement_Process__c,Checkbox,Custom field,,No,No,No,member_db.profile.benefits_info.rescue_reimbursement_process,WordPress -> Salesforce,Boolean coverage/process flag.
+Membership_Term__c,Previous Term,Previous_Term__c,Lookup(Membership_Term__c),Custom field,Membership_Term__c,No,No,No,previous active term lookup,Salesforce internal,Use in automation when rolling to a new membership term.
+Membership_Term__c,Superseded By,Superseded_By__c,Lookup(Membership_Term__c),Custom field,Membership_Term__c,No,No,No,new replacement term lookup,Salesforce internal,Use to point old active term to the new one.

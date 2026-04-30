@@ -51,7 +51,7 @@ $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		'anac_pref' => 'Print',
 		'acj_pref' => 'Print',
 		'guidebook_pref' => 'Print',
-		'size' => 'none',
+		'size' => 'No T-shirt',
 	];
 $is_logged_in = is_user_logged_in();
 $current_member = $is_logged_in ? wp_get_current_user() : null;
@@ -73,21 +73,24 @@ $current_auto_renew = $current_member_id && !empty($current_membership_actions['
 	: false;
 $current_renewal_date = is_array($current_primary_membership) ? ($current_primary_membership['renewal_date'] ?? '') : '';
 $current_expiration_date = is_array($current_primary_membership) ? ($current_primary_membership['expiration_date'] ?? '') : '';
+$managed_billing_url = !empty($current_membership_actions['billing_url'])
+	? $current_membership_actions['billing_url']
+	: (!empty($current_membership_actions['current_level_checkout_url']) ? $current_membership_actions['current_level_checkout_url'] : $account_url);
 
 if (!function_exists('aac_member_portal_sidebar_icon_svg')) {
 	function aac_member_portal_sidebar_icon_svg($icon) {
 		$icons = [
-			'user' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>',
-			'store' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><path d="M9 20v-6h6v6"/></svg>',
-			'shield' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3Z"/></svg>',
+			'user' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+			'store' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5 3.6 4h16.8L22 9.5"/><path d="M4 10v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V10"/><path d="M8 14h8"/><path d="M9 18h6"/></svg>',
+			'shield' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/></svg>',
 			'settings' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.54-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.54 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c0 .67.39 1.28 1 1.54.18.08.37.13.57.13H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.54 1Z"/></svg>',
 			'pen' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>',
 			'book' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18.5A2.5 2.5 0 0 1 5.5 16H12v5H5.5A2.5 2.5 0 0 1 3 18.5Z"/><path d="M21 18.5a2.5 2.5 0 0 0-2.5-2.5H12v5h6.5A2.5 2.5 0 0 0 21 18.5Z"/><path d="M5.5 16V5a2 2 0 0 1 2-2H12v13H5.5Z"/><path d="M18.5 16V5a2 2 0 0 0-2-2H12v13h6.5Z"/></svg>',
 			'credit-card' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h2"/><path d="M10 15h4"/></svg>',
 			'receipt' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h16v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>',
 			'tag' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>',
-			'mic' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/><path d="M8 21h8"/></svg>',
-			'users' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87"/><path d="M15 3.13a4 4 0 0 1 0 7.75"/></svg>',
+			'mic' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3"/><path d="M8 22h8"/><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/></svg>',
+			'users' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
 			'scroll-text' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4V2"/><path d="M17 4V2"/><path d="M5 8h14"/><path d="M6 4h12a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M9 12h6"/><path d="M9 15h4"/></svg>',
 			'mail' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
 			'bed' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7"/><path d="M3 13h18"/><path d="M7 13V9"/><path d="M17 13V9"/><path d="M3 18v3"/><path d="M21 18v3"/></svg>',
@@ -153,12 +156,11 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-header__inner {
-		max-width: 1600px;
-		margin: 0 auto;
-		padding: calc(env(safe-area-inset-top, 0px) + 1rem) 1.5rem 1rem;
+		width: 100%;
+		padding-top: env(safe-area-inset-top, 0px);
 	}
 
-	.aac-managed-header__row,
+	.aac-managed-header__bar,
 	.aac-managed-actions,
 	.aac-managed-topnav,
 	.aac-managed-actions-row,
@@ -170,22 +172,40 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		gap: 0.75rem;
 	}
 
-	.aac-managed-header__row {
-		align-items: center;
-		justify-content: space-between;
-		padding-bottom: 0.9rem;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	.aac-managed-header__bar {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: stretch;
+		min-height: 4.75rem;
 	}
 
 	.aac-managed-logo img {
 		display: block;
-		height: 56px;
+		height: 48px;
 		width: auto;
 	}
 
+	.aac-managed-logo {
+		display: flex;
+		align-items: center;
+		padding: 0 1.5rem;
+		border-right: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.aac-managed-actions {
+		align-items: center;
+		padding: 0 1.5rem;
+		border-left: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
 	.aac-managed-topnav {
-		justify-content: flex-end;
-		padding-top: 1rem;
+		flex-wrap: nowrap;
+		align-items: stretch;
+		justify-content: flex-start;
+		gap: 0;
+		min-width: 0;
+		padding: 0 1rem;
+		overflow-x: auto;
 	}
 
 	.aac-managed-topnav a,
@@ -197,19 +217,21 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	.aac-managed-topnav__item {
 		position: relative;
 		display: flex;
-		align-items: center;
+		align-items: stretch;
 	}
 
 	.aac-managed-topnav__trigger {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.55rem;
-		color: rgba(255, 255, 255, 0.84);
-		font-size: 0.84rem;
-		font-weight: 600;
-		letter-spacing: 0.22em;
+		gap: 0.6rem;
+		min-height: 4.75rem;
+		padding: 0 0.9rem;
+		white-space: nowrap;
+		color: rgba(255, 255, 255, 0.92);
+		font-size: 0.82rem;
+		font-weight: 700;
+		letter-spacing: 0.14em;
 		text-transform: uppercase;
-		padding: 0.75rem 0;
 	}
 
 	.aac-managed-topnav__caret {
@@ -303,13 +325,24 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-height: 2.75rem;
+		min-height: 3rem;
 		padding: 0 1.2rem;
 		border-radius: 0;
-		font-size: 0.82rem;
+		font-size: 0.78rem;
 		font-weight: 700;
 		letter-spacing: 0.14em;
 		text-transform: uppercase;
+	}
+
+	.aac-managed-pill--icon {
+		width: 3rem;
+		min-width: 3rem;
+		padding: 0;
+	}
+
+	.aac-managed-pill--icon svg {
+		width: 1.35rem;
+		height: 1.35rem;
 	}
 
 	.aac-managed-shell button,
@@ -357,31 +390,33 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	.aac-managed-layout {
 		display: flex;
 		flex-wrap: nowrap;
-		align-items: flex-start;
+		align-items: stretch;
 		gap: 0;
-		min-height: calc(100vh - 132px);
+		min-height: calc(100vh - (env(safe-area-inset-top, 0px) + 4.75rem));
 	}
 
 	.aac-managed-sidebar {
 		position: sticky;
-		top: calc(env(safe-area-inset-top, 0px) + 6.75rem);
-		align-self: flex-start;
-		width: 18.5rem;
-		height: calc(100vh - (env(safe-area-inset-top, 0px) + 6.75rem));
-		max-height: calc(100vh - (env(safe-area-inset-top, 0px) + 6.75rem));
-		overflow-y: auto;
+		top: calc(env(safe-area-inset-top, 0px) + 4.75rem);
+		align-self: stretch;
+		width: 5.25rem;
+		height: calc(100vh - (env(safe-area-inset-top, 0px) + 4.75rem));
+		min-height: calc(100vh - (env(safe-area-inset-top, 0px) + 4.75rem));
+		max-height: calc(100vh - (env(safe-area-inset-top, 0px) + 4.75rem));
+		overflow: visible;
 		border-right: 1px solid rgba(0, 0, 0, 0.08);
 		background-color: #030000;
 		background-image:
 			linear-gradient(180deg, rgba(5, 2, 2, <?php echo esc_attr($portal_design_settings['sidebar_overlay_start']); ?>), rgba(5, 2, 2, <?php echo esc_attr($portal_design_settings['sidebar_overlay_end']); ?>)),
 			url('<?php echo esc_url($portal_design_settings['sidebar_background_url']); ?>');
 		background-position: center center, center top;
-		background-repeat: no-repeat, repeat-y;
-		background-size: 100% 100%, 100% auto;
+		background-repeat: no-repeat, repeat;
+		background-size: cover, 760px auto;
 		color: #fff;
-		padding: 1rem;
+		padding: 1rem 0.75rem;
 		box-sizing: border-box;
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+		z-index: 4;
 	}
 
 	.aac-managed-sidebar::before {
@@ -406,6 +441,13 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		font-weight: 700;
 		letter-spacing: 0.22em;
 		text-transform: uppercase;
+		opacity: 0;
+		max-height: 0;
+		overflow: hidden;
+		transform: translateX(-6px);
+		white-space: nowrap;
+		margin-bottom: 0;
+		transition: opacity 0.18s ease, max-height 0.18s ease, margin-bottom 0.18s ease, transform 0.18s ease;
 	}
 
 	.aac-managed-sidebar ul {
@@ -418,22 +460,20 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		padding: 0.75rem;
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		border-radius: 1.1rem;
-		background: <?php echo esc_html($portal_design_settings['sidebar_button_background']); ?>;
+		justify-content: center;
+		position: relative;
+		padding: 0.85rem 0.75rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 		color: #fff;
-		font-size: 0.875rem;
+		font-size: 1.05rem;
 		font-weight: 500;
 		text-decoration: none;
-		box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 		transition: all 0.2s ease;
 	}
 
 	.aac-managed-sidebar a:hover {
 		border-color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
-		background: <?php echo esc_html($portal_design_settings['sidebar_button_hover_background']); ?>;
-		color: #fff;
+		color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
 	}
 
 	.aac-managed-sidebar__icon {
@@ -454,15 +494,39 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		z-index: 1;
 	}
 
+	.aac-managed-sidebar__label {
+		position: absolute;
+		left: calc(100% + 0.9rem);
+		top: 50%;
+		z-index: 5;
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.65rem;
+		padding: 0.55rem 0.9rem;
+		border: 1px solid rgba(248, 194, 53, 0.28);
+		background: rgba(8, 5, 5, 0.94);
+		box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+		white-space: nowrap;
+		opacity: 0;
+		pointer-events: none;
+		transform: translate3d(-10px, -50%, 0);
+		transition: opacity 0.18s ease, transform 0.18s ease;
+	}
+
+	.aac-managed-sidebar a:hover .aac-managed-sidebar__label,
+	.aac-managed-sidebar a:focus-visible .aac-managed-sidebar__label,
+	.aac-managed-sidebar a:focus-within .aac-managed-sidebar__label {
+		opacity: 1;
+		transform: translate3d(0, -50%, 0);
+	}
+
 	.aac-managed-sidebar a[aria-current="page"] .aac-managed-sidebar__icon {
 		color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
 	}
 
 	.aac-managed-sidebar a[aria-current="page"] {
 		border-color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
-		background: <?php echo esc_html($portal_design_settings['sidebar_button_active_background']); ?>;
-		box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
-		color: #fff;
+		color: <?php echo esc_html($portal_design_settings['sidebar_accent_color']); ?>;
 	}
 
 	.aac-managed-main {
@@ -512,7 +576,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	.aac-managed-card {
 		margin-top: 1.5rem;
 		border: 1px solid rgba(0, 0, 0, 0.08);
-		border-radius: 28px;
+		border-radius: 0;
 		background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
 		padding: 1.5rem;
 		box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
@@ -526,7 +590,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	.aac-managed-card .pmpro_invoice,
 	.aac-managed-card .pmpro_checkout-fields {
 		border: 1px solid rgba(0, 0, 0, 0.08);
-		border-radius: 24px;
+		border-radius: 0;
 		background: rgba(255, 255, 255, 0.9);
 		padding: 1.2rem;
 	}
@@ -596,16 +660,16 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	body.pmpro-checkout .aac-managed-card {
-		padding: 1.35rem;
+		border: 0 !important;
+		background: transparent !important;
+		box-shadow: none !important;
+		padding: 0 !important;
 	}
 
 	body.pmpro-checkout .aac-managed-card .pmpro,
 	body.pmpro-checkout .aac-managed-card .pmpro_section,
-	body.pmpro-checkout .aac-managed-card .pmpro_card,
 	body.pmpro-checkout .aac-managed-card form.pmpro_form,
-	body.pmpro-checkout .aac-managed-card .pmpro_card_content,
 	body.pmpro-checkout .aac-managed-card .pmpro_checkout_gateway,
-	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields,
 	body.pmpro-checkout .aac-managed-card .pmpro_invoice {
 		border: 0;
 		border-radius: 0;
@@ -618,6 +682,27 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		margin: 0;
 		padding: 0;
 		border: 0;
+		border-radius: 0 !important;
+		background: transparent !important;
+		box-shadow: none !important;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card > .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__card,
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__card-inner,
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__dependents,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo,
+	body.pmpro-checkout .aac-managed-card .aac-donation-option,
+	body.pmpro-checkout .aac-managed-card .aac-order-summary,
+	body.pmpro-checkout .aac-managed-card .aac-order-summary__row {
+		border-radius: 0 !important;
 	}
 
 	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content {
@@ -641,6 +726,25 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		padding-top: 0 !important;
 	}
 
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card > .pmpro_card_content {
+		border-radius: 0 !important;
+		box-shadow: none !important;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card {
+		overflow: hidden;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card > .pmpro_card_content {
+		border-radius: 0 !important;
+		padding: 1.15rem 1.2rem !important;
+	}
+
 	body.pmpro-checkout .aac-managed-card #pmpro_pricing_fields {
 		margin-bottom: 1.1rem;
 		padding-bottom: 1.1rem;
@@ -659,14 +763,32 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .pmpro_section_title {
 		margin-top: 0;
 		margin-bottom: 0.8rem;
+		color: #0c0a09;
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_form_legend {
 		display: none;
 	}
 
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields > .pmpro_card,
 	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields > .pmpro_card > .pmpro_card_content {
+		background: #fff;
+		border-radius: 0;
+		box-shadow: none;
+		color: #1c1917;
+	}
+
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields > .pmpro_card > .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_card_fields,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_payment-discount-code,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_form_fields {
 		gap: 0.45rem;
+		background: #fff;
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		border-radius: 0;
+		box-shadow: none;
+		color: #1c1917;
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_payment-request-button,
@@ -685,13 +807,96 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .pmpro_card_actions,
 	body.pmpro-checkout .aac-managed-card .pmpro_form_submit {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		width: 100%;
 		margin-top: 0.9rem;
 		padding-top: 0;
 	}
 
 	body.pmpro-checkout .aac-managed-card .pmpro_message {
 		padding: 0.95rem 1rem;
-		border-radius: 1rem;
+		border-radius: 0;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fields.pmpro_cols-2 {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.85rem 1rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_cols-2 {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.85rem 1rem;
+		width: 100%;
+		align-items: start;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_field {
+		margin: 0;
+		min-width: 0;
+		width: 100% !important;
+		max-width: none !important;
+		float: none !important;
+		clear: none !important;
+		display: flex;
+		flex-direction: column;
+		align-self: start;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fields {
+		gap: 0.85rem 1rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-managed-two-up {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.85rem 1rem;
+		width: 100%;
+		align-items: start;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_cols-2 > * {
+		min-width: 0;
+		width: 100% !important;
+		max-width: none !important;
+		margin: 0 !important;
+		float: none !important;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_cols-2::before,
+	body.pmpro-checkout .aac-managed-card .pmpro_cols-2::after,
+	body.pmpro-checkout .aac-managed-card .aac-managed-two-up::before,
+	body.pmpro-checkout .aac-managed-card .aac-managed-two-up::after {
+		display: none !important;
+		content: none !important;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_label {
+		display: block;
+		width: 100%;
+		margin: 0 0 0.45rem;
+		color: #0c0a09;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_input,
+	body.pmpro-checkout .aac-managed-card input[type="text"],
+	body.pmpro-checkout .aac-managed-card input[type="email"],
+	body.pmpro-checkout .aac-managed-card input[type="password"],
+	body.pmpro-checkout .aac-managed-card input[type="tel"],
+	body.pmpro-checkout .aac-managed-card input[type="date"],
+	body.pmpro-checkout .aac-managed-card input[type="number"],
+	body.pmpro-checkout .aac-managed-card select,
+	body.pmpro-checkout .aac-managed-card textarea {
+		min-height: 3rem;
+		width: 100%;
+		border-radius: 0;
+		border: 1px solid #d6d3d1;
+		background: #fff;
+		box-shadow: none;
+		padding: 0.85rem 0.95rem;
 	}
 
 	body.pmpro-checkout .aac-managed-card .pmpro_form_field .select2-container {
@@ -700,7 +905,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .select2-container--default .select2-selection--single {
 		min-height: 3rem;
-		border-radius: 0.95rem;
+		border-radius: 0;
 		border: 1px solid #d6d3d1;
 		background: #fff;
 	}
@@ -794,15 +999,16 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		min-height: 16.5rem;
 		padding: 1rem 1.05rem;
 		border: 1px solid rgba(12, 10, 9, 0.1);
-		border-radius: 1.1rem;
-		background: rgba(255, 255, 255, 0.92);
-		box-shadow: 0 14px 34px rgba(12, 10, 9, 0.08);
+		border-radius: 0;
+		background: #fff;
+		box-shadow: none;
+		color: #292524;
 		transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:hover .aac-membership-discounts__card {
 		transform: translateY(-2px);
-		box-shadow: 0 18px 42px rgba(12, 10, 9, 0.1);
+		box-shadow: none;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:focus-visible + .aac-membership-discounts__card {
@@ -811,9 +1017,9 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card {
-		border-color: rgba(143, 21, 21, 0.52);
-		box-shadow: 0 20px 40px rgba(143, 21, 21, 0.12);
-		background: rgba(255, 248, 234, 0.92);
+		border-color: rgba(143, 21, 21, 0.92);
+		box-shadow: none;
+		background: #fff;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon {
@@ -830,6 +1036,11 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon svg {
 		width: 2rem;
 		height: 2rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon {
+		background: rgba(143, 21, 21, 0.08);
+		color: #b71c1c;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__body {
@@ -884,106 +1095,85 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
+		justify-content: center;
 		gap: 1rem;
 		margin-top: 1.5rem;
 		align-items: stretch;
+		width: 100%;
+		max-width: 100%;
+		margin-left: auto;
+		margin-right: auto;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		min-height: 23rem;
+		display: grid;
+		grid-template-rows: auto 1fr;
+		height: 100%;
+		max-width: none;
 		padding: 0;
-		border-radius: 1.3rem;
+		border-radius: 0;
 		overflow: hidden;
-		border: 1px solid rgba(255, 255, 255, 0.16);
-		box-shadow: 0 18px 42px rgba(12, 10, 9, 0.16);
-		color: #fff;
-		background: linear-gradient(180deg, #1c1714 0%, #0f0c0a 100%);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		background:
-			radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.18), transparent 34%),
-			radial-gradient(circle at 80% 18%, rgba(255, 255, 255, 0.1), transparent 28%),
-			linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 36%);
-		pointer-events: none;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card > * {
-		position: relative;
-		z-index: 1;
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		box-shadow: none;
+		background: #fff;
+		color: #0c0a09;
+		margin: 0 auto;
+		width: 100%;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__art {
-		min-height: 13.25rem;
-		background:
-			linear-gradient(160deg, rgba(247, 241, 228, 0.96), rgba(226, 214, 192, 0.92));
-		background-repeat: no-repeat;
-		background-position: center center;
-		background-size: contain;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 12.75rem;
+		padding: 0.75rem 0.75rem 0.25rem;
+		background: linear-gradient(180deg, rgba(245, 240, 231, 0.98), rgba(236, 229, 215, 0.92));
+		border-bottom: 1px solid rgba(12, 10, 9, 0.08);
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__content {
-		display: flex;
-		flex: 1 1 auto;
-		flex-direction: column;
-		gap: 0.85rem;
-		padding: 1rem;
-		background: linear-gradient(180deg, rgba(16, 12, 10, 0.88), rgba(10, 8, 7, 0.96));
+		display: grid;
+		gap: 0.75rem;
+		padding: 0.85rem 0.85rem 0.95rem;
 	}
 
-	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card--journal {
-		background: linear-gradient(180deg, #223041 0%, #111111 100%);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card--accidents {
-		background: linear-gradient(180deg, #4d2020 0%, #111111 100%);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-member-preferences__card--guidebook {
-		background: linear-gradient(180deg, #5a4431 0%, #111111 100%);
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__cover-image {
+		display: block;
+		width: auto;
+		max-width: 100%;
+		height: 11.25rem;
+		max-height: 100%;
+		object-fit: contain;
+		object-position: center top;
+		filter: drop-shadow(0 10px 18px rgba(12, 10, 9, 0.1));
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__title-block {
-		padding: 0.85rem 0.95rem;
-		border-radius: 1rem;
-		background: rgba(0, 0, 0, 0.52);
-		backdrop-filter: blur(4px);
-		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+		display: grid;
+		gap: 0.35rem;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__eyebrow {
-		display: inline-flex;
-		width: fit-content;
-		padding: 0.3rem 0.65rem;
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.14);
-		font-size: 0.72rem;
+		display: inline-block;
+		font-size: 0.68rem;
 		font-weight: 700;
-		letter-spacing: 0.16em;
+		letter-spacing: 0.22em;
 		text-transform: uppercase;
-		color: #fff;
+		color: #78716c;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__title {
-		margin: 0.7rem 0 0;
-		font-size: 1.55rem;
-		line-height: 1.08;
-		font-weight: 800;
-		letter-spacing: 0.01em;
-		color: #fff;
+		margin: 0;
+		font-size: 1rem;
+		line-height: 1.2;
+		font-weight: 700;
+		color: #0c0a09;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__description {
 		margin: 0;
-		color: rgba(255, 255, 255, 0.82);
-		font-size: 0.95rem;
+		color: #57534e;
+		font-size: 0.92rem;
 		line-height: 1.5;
 	}
 
@@ -991,19 +1181,31 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.65rem;
-		margin-top: auto;
+		justify-items: center;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__option {
+		display: block;
+		cursor: pointer;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-height: 3rem;
-		padding: 0.7rem 0.9rem;
+		width: 100%;
+		min-height: 2.7rem;
+		padding: 0.8rem 1.4rem;
 		border-radius: 0;
-		border: 1px solid rgba(255, 255, 255, 0.38);
-		background: rgba(12, 10, 9, 0.18);
-		color: rgba(255, 255, 255, 0.92);
+		border: 1px solid rgba(12, 10, 9, 0.18);
+		background: #fff;
+		color: #292524;
 		font-weight: 700;
 		cursor: pointer;
 		transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, color 160ms ease;
@@ -1011,13 +1213,80 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice:hover {
 		transform: translateY(-1px);
-		border-color: rgba(248, 194, 53, 0.68);
+		border-color: rgba(143, 21, 21, 0.55);
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__option:hover .aac-member-preferences__choice {
+		transform: translateY(-1px);
+		border-color: rgba(143, 21, 21, 0.55);
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice.is-active {
-		background: rgba(248, 194, 53, 0.96);
-		border-color: rgba(248, 194, 53, 0.96);
-		color: #0c0a09;
+		background: #8f1515;
+		border-color: #8f1515;
+		color: #fff;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-member-preferences__input:checked + .aac-member-preferences__choice {
+		background: #8f1515;
+		border-color: #8f1515;
+		color: #fff;
+	}
+
+	body.pmpro-checkout #aaj_preference_div,
+	body.pmpro-checkout #anac_preference_div,
+	body.pmpro-checkout #american_climbing_journal_preference_div,
+	body.pmpro-checkout #guidebook_preferences_div,
+	body.pmpro-checkout #publications_preference_div,
+	body.pmpro-checkout #birthdate_div {
+		display: none !important;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_field-password {
+		position: relative;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_input-password {
+		padding-right: 5.25rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_field-password-toggle {
+		position: absolute;
+		right: 0.95rem;
+		bottom: 0.95rem;
+		margin: 0;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_btn-password-toggle {
+		border: 0 !important;
+		background: transparent !important;
+		box-shadow: none !important;
+		padding: 0 !important;
+		min-height: 0;
+		color: #8f1515 !important;
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_btn-password-toggle .pmpro_icon {
+		display: none;
+	}
+
+	@media (max-width: 900px) {
+		body.pmpro-checkout .aac-managed-card .pmpro_form_fields.pmpro_cols-2 {
+			grid-template-columns: 1fr;
+		}
+
+		body.pmpro-checkout .aac-managed-card .pmpro_cols-2 {
+			grid-template-columns: 1fr;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			width: min(94vw, 38rem);
+		}
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-magazine-addons .pmpro_form_fields {
@@ -1057,15 +1326,15 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		height: 100%;
 		overflow: hidden;
 		border: 1px solid rgba(12, 10, 9, 0.1);
-		border-radius: 1.1rem;
+		border-radius: 0;
 		background: rgba(255, 255, 255, 0.9);
-		box-shadow: 0 14px 34px rgba(12, 10, 9, 0.08);
+		box-shadow: none;
 		transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__label:hover .aac-magazine-addons__card {
 		transform: translateY(-2px);
-		box-shadow: 0 18px 42px rgba(12, 10, 9, 0.1);
+		box-shadow: none;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__input:focus-visible + .aac-magazine-addons__card {
@@ -1075,7 +1344,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__input:checked + .aac-magazine-addons__card {
 		border-color: rgba(143, 21, 21, 0.52);
-		box-shadow: 0 20px 40px rgba(143, 21, 21, 0.12);
+		box-shadow: none;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__cover {
@@ -1399,8 +1668,9 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 0.75rem 0.85rem;
-		border-radius: 0.85rem;
-		background: rgba(255, 255, 255, 0.85);
+		border: 1px solid rgba(12, 10, 9, 0.12);
+		border-radius: 0;
+		background: #fff;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row strong {
@@ -1417,7 +1687,8 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row--total {
-		background: rgba(143, 21, 21, 0.08);
+		border-color: rgba(143, 21, 21, 0.45);
+		background: #fff;
 		color: #6b1010;
 		font-weight: 700;
 	}
@@ -1435,8 +1706,9 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__pricing-note {
 		margin: 0;
 		padding: 0.9rem 1rem;
-		border-radius: 1rem;
-		background: rgba(143, 21, 21, 0.06);
+		border: 1px solid rgba(143, 21, 21, 0.25);
+		border-radius: 0;
+		background: #fff;
 		color: #6b1010;
 		font-weight: 600;
 	}
@@ -1451,9 +1723,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1rem 1.05rem;
-		border: 1px solid rgba(12, 10, 9, 0.08);
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.92);
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		border-radius: 0;
+		background: #fff;
+		color: #1c1917;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-checkout-autorenew__copy {
@@ -1544,9 +1817,9 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	.aac-managed-card .aac-order-summary {
 		margin: 0 0 1.25rem;
 		padding: 1.1rem 1.2rem;
-		border: 1px solid rgba(12, 10, 9, 0.08);
-		border-radius: 1.1rem;
-		background: linear-gradient(180deg, rgba(250, 249, 246, 0.98), rgba(245, 239, 228, 0.98));
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		border-radius: 0;
+		background: #fff;
 	}
 
 	.aac-managed-card .aac-order-summary__header {
@@ -1578,9 +1851,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 0.75rem 0.9rem;
-		border-radius: 0.85rem;
-		background: rgba(255, 255, 255, 0.82);
-		color: #292524;
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		border-radius: 0;
+		background: #fff;
+		color: #1c1917;
 	}
 
 	.aac-managed-card .aac-order-summary__row strong {
@@ -1589,13 +1863,14 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-card .aac-order-summary__row--total {
-		background: rgba(143, 21, 21, 0.08);
-		color: #6b1010;
+		border-color: rgba(183, 28, 28, 0.82);
+		background: #fff;
+		color: #8f1515;
 		font-weight: 700;
 	}
 
 	.aac-managed-card .aac-order-summary__row--total strong {
-		color: #8f1515;
+		color: #ef4444;
 	}
 
 	.aac-managed-card .aac-order-summary__meta {
@@ -1737,7 +2012,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-toggle input:checked + .aac-managed-toggle__track {
-		background: #f8c235;
+		background: #8f1515;
 	}
 
 	.aac-managed-toggle input:checked + .aac-managed-toggle__track::after {
@@ -1807,6 +2082,23 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	@media (max-width: 960px) {
+		.aac-managed-header__bar {
+			display: flex;
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.aac-managed-logo,
+		.aac-managed-actions {
+			padding: 1rem 1rem 0;
+			border: 0;
+		}
+
+		.aac-managed-topnav {
+			flex-wrap: wrap;
+			padding: 0.75rem 1rem 1rem;
+		}
+
 		.aac-managed-layout {
 			display: block;
 		}
@@ -1815,8 +2107,34 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 			position: static;
 			width: auto;
 			height: auto;
+			overflow: visible;
 			border-right: 0;
 			border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+			padding: 1rem;
+		}
+
+		.aac-managed-sidebar__section-title {
+			opacity: 1;
+			max-height: none;
+			transform: none;
+			margin-bottom: 0.55rem;
+		}
+
+		.aac-managed-sidebar a {
+			justify-content: flex-start;
+			padding: 0.75rem;
+		}
+
+		.aac-managed-sidebar__label {
+			position: static;
+			min-height: 0;
+			padding: 0;
+			border: 0;
+			background: transparent;
+			box-shadow: none;
+			opacity: 1;
+			pointer-events: auto;
+			transform: none;
 		}
 	}
 </style>
@@ -1824,47 +2142,47 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 <div class="aac-managed-shell">
 	<header class="aac-managed-header">
 		<div class="aac-managed-header__inner">
-			<div class="aac-managed-header__row">
+			<div class="aac-managed-header__bar">
 				<a class="aac-managed-logo" href="<?php echo esc_url($portal_url . '#/home'); ?>">
 					<img src="https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/light-header-logo.svg" alt="American Alpine Club Logo">
 				</a>
 
-				<div class="aac-managed-actions">
-					<a class="aac-managed-pill aac-managed-pill--danger" href="<?php echo esc_url($portal_url . '#/donate'); ?>">Donate</a>
-					<a class="aac-managed-pill aac-managed-pill--ghost" href="<?php echo esc_url($portal_url . '#/profile'); ?>">Member Profile</a>
-					<a class="aac-managed-pill aac-managed-pill--primary" href="<?php echo esc_url(wp_logout_url($portal_url . '#/login')); ?>">Log Out</a>
-				</div>
-			</div>
-
-			<nav class="aac-managed-topnav" aria-label="Primary">
-				<?php foreach ($top_nav as $item) : ?>
-					<div class="aac-managed-topnav__item">
-						<a class="aac-managed-topnav__trigger" href="<?php echo esc_url($item['href']); ?>">
-							<span><?php echo esc_html($item['label']); ?></span>
-							<span class="aac-managed-topnav__caret" aria-hidden="true">+</span>
-						</a>
-						<div class="aac-managed-topnav__panel">
-							<div class="aac-managed-topnav__panel-inner">
-								<span class="aac-managed-topnav__panel-title"><?php echo esc_html($item['label']); ?></span>
-								<ul>
-									<li>
-										<a class="aac-managed-topnav__link aac-managed-topnav__link--overview" href="<?php echo esc_url($item['href']); ?>">
-											View all
-										</a>
-									</li>
-									<?php foreach ($item['children'] as $child) : ?>
-										<li>
-											<a class="aac-managed-topnav__link" href="<?php echo esc_url($child['href']); ?>">
-												<?php echo esc_html($child['label']); ?>
-											</a>
-										</li>
-									<?php endforeach; ?>
-								</ul>
+				<nav class="aac-managed-topnav" aria-label="Primary">
+					<?php foreach ($top_nav as $item) : ?>
+						<div class="aac-managed-topnav__item">
+							<a class="aac-managed-topnav__trigger" href="<?php echo esc_url($item['href']); ?>">
+								<span><?php echo esc_html($item['label']); ?></span>
+								<span class="aac-managed-topnav__caret" aria-hidden="true">+</span>
+							</a>
+							<div class="aac-managed-topnav__panel">
+									<div class="aac-managed-topnav__panel-inner">
+										<span class="aac-managed-topnav__panel-title"><?php echo esc_html($item['label']); ?></span>
+										<ul>
+											<?php foreach ($item['children'] as $child) : ?>
+												<li>
+													<a class="aac-managed-topnav__link" href="<?php echo esc_url($child['href']); ?>">
+														<?php echo esc_html($child['label']); ?>
+												</a>
+											</li>
+										<?php endforeach; ?>
+									</ul>
+								</div>
 							</div>
 						</div>
-					</div>
-				<?php endforeach; ?>
-			</nav>
+					<?php endforeach; ?>
+				</nav>
+
+				<div class="aac-managed-actions">
+					<a
+						class="aac-managed-pill aac-managed-pill--primary aac-managed-pill--icon"
+						href="<?php echo esc_url(wp_logout_url($portal_url . '#/login')); ?>"
+						aria-label="<?php esc_attr_e('Log Out', 'aac-member-portal'); ?>"
+						title="<?php esc_attr_e('Log Out', 'aac-member-portal'); ?>"
+					>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+					</a>
+				</div>
+			</div>
 		</div>
 	</header>
 
@@ -1878,7 +2196,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 							<li>
 								<a href="<?php echo esc_url($item['href']); ?>"<?php echo !empty($item['active']) ? ' aria-current="page"' : ''; ?>>
 									<span class="aac-managed-sidebar__icon" aria-hidden="true"><?php echo aac_member_portal_sidebar_icon_svg($item['icon'] ?? 'user'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-									<span><?php echo esc_html($item['label']); ?></span>
+									<span class="aac-managed-sidebar__label"><?php echo esc_html($item['label']); ?></span>
 								</a>
 							</li>
 						<?php endforeach; ?>
@@ -1895,7 +2213,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 						<p><?php echo esc_html($page_description); ?></p>
 						<div class="aac-managed-actions-row">
 							<a class="aac-managed-pill <?php echo !empty($is_account_page) ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($account_url); ?>">Account</a>
-							<a class="aac-managed-pill <?php echo $is_billing_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($billing_url); ?>">Billing</a>
+							<a class="aac-managed-pill <?php echo $is_billing_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($managed_billing_url); ?>">Billing</a>
 							<a class="aac-managed-pill <?php echo $is_orders_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($orders_url); ?>">Orders</a>
 							<a class="aac-managed-pill <?php echo $is_cancel_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($cancel_url); ?>">Cancel</a>
 							<a class="aac-managed-pill <?php echo $is_confirmation_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($confirmation_url); ?>">Confirmation</a>
@@ -1963,11 +2281,49 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 </div>
 <script>
 	(function () {
+		const buildPreferredLoggedInName = () => {
+			const nameCandidates = [];
+			const currentUserFirstName = String(window.AAC_CURRENT_USER_FIRST_NAME || '').trim();
+			const currentUserLastName = String(window.AAC_CURRENT_USER_LAST_NAME || '').trim();
+			const runtimeFullName = [currentUserFirstName, currentUserLastName].filter(Boolean).join(' ').trim();
+			if (runtimeFullName) {
+				nameCandidates.push(runtimeFullName);
+			}
+
+			const checkoutFirstName = String(document.querySelector('input[name="bfirstname"]')?.value || '').trim();
+			const checkoutLastName = String(document.querySelector('input[name="blastname"]')?.value || '').trim();
+			const checkoutFullName = [checkoutFirstName, checkoutLastName].filter(Boolean).join(' ').trim();
+			if (checkoutFullName) {
+				nameCandidates.push(checkoutFullName);
+			}
+
+			const accountName = String(document.querySelector('input[name="name"]')?.value || '').trim();
+			if (accountName) {
+				nameCandidates.push(accountName);
+			}
+
+			if (currentUserDisplayName) {
+				nameCandidates.push(currentUserDisplayName);
+			}
+
+			return nameCandidates.find((candidate) => candidate && candidate.includes(' ')) || nameCandidates.find(Boolean) || '';
+		};
+
 		const currentUserEmail = <?php echo wp_json_encode($is_logged_in ? wp_get_current_user()->user_email : ''); ?>;
 		const currentUserDisplayName = <?php
 			if ($is_logged_in) {
 				$current_user = wp_get_current_user();
-				$display_name = trim(($current_user->first_name ?? '') . ' ' . ($current_user->last_name ?? ''));
+				$account_info = get_user_meta($current_user->ID, 'aac_account_info', true);
+				$account_first_name = is_array($account_info) ? trim((string) ($account_info['first_name'] ?? '')) : '';
+				$account_last_name = is_array($account_info) ? trim((string) ($account_info['last_name'] ?? '')) : '';
+				$account_name = is_array($account_info) ? trim((string) ($account_info['name'] ?? '')) : '';
+				$display_name = trim($account_first_name . ' ' . $account_last_name);
+				if ($display_name === '' && $account_name !== '') {
+					$display_name = $account_name;
+				}
+				if ($display_name === '') {
+					$display_name = trim(($current_user->first_name ?? '') . ' ' . ($current_user->last_name ?? ''));
+				}
 				if ($display_name === '') {
 					$display_name = $current_user->display_name ?: $current_user->user_email;
 				}
@@ -1997,6 +2353,12 @@ const formatUsd = (value) => new Intl.NumberFormat('en-US', {
 }).format(Number.isFinite(value) ? value : 0);
 const checkoutProfileDefaults = <?php echo wp_json_encode($checkout_profile_defaults); ?>;
 const publicationCardImages = <?php echo wp_json_encode($portal_design_settings['publication_tile_images'] ?? []); ?>;
+const defaultPublicationCardImages = {
+	aaj: 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-95.jpeg',
+	anac: 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-28.jpeg',
+	acj: 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-4.jpg',
+	guidebook: 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-2.jpg',
+};
 
 	const escapeHtml = (value) => String(value ?? '')
 		.replace(/&/g, '&amp;')
@@ -2245,18 +2607,26 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			return;
 		}
 
-		const form = fieldset.closest('form');
+		if (fieldset.querySelector('.aac-server-member-preferences')) {
+			return;
+		}
+
 		const tshirtField = document.getElementById('t_shirt_div');
-		const publicationField =
+		const legacyPublicationField =
 			document.getElementById('publications_preference_div') ||
 			fieldset.querySelector('.pmpro_form_field-publications_preference');
+		const aajField =
+			document.getElementById('aaj_preference_div') ||
+			fieldset.querySelector('.pmpro_form_field-aaj_preference');
+		const anacField =
+			document.getElementById('anac_preference_div') ||
+			fieldset.querySelector('.pmpro_form_field-anac_preference');
+		const acjField =
+			document.getElementById('american_climbing_journal_preference_div') ||
+			fieldset.querySelector('.pmpro_form_field-american_climbing_journal_preference');
 		const guidebookField =
 			document.getElementById('guidebook_preferences_div') ||
 			fieldset.querySelector('.pmpro_form_field-guidebook_preferences');
-
-		if (!tshirtField) {
-			return;
-		}
 
 		const showTshirtPreference = currentLevelId >= 2;
 		const showPublicationPreferences = currentLevelId > 2;
@@ -2281,7 +2651,10 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			field.style.display = 'none';
 		};
 
-		hideOriginalField(publicationField);
+		hideOriginalField(legacyPublicationField);
+		hideOriginalField(aajField);
+		hideOriginalField(anacField);
+		hideOriginalField(acjField);
 		hideOriginalField(guidebookField);
 
 		if (tshirtField) {
@@ -2295,19 +2668,17 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			return;
 		}
 
-		const readPreferenceValue = (name, fallback) => {
-			const existingValue = form?.querySelector(`input[name="${name}"]`)?.value;
-			return existingValue === 'Print' || existingValue === 'Digital' ? existingValue : fallback;
-		};
-
-		const publicationSelect = publicationField?.querySelector('select');
+		const legacyPublicationSelect = legacyPublicationField?.querySelector('select');
+		const aajSelect = aajField?.querySelector('select');
+		const anacSelect = anacField?.querySelector('select');
+		const acjSelect = acjField?.querySelector('select');
 		const guidebookSelect = guidebookField?.querySelector('select');
-		const legacyPublicationValue = checkoutProfileDefaults.publication_pref || publicationSelect?.value || 'Print';
-		const aajHiddenInput = ensureHiddenPreferenceInput(form, 'aac_aaj_pref', readPreferenceValue('aac_aaj_pref', checkoutProfileDefaults.aaj_pref || legacyPublicationValue));
-		const anacHiddenInput = ensureHiddenPreferenceInput(form, 'aac_anac_pref', readPreferenceValue('aac_anac_pref', checkoutProfileDefaults.anac_pref || legacyPublicationValue));
-		const acjHiddenInput = ensureHiddenPreferenceInput(form, 'aac_acj_pref', readPreferenceValue('aac_acj_pref', checkoutProfileDefaults.acj_pref || legacyPublicationValue));
-		const guidebookHiddenInput = ensureHiddenPreferenceInput(form, 'aac_guidebook_pref', readPreferenceValue('aac_guidebook_pref', checkoutProfileDefaults.guidebook_pref || guidebookSelect?.value || 'Print'));
-		const legacyPublicationHiddenInput = ensureHiddenPreferenceInput(form, 'aac_publication_pref', readPreferenceValue('aac_publication_pref', legacyPublicationValue));
+		const resolvedPublicationCardImages = {
+			aaj: publicationCardImages.aaj || defaultPublicationCardImages.aaj,
+			anac: publicationCardImages.anac || defaultPublicationCardImages.anac,
+			acj: publicationCardImages.acj || defaultPublicationCardImages.acj,
+			guidebook: publicationCardImages.guidebook || defaultPublicationCardImages.guidebook,
+		};
 
 		if (!intro.parentNode) {
 			if (tshirtField) {
@@ -2321,19 +2692,19 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			intro.insertAdjacentElement('afterend', cardsGrid);
 		}
 
-		const createPreferenceCard = ({ themeClass, eyebrow, title, description, hiddenInput, imageUrl, legacySelect, onChange }) => {
-			if (!hiddenInput) {
+		const createPreferenceCard = ({ themeClass, eyebrow, title, description, fieldName, selectElement, imageUrl, onChange }) => {
+			if (!selectElement) {
 				return null;
 			}
 
 			const card = document.createElement('article');
 			card.className = `aac-member-preferences__card ${themeClass}`;
-			card.dataset.aacPrefSource = hiddenInput.name;
+			card.dataset.aacPrefSource = fieldName;
 			if (imageUrl) {
 				card.style.setProperty('--aac-member-pref-image', `url("${String(imageUrl).replace(/"/g, '&quot;')}")`);
 			}
-			card.innerHTML = `
-				<div class="aac-member-preferences__art" style="${imageUrl ? `background-image: var(--aac-member-pref-image);` : ''}"></div>
+				card.innerHTML = `
+				<div class="aac-member-preferences__art">${imageUrl ? `<img src="${String(imageUrl).replace(/"/g, '&quot;')}" alt="${title} cover" class="aac-member-preferences__cover-image" />` : ''}</div>
 				<div class="aac-member-preferences__content">
 					<div class="aac-member-preferences__title-block">
 						<span class="aac-member-preferences__eyebrow">${eyebrow}</span>
@@ -2348,11 +2719,8 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			`;
 
 			const syncCardState = () => {
-				const nextValue = (hiddenInput.value || 'Digital').trim() === 'Print' ? 'Print' : 'Digital';
-				hiddenInput.value = nextValue;
-				if (legacySelect) {
-					legacySelect.value = nextValue;
-				}
+				const nextValue = (selectElement.value || 'Digital').trim() === 'Print' ? 'Print' : 'Digital';
+				selectElement.value = nextValue;
 				card.querySelectorAll('.aac-member-preferences__choice').forEach((choice) => {
 					choice.classList.toggle('is-active', choice.dataset.value === nextValue);
 				});
@@ -2360,20 +2728,22 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 
 			card.querySelectorAll('.aac-member-preferences__choice').forEach((choice) => {
 				choice.addEventListener('click', () => {
-					hiddenInput.value = choice.dataset.value;
-					if (legacySelect) {
-						legacySelect.value = choice.dataset.value;
-						legacySelect.dispatchEvent(new Event('change', { bubbles: true }));
-					}
+					selectElement.value = choice.dataset.value;
+					selectElement.dispatchEvent(new Event('change', { bubbles: true }));
 					if (typeof onChange === 'function') {
 						onChange(choice.dataset.value);
 					}
 					syncMagazineAddonSummary();
-					document.querySelectorAll(`[data-aac-pref-source="${hiddenInput.name}"]`).forEach((node) => {
+					document.querySelectorAll(`[data-aac-pref-source="${fieldName}"]`).forEach((node) => {
 						node.dispatchEvent(new CustomEvent('aac:sync-card-state'));
 					});
 				});
 			});
+
+			if (selectElement.dataset.aacCardSyncBound !== 'true') {
+				selectElement.addEventListener('change', syncCardState);
+				selectElement.dataset.aacCardSyncBound = 'true';
+			}
 
 			card.addEventListener('aac:sync-card-state', syncCardState);
 			syncCardState();
@@ -2388,11 +2758,14 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				eyebrow: 'Annual',
 				title: 'American Alpine Journal',
 				description: 'Annual climbing journal. Choose print delivery or digital-only access.',
-				hiddenInput: aajHiddenInput,
-				imageUrl: publicationCardImages.aaj,
-				legacySelect: publicationSelect,
+				fieldName: 'aaj_preference',
+				selectElement: aajSelect,
+				imageUrl: resolvedPublicationCardImages.aaj,
 				onChange: (value) => {
-					legacyPublicationHiddenInput.value = value;
+					if (legacyPublicationSelect) {
+						legacyPublicationSelect.value = value;
+						legacyPublicationSelect.dispatchEvent(new Event('change', { bubbles: true }));
+					}
 				},
 			}),
 			createPreferenceCard({
@@ -2400,25 +2773,27 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				eyebrow: 'Annual',
 				title: 'Accidents in North American Climbing',
 				description: 'Annual accident review. Choose print delivery or digital-only access.',
-				hiddenInput: anacHiddenInput,
-				imageUrl: publicationCardImages.anac,
+				fieldName: 'anac_preference',
+				selectElement: anacSelect,
+				imageUrl: resolvedPublicationCardImages.anac,
 			}),
 			createPreferenceCard({
 				themeClass: 'aac-member-preferences__card--journal',
 				eyebrow: 'Journal',
 				title: 'American Climbing Journal',
 				description: 'Member stories and club updates. Choose print delivery or digital-only access.',
-				hiddenInput: acjHiddenInput,
-				imageUrl: publicationCardImages.acj,
+				fieldName: 'american_climbing_journal_preference',
+				selectElement: acjSelect,
+				imageUrl: resolvedPublicationCardImages.acj,
 			}),
 			createPreferenceCard({
 				themeClass: 'aac-member-preferences__card--guidebook',
 				eyebrow: 'Quarterly',
 				title: 'Guidebook to Membership',
 				description: 'Quarterly member publication. Choose print delivery or digital-only access.',
-				hiddenInput: guidebookHiddenInput,
-				imageUrl: publicationCardImages.guidebook,
-				legacySelect: guidebookSelect,
+				fieldName: 'guidebook_preferences',
+				selectElement: guidebookSelect,
+				imageUrl: resolvedPublicationCardImages.guidebook,
 			}),
 		].filter(Boolean).forEach((card) => cardsGrid.appendChild(card));
 	};
@@ -2471,11 +2846,37 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 
 			const accountFields = userFieldsFieldset?.querySelector('.pmpro_form_fields');
 			const emailInput = userFieldsFieldset?.querySelector('input[name="bemail"]');
+			const confirmEmailInput = userFieldsFieldset?.querySelector('input[name="bconfirmemail"]');
 			const passwordInput = userFieldsFieldset?.querySelector('input[name="password"]');
-			const emailRow = emailInput?.closest('.pmpro_cols-2');
-			const passwordRow = passwordInput?.closest('.pmpro_cols-2');
-			if (accountFields && emailRow && passwordRow && emailRow !== passwordRow) {
-				accountFields.insertBefore(emailRow, passwordRow);
+			const confirmPasswordInput = userFieldsFieldset?.querySelector('input[name="password2"]');
+			const birthdateField = document.getElementById('birthdate_div');
+			const tshirtField = document.getElementById('t_shirt_div');
+			const personalDetailsFieldset = document.getElementById('pmpro_form_fieldset-personal-details');
+			const emailField = emailInput?.closest('.pmpro_form_field');
+			const confirmEmailField = confirmEmailInput?.closest('.pmpro_form_field');
+			const passwordField = passwordInput?.closest('.pmpro_form_field');
+			const confirmPasswordField = confirmPasswordInput?.closest('.pmpro_form_field');
+			if (
+				accountFields &&
+				emailField &&
+				confirmEmailField &&
+				passwordField &&
+				confirmPasswordField &&
+				accountFields.dataset.aacAccountRowsBuilt !== '1'
+			) {
+				const firstRow = document.createElement('div');
+				firstRow.className = 'pmpro_cols-2 aac-managed-two-up';
+				firstRow.append(emailField, passwordField);
+				const secondRow = document.createElement('div');
+				secondRow.className = 'pmpro_cols-2 aac-managed-two-up';
+				secondRow.append(confirmEmailField, confirmPasswordField);
+				accountFields.append(firstRow, secondRow);
+				Array.from(accountFields.querySelectorAll('.pmpro_cols-2')).forEach((row) => {
+					if (!row.children.length) {
+						row.remove();
+					}
+				});
+				accountFields.dataset.aacAccountRowsBuilt = '1';
 			}
 
 			const billingHeading = billingFieldset.querySelector('.pmpro_form_heading');
@@ -2483,14 +2884,61 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				billingHeading.textContent = 'Contact Information';
 			}
 
+			if (birthdateField) {
+				birthdateField.remove();
+			}
+
+			[tshirtField].filter(Boolean).forEach((field) => {
+				billingFields.appendChild(field);
+			});
+
+			if (billingFields && billingFields.dataset.aacContactRowsBuilt !== '1') {
+				const buildTwoUpRow = (fieldIds) => {
+					const fields = fieldIds
+						.map((fieldId) => document.getElementById(fieldId))
+						.filter(Boolean);
+					if (!fields.length) {
+						return;
+					}
+					const row = document.createElement('div');
+					row.className = 'pmpro_cols-2 aac-managed-two-up';
+					fields.forEach((field) => row.appendChild(field));
+					billingFields.appendChild(row);
+				};
+
+				[
+					['first_name_div', 'last_name_div'],
+					['baddress1_div', 'baddress2_div'],
+					['bcity_div', 'bstate_div'],
+					['bzipcode_div', 'bcountry_div'],
+					['bphone_div', 't_shirt_div'],
+				].forEach(buildTwoUpRow);
+
+				Array.from(billingFields.querySelectorAll('.pmpro_cols-2')).forEach((row) => {
+					if (!row.children.length) {
+						row.remove();
+					}
+				});
+
+				billingFields.dataset.aacContactRowsBuilt = '1';
+			}
+
+			if (personalDetailsFieldset) {
+				const personalFields = personalDetailsFieldset.querySelector('.pmpro_form_fields');
+				if (!personalFields || !personalFields.children.length) {
+					personalDetailsFieldset.remove();
+				}
+			}
+
 			const memberPreferencesFieldset =
+				document.getElementById('pmpro_form_fieldset-publication-preferences') ||
 				document.getElementById('pmpro_form_fieldset-member-preferences') ||
 				document.getElementById('pmpro_form_fieldset-more-information');
 			const memberPreferencesFields = memberPreferencesFieldset?.querySelector('.pmpro_form_fields');
 			const memberPreferencesHeading = memberPreferencesFieldset?.querySelector('.pmpro_form_heading');
 
 			if (memberPreferencesFieldset && memberPreferencesHeading) {
-				memberPreferencesHeading.textContent = 'Member Preferences';
+				memberPreferencesHeading.textContent = 'Publication Preferences';
 			}
 
 			const moreInformationFieldset = document.getElementById('pmpro_form_fieldset-more-information');
@@ -2639,22 +3087,17 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			? `${selectedDiscountInput.dataset.aacMembershipDiscountLabel} (35%)`
 			: '';
 		const donationAmount = Math.max(0, Number.parseFloat(document.getElementById('donation')?.value || '0') || 0);
-		const readPublicationPreferenceValue = (inputName, fallbackSelector) => {
-			const hiddenValue = (document.querySelector(`input[name="${inputName}"]`)?.value || '').trim();
-			if (hiddenValue === 'Print' || hiddenValue === 'Digital') {
-				return hiddenValue;
-			}
-
+		const readPublicationPreferenceValue = (fallbackSelector) => {
 			const fallbackValue = (document.querySelector(fallbackSelector)?.value || '').trim();
 			return fallbackValue === 'Print' ? 'Print' : 'Digital';
 		};
 		const countryValue = String(document.getElementById('bcountry')?.value || 'US').trim().toUpperCase();
 		const isInternationalCountry = !['', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(countryValue);
 		const hasPrintPublicationSelection = [
-			readPublicationPreferenceValue('aac_aaj_pref', '#publications_preference_div select'),
-			readPublicationPreferenceValue('aac_anac_pref', '#publications_preference_div select'),
-			readPublicationPreferenceValue('aac_acj_pref', '#publications_preference_div select'),
-			readPublicationPreferenceValue('aac_guidebook_pref', '#guidebook_preferences_div select'),
+			readPublicationPreferenceValue('#aaj_preference_div select'),
+			readPublicationPreferenceValue('#anac_preference_div select'),
+			readPublicationPreferenceValue('#american_climbing_journal_preference_div select'),
+			readPublicationPreferenceValue('#guidebook_preferences_div select'),
 		].includes('Print');
 		const internationalSurcharge = currentLevelId === 3 && isInternationalCountry && hasPrintPublicationSelection ? 30 : 0;
 		const selectedAddons = checkboxInputs
@@ -2750,7 +3193,7 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			countryField.dataset.aacOrderSummaryBound = 'true';
 		}
 
-		document.querySelectorAll('#publications_preference_div select, #guidebook_preferences_div select').forEach((select) => {
+		document.querySelectorAll('#publications_preference_div select, #aaj_preference_div select, #anac_preference_div select, #american_climbing_journal_preference_div select, #guidebook_preferences_div select').forEach((select) => {
 			if (select.dataset.aacOrderSummaryBound === 'true') {
 				return;
 			}
@@ -2791,28 +3234,67 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				return;
 			}
 
-			input.addEventListener('change', () => {
+			const clearFamilySelection = () => {
+				const familyShortcut = document.getElementById('aac_partner_family_shortcut');
+				const modeInput = document.getElementById('aac_partner_family_mode');
+				const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
+				const details = document.querySelector('[data-aac-partner-family-details]');
+				const familyAdultInput = document.getElementById('aac_partner_family_additional_adult');
+				const familyDependentsInput = document.getElementById('aac_partner_family_dependents');
+
+				if (familyShortcut) {
+					familyShortcut.checked = false;
+					familyShortcut.removeAttribute('checked');
+				}
+
+				if (modeInput) {
+					modeInput.value = '';
+				}
+
+				if (familyFieldset) {
+					familyFieldset.hidden = true;
+					familyFieldset.style.display = 'none';
+				}
+
+				if (details) {
+					details.hidden = true;
+					details.style.display = 'none';
+				}
+
+				if (familyAdultInput) {
+					familyAdultInput.checked = false;
+					familyAdultInput.removeAttribute('checked');
+				}
+
+				if (familyDependentsInput) {
+					familyDependentsInput.value = '0';
+				}
+			};
+
+			const syncExclusiveDiscountSelection = () => {
 				if (input.checked) {
 					document.querySelectorAll(`input[name="${input.name}"]`).forEach((candidate) => {
 						if (candidate === input) {
 							candidate.setAttribute('checked', 'checked');
 						} else {
 							candidate.checked = false;
-							candidate.removeAttribute('checked');
-						}
-					});
+								candidate.removeAttribute('checked');
+							}
+						});
 
-					const familyShortcut = document.getElementById('aac_partner_family_shortcut');
-					if (familyShortcut) {
-						familyShortcut.checked = false;
-						familyShortcut.removeAttribute('checked');
-					}
+					clearFamilySelection();
 				} else {
 					input.removeAttribute('checked');
 				}
 
 				syncMagazineAddonSummary();
+			};
+
+			input.addEventListener('click', () => {
+				window.setTimeout(syncExclusiveDiscountSelection, 0);
 			});
+
+			input.addEventListener('change', syncExclusiveDiscountSelection);
 
 			input.dataset.aacToggleableBound = 'true';
 		});
@@ -2821,10 +3303,13 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 	const bindFamilySelectionShortcut = () => {
 		const shortcut = document.getElementById('aac_partner_family_shortcut');
 		const modeInput = document.getElementById('aac_partner_family_mode');
+		const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
 		const details = document.querySelector('[data-aac-partner-family-details]');
-		if (!shortcut || !modeInput || !details) {
+		if (!shortcut || !modeInput || !details || !familyFieldset) {
 			return;
 		}
+		const familyAdultInput = document.getElementById('aac_partner_family_additional_adult');
+		const familyDependentsInput = document.getElementById('aac_partner_family_dependents');
 
 		const syncFamilyState = () => {
 			const active = shortcut.checked;
@@ -2833,8 +3318,18 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 					input.checked = false;
 					input.removeAttribute('checked');
 				});
+			} else {
+				if (familyAdultInput) {
+					familyAdultInput.checked = false;
+					familyAdultInput.removeAttribute('checked');
+				}
+				if (familyDependentsInput) {
+					familyDependentsInput.value = '0';
+				}
 			}
 			modeInput.value = active ? 'family' : '';
+			familyFieldset.hidden = !active;
+			familyFieldset.style.display = active ? '' : 'none';
 			details.hidden = !active;
 			details.style.display = active ? 'grid' : 'none';
 		};
@@ -2850,7 +3345,101 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 		syncFamilyState();
 	};
 
+	const enhancePublicationPreferenceCards = () => {
+		const memberPreferencesFieldset =
+			document.getElementById('pmpro_form_fieldset-publication-preferences') ||
+			document.getElementById('pmpro_form_fieldset-member-preferences') ||
+			document.getElementById('pmpro_form_fieldset-more-information');
+		if (!memberPreferencesFieldset) {
+			return;
+		}
+
+		const serverBlock =
+			memberPreferencesFieldset.querySelector('.aac-server-member-preferences') ||
+			document.querySelector('.aac-server-member-preferences');
+		const targetFields = memberPreferencesFieldset.querySelector('.pmpro_form_fields');
+		if (serverBlock && targetFields && !targetFields.contains(serverBlock)) {
+			targetFields.prepend(serverBlock);
+		}
+
+		if (memberPreferencesFieldset.querySelector('.aac-server-member-preferences')) {
+			memberPreferencesFieldset.querySelectorAll('#publications_preference_div select, #aaj_preference_div select, #anac_preference_div select, #american_climbing_journal_preference_div select, #guidebook_preferences_div select').forEach((select) => {
+				select.disabled = true;
+			});
+			return;
+		}
+
+		const levelInput = document.getElementById('pmpro_level');
+		const currentLevelId = Number.parseInt(levelInput?.value || '0', 10) || 0;
+		buildMemberPreferenceCards(memberPreferencesFieldset, currentLevelId);
+	};
+
+	const syncStandaloneFamilyVisibility = () => {
+		const shortcut = document.getElementById('aac_partner_family_shortcut');
+		const modeInput = document.getElementById('aac_partner_family_mode');
+		const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
+		const details = document.querySelector('[data-aac-partner-family-details]');
+		if (!shortcut || !modeInput || !familyFieldset || !details) {
+			return;
+		}
+
+		const familyAdultInput = document.getElementById('aac_partner_family_additional_adult');
+		const familyDependentsInput = document.getElementById('aac_partner_family_dependents');
+		const active = shortcut.checked;
+		modeInput.value = active ? 'family' : '';
+		familyFieldset.hidden = !active;
+		familyFieldset.style.display = active ? '' : 'none';
+		details.hidden = !active;
+		details.style.display = active ? 'grid' : 'none';
+
+		if (!active) {
+			if (familyAdultInput) {
+				familyAdultInput.checked = false;
+				familyAdultInput.removeAttribute('checked');
+			}
+			if (familyDependentsInput) {
+				familyDependentsInput.value = '0';
+			}
+		}
+	};
+
 	const relabelTShirtSizeOptions = () => {
+		const tshirtValueMap = {
+			'none': 'No T-shirt',
+			'no t-shirt': 'No T-shirt',
+			'xs': 'Unisex X-Small',
+			's': 'Unisex Small',
+			'm': 'Unisex Medium',
+			'l': 'Unisex Large',
+			'xl': 'Unisex X-Large',
+			'xxl': 'Unisex XX-Large',
+			'2xl': 'Unisex XX-Large',
+			'unisex x-small': 'Unisex X-Small',
+			'unisex small': 'Unisex Small',
+			'unisex medium': 'Unisex Medium',
+			'unisex large': 'Unisex Large',
+			'unisex x-large': 'Unisex X-Large',
+			'unisex xx-large': 'Unisex XX-Large',
+		};
+		const normalizeTshirtValue = (value) => {
+			const rawValue = String(value || '').trim();
+			if (!rawValue) {
+				return 'No T-shirt';
+			}
+
+			const lowered = rawValue.toLowerCase();
+			if (tshirtValueMap[lowered]) {
+				return tshirtValueMap[lowered];
+			}
+
+			if (lowered.startsWith('unisex ')) {
+				const compact = lowered.replace(/^unisex\s+/, '').replace(/[\s-]+/g, '');
+				return tshirtValueMap[compact] || 'No T-shirt';
+			}
+
+			return 'No T-shirt';
+		};
+
 		document.querySelectorAll('select[name="t_shirt"]').forEach((select) => {
 			if (select.dataset.aacTshirtEnhanced !== 'true') {
 				select.required = false;
@@ -2860,44 +3449,52 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				field?.classList.remove('pmpro_form_field-required');
 				field?.querySelector('.pmpro_asterisk')?.remove();
 
-				let noTshirtOption = select.querySelector('option[value="none"]');
-				if (!noTshirtOption) {
-					noTshirtOption = document.createElement('option');
-					noTshirtOption.value = 'none';
-					noTshirtOption.textContent = 'No T-shirt';
-					select.insertBefore(noTshirtOption, select.firstChild);
-				}
-
 				select.querySelectorAll('option').forEach((option) => {
 					if ((option.value || '').trim() === '') {
+						option.remove();
+						return;
+					}
+
+					const normalizedValue = normalizeTshirtValue(option.value || option.textContent || '');
+					option.value = normalizedValue;
+					option.textContent = normalizedValue;
+				});
+
+				const seenValues = new Set();
+				Array.from(select.options).forEach((option) => {
+					if (seenValues.has(option.value)) {
+						option.remove();
+						return;
+					}
+					seenValues.add(option.value);
+				});
+
+				const allowedValues = new Set([
+					'No T-shirt',
+					'Unisex X-Small',
+					'Unisex Small',
+					'Unisex Medium',
+					'Unisex Large',
+					'Unisex X-Large',
+					'Unisex XX-Large',
+				]);
+
+				Array.from(select.options).forEach((option) => {
+					if (!allowedValues.has(option.value)) {
 						option.remove();
 					}
 				});
 
-				const desiredTshirtValue = (checkoutProfileDefaults.size || 'none').trim() || 'none';
+				const desiredTshirtValue = normalizeTshirtValue(checkoutProfileDefaults.size || 'No T-shirt');
 				if (select.querySelector(`option[value="${desiredTshirtValue}"]`)) {
 					select.value = desiredTshirtValue;
-				} else if (!select.value) {
-					select.value = 'none';
+				} else {
+					select.value = 'No T-shirt';
 				}
 
-				if (select.value === 'none') {
-					noTshirtOption.selected = true;
-					select.dispatchEvent(new Event('change', { bubbles: true }));
-				}
-
+				select.dispatchEvent(new Event('change', { bubbles: true }));
 				select.dataset.aacTshirtEnhanced = 'true';
 			}
-
-			Array.from(select.options).forEach((option) => {
-				const rawValue = (option.value || option.textContent || '').trim();
-				if (rawValue === 'none' || rawValue === 'No T-shirt') {
-					option.textContent = 'No T-shirt';
-					return;
-				}
-
-				option.textContent = rawValue.startsWith('Unisex ') ? rawValue : `Unisex ${rawValue}`;
-			});
 		});
 	};
 
@@ -3355,7 +3952,8 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 		};
 
 		const replacePmproLoggedInAccountUsername = () => {
-			if (!currentUserDisplayName) {
+			const preferredDisplayName = buildPreferredLoggedInName();
+			if (!preferredDisplayName) {
 				return;
 			}
 
@@ -3374,7 +3972,7 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				const logoutLink = paragraph.querySelector('a[href*="logout"], a[href*="log-out"], a[href*="action=logout"]');
 				const logoutHref = logoutLink?.getAttribute('href') || '';
 				const logoutText = (logoutLink?.textContent || 'log out now').trim();
-				const escapedName = String(currentUserDisplayName)
+				const escapedName = String(preferredDisplayName)
 					.replace(/&/g, '&amp;')
 					.replace(/</g, '&lt;')
 					.replace(/>/g, '&gt;')
@@ -3411,6 +4009,30 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			toggle.dataset.aacAutoRenewBound = 'true';
 		};
 
+		const removePmproMemberLinksSection = () => {
+			const managedCard = document.querySelector('.aac-managed-card');
+			if (!managedCard) {
+				return;
+			}
+
+			const candidateNodes = managedCard.querySelectorAll('h1, h2, h3, h4, h5, h6, legend, strong, p');
+			for (const candidate of candidateNodes) {
+				const text = (candidate.textContent || '').trim().toLowerCase();
+				if (text !== 'member links') {
+					continue;
+				}
+
+				let removableSection = candidate;
+				while (removableSection && removableSection.parentElement && removableSection.parentElement !== managedCard) {
+					removableSection = removableSection.parentElement;
+				}
+
+				if (removableSection && removableSection !== managedCard) {
+					removableSection.remove();
+				}
+			}
+		};
+
 		if (document.readyState === 'loading') {
 			document.addEventListener('DOMContentLoaded', () => {
 				syncPmproUsernameFromEmail();
@@ -3418,13 +4040,16 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 				enhancePmproProfileInformation();
 				enhanceCheckoutAutoRenewFieldset();
 				enhancePmproDonationFieldset();
+				enhancePublicationPreferenceCards();
 				bindToggleableMembershipDiscounts();
 				bindFamilySelectionShortcut();
+				syncStandaloneFamilyVisibility();
 				relabelTShirtSizeOptions();
 				syncMagazineAddonSummary();
 				syncPmproStateDropdown();
 				replacePmproLoggedInAccountUsername();
 				bindManagedAutoRenewToggle();
+				removePmproMemberLinksSection();
 			});
 		} else {
 			syncPmproUsernameFromEmail();
@@ -3432,13 +4057,16 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 			enhancePmproProfileInformation();
 			enhanceCheckoutAutoRenewFieldset();
 			enhancePmproDonationFieldset();
+			enhancePublicationPreferenceCards();
 			bindToggleableMembershipDiscounts();
 			bindFamilySelectionShortcut();
+			syncStandaloneFamilyVisibility();
 			relabelTShirtSizeOptions();
 			syncMagazineAddonSummary();
 			syncPmproStateDropdown();
 			replacePmproLoggedInAccountUsername();
 			bindManagedAutoRenewToggle();
+			removePmproMemberLinksSection();
 		}
 
 		window.addEventListener('load', syncPmproUsernameFromEmail);
@@ -3446,12 +4074,15 @@ const publicationCardImages = <?php echo wp_json_encode($portal_design_settings[
 		window.addEventListener('load', enhancePmproProfileInformation);
 		window.addEventListener('load', enhanceCheckoutAutoRenewFieldset);
 		window.addEventListener('load', enhancePmproDonationFieldset);
+		window.addEventListener('load', enhancePublicationPreferenceCards);
 		window.addEventListener('load', bindToggleableMembershipDiscounts);
 		window.addEventListener('load', bindFamilySelectionShortcut);
+		window.addEventListener('load', syncStandaloneFamilyVisibility);
 		window.addEventListener('load', relabelTShirtSizeOptions);
 		window.addEventListener('load', syncMagazineAddonSummary);
 		window.addEventListener('load', syncPmproStateDropdown);
 		window.addEventListener('load', replacePmproLoggedInAccountUsername);
 		window.addEventListener('load', bindManagedAutoRenewToggle);
+		window.addEventListener('load', removePmproMemberLinksSection);
 	}());
 </script>

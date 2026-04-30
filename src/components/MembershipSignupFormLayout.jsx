@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MembershipTierSelect } from '@/components/MembershipTierSelect';
-import { DONATION_OPTIONS_USD, PHONE_TYPE_OPTIONS, TSHIRT_SIZES } from '@/lib/membershipTiers';
+import { DONATION_OPTIONS_USD, TSHIRT_SIZES } from '@/lib/membershipTiers';
 import { cn } from '@/lib/utils';
 
 export function MembershipSignupFormLayout({
@@ -79,23 +79,6 @@ export function MembershipSignupFormLayout({
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               className="mt-1 bg-white text-stone-900"
             />
-          </div>
-          <div>
-            <Label htmlFor="su-ptype" className="text-stone-800">
-              Phone type
-            </Label>
-            <select
-              id="su-ptype"
-              value={form.phoneType}
-              onChange={(e) => setForm((f) => ({ ...f, phoneType: e.target.value }))}
-              className="mt-1 h-10 w-full rounded-md border border-input bg-white px-3 text-stone-900"
-            >
-              {PHONE_TYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="su-street" className="text-stone-800">

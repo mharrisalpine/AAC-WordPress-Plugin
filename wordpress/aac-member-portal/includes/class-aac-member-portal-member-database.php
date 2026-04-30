@@ -6,15 +6,18 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_Member_Database {
 	const PAGE_SLUG = 'aac-member-portal-member-database';
-	const SCHEMA_VERSION = '1.0.1';
+	const SCHEMA_VERSION = '1.0.3';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
 
 	public function __construct() {
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('init', [$this, 'maybe_install_schema']);
 		add_action('profile_update', [$this, 'sync_member_by_user_id'], 30, 1);
+		add_action('personal_options_update', [$this, 'sync_member_by_user_id'], 100, 1);
+		add_action('edit_user_profile_update', [$this, 'sync_member_by_user_id'], 100, 1);
 		add_action('aac_member_portal_member_registered', [$this, 'sync_member_by_user_id'], 30, 1);
 		add_action('aac_member_portal_profile_updated', [$this, 'sync_member_by_user_id'], 30, 1);
+		add_action('aac_member_portal_grant_application_submitted', [$this, 'sync_member_after_grant_submission'], 30, 1);
 		add_action('pmpro_after_checkout', [$this, 'sync_member_after_checkout'], 40, 2);
 		add_action('pmpro_after_change_membership_level', [$this, 'sync_member_after_level_change'], 40, 2);
 	}
@@ -44,6 +47,7 @@ class AAC_Member_Portal_Member_Database {
 		$history = self::history_table();
 		$subscriptions = self::subscriptions_table();
 		$transactions = self::transactions_table();
+		$podcast_listens = self::podcast_listens_table();
 
 		// Profiles keeps one flattened "what does this member look like right now?"
 		// snapshot. The other tables keep mirrored PMPro rows for the moments when
@@ -115,7 +119,116 @@ class AAC_Member_Portal_Member_Database {
 			) {$charset_collate};
 		");
 
+		dbDelta("
+			CREATE TABLE {$podcast_listens} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				user_id bigint(20) unsigned NOT NULL,
+				episode_id varchar(120) NOT NULL DEFAULT '',
+				episode_title varchar(255) NOT NULL DEFAULT '',
+				source_url varchar(255) NOT NULL DEFAULT '',
+				source_page_url varchar(255) NOT NULL DEFAULT '',
+				embed_url varchar(255) NOT NULL DEFAULT '',
+				status varchar(20) NOT NULL DEFAULT 'started',
+				completion_percent decimal(5,2) NOT NULL DEFAULT 0,
+				duration_ms bigint(20) unsigned NOT NULL DEFAULT 0,
+				last_position_ms bigint(20) unsigned NOT NULL DEFAULT 0,
+				listener_ip varchar(100) NOT NULL DEFAULT '',
+				started_at datetime NULL,
+				completed_at datetime NULL,
+				last_event_at datetime NOT NULL,
+				completion_count bigint(20) unsigned NOT NULL DEFAULT 0,
+				raw_payload longtext NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY user_episode (user_id, episode_id),
+				KEY status (status),
+				KEY completed_at (completed_at)
+			) {$charset_collate};
+		");
+
 		update_option(self::SCHEMA_OPTION, self::SCHEMA_VERSION);
+	}
+
+	public static function record_podcast_listen($user_id, $payload = []) {
+		global $wpdb;
+
+		$user_id = absint($user_id);
+		if ($user_id <= 0 || !$wpdb) {
+			return new WP_Error('invalid_user', 'A valid user is required to record a podcast listen.', ['status' => 400]);
+		}
+
+		$episode_id = sanitize_text_field((string) ($payload['episode_id'] ?? ''));
+		if ($episode_id === '') {
+			return new WP_Error('invalid_episode', 'A Spotify episode ID is required.', ['status' => 400]);
+		}
+
+		$table = self::podcast_listens_table();
+		$existing = $wpdb->get_row(
+			$wpdb->prepare("SELECT * FROM {$table} WHERE user_id = %d AND episode_id = %s LIMIT 1", $user_id, $episode_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+
+		$requested_status = strtolower(sanitize_text_field((string) ($payload['status'] ?? 'started')));
+		$status = $requested_status === 'completed' ? 'completed' : 'started';
+		$completion_percent = isset($payload['completion_percent']) ? (float) $payload['completion_percent'] : 0;
+		$completion_percent = max(0, min(100, $completion_percent));
+		$duration_ms = isset($payload['duration_ms']) ? max(0, (int) $payload['duration_ms']) : 0;
+		$last_position_ms = isset($payload['last_position_ms']) ? max(0, (int) $payload['last_position_ms']) : 0;
+		$existing_completion_percent = isset($existing['completion_percent']) ? (float) $existing['completion_percent'] : 0;
+		$existing_duration_ms = isset($existing['duration_ms']) ? (int) $existing['duration_ms'] : 0;
+		$existing_last_position_ms = isset($existing['last_position_ms']) ? (int) $existing['last_position_ms'] : 0;
+		$resolved_duration_ms = max($duration_ms, $existing_duration_ms);
+		$resolved_last_position_ms = max($last_position_ms, $existing_last_position_ms);
+		$resolved_completion_percent = max($completion_percent, $existing_completion_percent);
+		if ($status === 'completed') {
+			$resolved_completion_percent = max($resolved_completion_percent, 100);
+			if ($resolved_duration_ms > 0) {
+				$resolved_last_position_ms = max($resolved_last_position_ms, $resolved_duration_ms);
+			}
+		}
+		$now = current_time('mysql');
+
+		$row = [
+			'user_id' => $user_id,
+			'episode_id' => $episode_id,
+			'episode_title' => sanitize_text_field((string) ($payload['episode_title'] ?? ($existing['episode_title'] ?? ''))),
+			'source_url' => esc_url_raw((string) ($payload['source_url'] ?? ($existing['source_url'] ?? ''))),
+			'source_page_url' => esc_url_raw((string) ($payload['source_page_url'] ?? ($existing['source_page_url'] ?? ''))),
+			'embed_url' => esc_url_raw((string) ($payload['embed_url'] ?? ($existing['embed_url'] ?? ''))),
+			'status' => ($status === 'completed' || (($existing['status'] ?? '') === 'completed')) ? 'completed' : 'started',
+			'completion_percent' => $resolved_completion_percent,
+			'duration_ms' => $resolved_duration_ms,
+			'last_position_ms' => $resolved_last_position_ms,
+			'listener_ip' => sanitize_text_field((string) ($payload['listener_ip'] ?? ($existing['listener_ip'] ?? ''))),
+			'started_at' => !empty($existing['started_at']) ? $existing['started_at'] : $now,
+			'completed_at' => $status === 'completed'
+				? $now
+				: (!empty($existing['completed_at']) ? $existing['completed_at'] : ''),
+			'last_event_at' => $now,
+			'completion_count' => ($status === 'completed')
+				? ((int) ($existing['completion_count'] ?? 0) + 1)
+				: (int) ($existing['completion_count'] ?? 0),
+			'raw_payload' => wp_json_encode($payload),
+		];
+
+		if ($existing) {
+			$wpdb->update(
+				$table,
+				$row,
+				['id' => (int) $existing['id']],
+				['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s'],
+				['%d']
+			);
+			$row['id'] = (int) $existing['id'];
+		} else {
+			$wpdb->insert(
+				$table,
+				$row,
+				['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s']
+			);
+			$row['id'] = (int) $wpdb->insert_id;
+		}
+
+		return $row;
 	}
 
 	public function register_admin_page() {
@@ -138,6 +251,10 @@ class AAC_Member_Portal_Member_Database {
 	}
 
 	public function sync_member_after_level_change($level_id, $user_id = 0) {
+		$this->sync_member((int) $user_id);
+	}
+
+	public function sync_member_after_grant_submission($user_id) {
 		$this->sync_member((int) $user_id);
 	}
 
@@ -294,6 +411,8 @@ class AAC_Member_Portal_Member_Database {
 		$history_rows = $member_id > 0 ? $this->get_mirror_rows(self::history_table(), $member_id) : [];
 		$subscription_rows = $member_id > 0 ? $this->get_mirror_rows(self::subscriptions_table(), $member_id) : [];
 		$transaction_rows = $member_id > 0 ? $this->get_mirror_rows(self::transactions_table(), $member_id) : [];
+		$podcast_listen_rows = $member_id > 0 ? $this->get_podcast_listen_rows($member_id) : [];
+		$grant_application_rows = $member_id > 0 ? $this->get_grant_application_rows($member_id, $profile_row) : [];
 		?>
 		<div class="wrap">
 			<h1>Member Database</h1>
@@ -344,6 +463,7 @@ class AAC_Member_Portal_Member_Database {
 						<table class="widefat striped">
 							<thead>
 								<tr>
+									<th style="min-width:140px;">Open Member</th>
 									<th style="min-width:180px;">Member</th>
 									<th style="min-width:220px;">Email</th>
 									<th style="min-width:160px;">Phone</th>
@@ -358,12 +478,16 @@ class AAC_Member_Portal_Member_Database {
 									<th>Renewal</th>
 									<th>Expiration</th>
 									<th>Mirrored At</th>
-									<th style="min-width:140px;">Actions</th>
 								</tr>
 							</thead>
 							<tbody>
 								<?php foreach ($member_list['rows'] as $row) : ?>
 									<tr>
+										<td>
+											<a class="button button-secondary" href="<?php echo esc_url($this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'profile', 's' => $search, 'paged' => $paged])); ?>">
+												Open Member
+											</a>
+										</td>
 										<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['display_name'] ?: 'Unknown member'); ?></td>
 										<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['email']); ?></td>
 										<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['account_info']['phone'] ?? ''); ?></td>
@@ -378,11 +502,6 @@ class AAC_Member_Portal_Member_Database {
 										<td><?php echo esc_html($row['renewal_date']); ?></td>
 										<td><?php echo esc_html($row['expiration_date']); ?></td>
 										<td><?php echo esc_html($row['mirrored_at']); ?></td>
-										<td>
-											<a class="button button-secondary" href="<?php echo esc_url($this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'profile', 's' => $search, 'paged' => $paged])); ?>">
-												Open Member
-											</a>
-										</td>
 									</tr>
 								<?php endforeach; ?>
 							</tbody>
@@ -398,9 +517,11 @@ class AAC_Member_Portal_Member_Database {
 				$tabs = [
 					'profile' => 'Profile',
 					'preferences' => 'Preferences',
+					'grant-applications' => 'Grant Applications',
 					'membership-history' => 'Membership History',
 					'subscriptions' => 'Subscriptions',
 					'transactions' => 'Transactions',
+					'podcast-listens' => 'Podcast Listens',
 				];
 				?>
 				<section style="background:#fff;border:1px solid #dcdcde;border-radius:12px;padding:20px;">
@@ -436,12 +557,16 @@ class AAC_Member_Portal_Member_Database {
 						<?php
 						if ($tab === 'preferences') {
 							$this->render_preferences_tab($profile_row);
+						} elseif ($tab === 'grant-applications') {
+							$this->render_grant_applications_tab($grant_application_rows);
 						} elseif ($tab === 'membership-history') {
-							$this->render_json_tab_table($history_rows, 'No mirrored membership history found.');
+							$this->render_json_tab_table($history_rows, 'No mirrored membership history found.', 'membership');
 						} elseif ($tab === 'subscriptions') {
-							$this->render_json_tab_table($subscription_rows, 'No mirrored subscriptions found.');
+							$this->render_json_tab_table($subscription_rows, 'No mirrored subscriptions found.', 'subscription');
 						} elseif ($tab === 'transactions') {
-							$this->render_json_tab_table($transaction_rows, 'No mirrored transactions found.');
+							$this->render_json_tab_table($transaction_rows, 'No mirrored transactions found.', 'transaction');
+						} elseif ($tab === 'podcast-listens') {
+							$this->render_podcast_listens_tab($podcast_listen_rows);
 						} else {
 							$this->render_profile_tab($profile_row);
 						}
@@ -467,7 +592,7 @@ class AAC_Member_Portal_Member_Database {
 				<tr><th>Display Name</th><td><?php echo esc_html($profile_row['display_name']); ?></td></tr>
 				<tr><th>Email</th><td><?php echo esc_html($profile_row['email']); ?></td></tr>
 				<tr><th>Phone</th><td><?php echo esc_html($account_info['phone'] ?? ''); ?></td></tr>
-				<tr><th>Phone Type</th><td><?php echo esc_html($account_info['phone_type'] ?? ''); ?></td></tr>
+				<tr><th>Birthdate</th><td><?php echo esc_html($account_info['birthdate'] ?? ''); ?></td></tr>
 				<tr><th>Street</th><td><?php echo esc_html($account_info['street'] ?? ''); ?></td></tr>
 				<tr><th>Address 2</th><td><?php echo esc_html($account_info['address2'] ?? ''); ?></td></tr>
 				<tr><th>City</th><td><?php echo esc_html($account_info['city'] ?? ''); ?></td></tr>
@@ -502,14 +627,15 @@ class AAC_Member_Portal_Member_Database {
 		$linked_parent_account = is_array($profile['linked_parent_account']) ? $profile['linked_parent_account'] : [];
 		$preference_fields = [
 			'T-Shirt Size' => $account_info['size'] ?? '',
-			'Publication Preference' => $account_info['publication_pref'] ?? '',
+			'Email Opt Out' => !empty($account_info['email_opt_out']) ? 'true' : 'false',
+			'Do Not Call' => !empty($account_info['do_not_call']) ? 'true' : 'false',
+			'Do Not Contact' => !empty($account_info['do_not_contact']) ? 'true' : 'false',
 			'AAJ Preference' => $account_info['aaj_pref'] ?? '',
 			'ANAC Preference' => $account_info['anac_pref'] ?? '',
 			'American Climbing Journal Preference' => $account_info['acj_pref'] ?? '',
 			'Guidebook Preference' => $account_info['guidebook_pref'] ?? '',
 			'Membership Discount Type' => $account_info['membership_discount_type'] ?? '',
 			'Auto Renew' => !empty($account_info['auto_renew']) ? 'true' : 'false',
-			'Payment Method' => $account_info['payment_method'] ?? '',
 			'Magazine Subscriptions' => !empty($account_info['magazine_subscriptions']) ? implode(', ', (array) $account_info['magazine_subscriptions']) : '',
 			'Family Mode' => $family_membership['mode'] ?? '',
 			'Additional Adult' => !empty($family_membership['additional_adult']) ? 'true' : 'false',
@@ -533,35 +659,141 @@ class AAC_Member_Portal_Member_Database {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
-
-		<h3 style="margin-top:24px;">All Mirrored Preference Fields</h3>
-		<table class="widefat striped">
-			<thead>
-				<tr>
-					<th style="width:280px;">Field</th>
-					<th>Value</th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php foreach ($flat_profile as $key => $value) : ?>
-					<tr>
-						<td><code><?php echo esc_html($key); ?></code></td>
-						<td><?php echo esc_html($value); ?></td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
 		<?php
 	}
 
-	private function render_json_tab_table($rows, $empty_message) {
+	private function render_grant_applications_tab($rows) {
+		if (!$rows) {
+			echo '<p>No grant applications have been recorded for this member yet.</p>';
+			return;
+		}
+		?>
+		<div style="display:grid;gap:20px;">
+			<?php foreach ($rows as $application) : ?>
+				<?php
+				$fields = is_array($application['fields'] ?? null) ? $application['fields'] : [];
+				?>
+				<section style="border:1px solid #dcdcde;border-radius:14px;padding:18px;background:#fff;">
+					<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+						<div>
+							<h3 style="margin:0;"><?php echo esc_html($application['grant_name'] ?: 'Grant Application'); ?></h3>
+							<p style="margin:8px 0 0;color:#50575e;">
+								Submitted <?php echo esc_html($application['application_date'] ?? ''); ?>
+								<?php if (!empty($application['review_application_id'])) : ?>
+									· Review ID <?php echo esc_html((string) $application['review_application_id']); ?>
+								<?php endif; ?>
+							</p>
+						</div>
+						<div style="display:flex;gap:8px;flex-wrap:wrap;">
+							<span class="button button-secondary" style="pointer-events:none;"><?php echo esc_html($application['status'] ?? 'Submitted'); ?></span>
+							<?php if (!empty($application['category'])) : ?>
+								<span class="button button-secondary" style="pointer-events:none;"><?php echo esc_html($application['category']); ?></span>
+							<?php endif; ?>
+						</div>
+					</div>
+
+					<table class="widefat striped" style="margin-top:18px;">
+						<tbody>
+							<tr><th style="width:240px;">AAC Member ID</th><td><?php echo esc_html($application['aac_member_id'] ?? ''); ?></td></tr>
+							<tr><th style="width:240px;">Project Title</th><td><?php echo esc_html($application['project_title'] ?? ''); ?></td></tr>
+							<tr><th>Requested Amount</th><td><?php echo esc_html($application['requested_amount'] ?? ''); ?></td></tr>
+							<tr><th>Objective / Location</th><td><?php echo esc_html($application['objective_location'] ?? ''); ?></td></tr>
+							<tr><th>Discipline</th><td><?php echo esc_html($application['discipline'] ?? ''); ?></td></tr>
+							<tr><th>Team / Partners</th><td><?php echo esc_html($application['team_name'] ?? ''); ?></td></tr>
+							<tr><th>Summary</th><td style="white-space:pre-wrap;"><?php echo esc_html($application['summary'] ?? ''); ?></td></tr>
+							<tr><th>Grant Slug</th><td><?php echo esc_html($application['grant_slug'] ?? ''); ?></td></tr>
+							<tr><th>Last Note</th><td style="white-space:pre-wrap;"><?php echo esc_html($application['last_note'] ?? ''); ?></td></tr>
+							<tr><th>Reviewed At</th><td><?php echo esc_html($application['reviewed_at'] ?? ''); ?></td></tr>
+						</tbody>
+					</table>
+
+					<h4 style="margin:20px 0 10px;">All Submitted Fields</h4>
+					<?php if (!$fields) : ?>
+						<p style="margin:0;color:#50575e;">No normalized field rows were stored for this application.</p>
+					<?php else : ?>
+						<div style="overflow:auto;">
+							<table class="widefat striped">
+								<thead>
+									<tr>
+										<th style="min-width:220px;">Label</th>
+										<th style="min-width:180px;">Field Key</th>
+										<th style="min-width:120px;">Type</th>
+										<th>Value</th>
+									</tr>
+								</thead>
+								<tbody>
+									<?php foreach ($fields as $field) : ?>
+										<tr>
+											<td><?php echo esc_html($field['label'] ?? ''); ?></td>
+											<td><code><?php echo esc_html($field['field_id'] ?? $field['field_key'] ?? ''); ?></code></td>
+											<td><?php echo esc_html($field['type'] ?? ''); ?></td>
+											<td style="white-space:pre-wrap;"><?php echo esc_html($field['value'] ?? ''); ?></td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					<?php endif; ?>
+				</section>
+			<?php endforeach; ?>
+		</div>
+		<?php
+	}
+
+	private function render_json_tab_table($rows, $empty_message, $record_type = '') {
 		if (!$rows) {
 			echo '<p>' . esc_html($empty_message) . '</p>';
 			return;
 		}
 
+		$column_priority_map = [
+			'membership' => [
+				'membership_id',
+				'status',
+				'startdate',
+				'enddate',
+				'initial_payment',
+				'billing_amount',
+				'cycle_number',
+				'cycle_period',
+				'billing_limit',
+				'trial_amount',
+				'trial_limit',
+				'modified',
+			],
+			'subscription' => [
+				'id',
+				'membership_id',
+				'status',
+				'gateway',
+				'billing_amount',
+				'cycle_number',
+				'cycle_period',
+				'next_payment_date',
+				'startdate',
+				'enddate',
+				'subscription_transaction_id',
+				'modified',
+			],
+			'transaction' => [
+				'id',
+				'membership_id',
+				'code',
+				'total',
+				'subtotal',
+				'tax',
+				'payment_type',
+				'status',
+				'gateway',
+				'payment_transaction_id',
+				'subscription_transaction_id',
+				'timestamp',
+				'notes',
+			],
+		];
+		$prioritized_columns = $column_priority_map[$record_type] ?? [];
 		$decoded_rows = [];
-		$all_keys = [];
+		$present_keys = [];
 
 		foreach ($rows as $row) {
 			$record = json_decode($row['raw_record'] ?? '', true);
@@ -570,7 +802,23 @@ class AAC_Member_Portal_Member_Database {
 				'meta' => $row,
 				'record' => $flat_record,
 			];
-			$all_keys = array_unique(array_merge($all_keys, array_keys($flat_record)));
+			foreach ($flat_record as $key => $value) {
+				if ($value !== '' && $value !== null) {
+					$present_keys[$key] = true;
+				}
+			}
+		}
+
+		$all_keys = [];
+		foreach ($prioritized_columns as $key) {
+			if (!empty($present_keys[$key])) {
+				$all_keys[] = $key;
+			}
+		}
+
+		if (!$all_keys) {
+			$all_keys = array_keys($present_keys);
+			sort($all_keys);
 		}
 
 		?>
@@ -595,6 +843,55 @@ class AAC_Member_Portal_Member_Database {
 							<?php foreach ($all_keys as $key) : ?>
 								<td><?php echo esc_html($row['record'][$key] ?? ''); ?></td>
 							<?php endforeach; ?>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+		<?php
+	}
+
+	private function render_podcast_listens_tab($rows) {
+		if (!$rows) {
+			echo '<p>No podcast listens have been recorded for this member yet.</p>';
+			return;
+		}
+		?>
+		<div style="overflow:auto;">
+			<table class="widefat striped">
+				<thead>
+					<tr>
+						<th style="min-width:220px;">Episode</th>
+						<th>Status</th>
+						<th>Completion %</th>
+						<th>Last Position</th>
+						<th>Duration</th>
+						<th>Listener IP</th>
+						<th>Started At</th>
+						<th>Completed At</th>
+						<th>Last Event</th>
+						<th>Completions</th>
+						<th>Source</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ($rows as $row) : ?>
+						<tr>
+							<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['episode_title'] ?: $row['episode_id']); ?></td>
+							<td><?php echo esc_html($row['status']); ?></td>
+							<td><?php echo esc_html(number_format((float) $row['completion_percent'], 2)); ?></td>
+							<td><?php echo esc_html($this->format_milliseconds_for_display((int) $row['last_position_ms'])); ?></td>
+							<td><?php echo esc_html($this->format_milliseconds_for_display((int) $row['duration_ms'])); ?></td>
+							<td><?php echo esc_html((string) ($row['listener_ip'] ?? '')); ?></td>
+							<td><?php echo esc_html($row['started_at']); ?></td>
+							<td><?php echo esc_html($row['completed_at']); ?></td>
+							<td><?php echo esc_html($row['last_event_at']); ?></td>
+							<td><?php echo esc_html((string) $row['completion_count']); ?></td>
+							<td>
+								<?php if (!empty($row['source_url'])) : ?>
+									<a href="<?php echo esc_url($row['source_url']); ?>" target="_blank" rel="noreferrer">Spotify Episode</a>
+								<?php endif; ?>
+							</td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -734,6 +1031,59 @@ class AAC_Member_Portal_Member_Database {
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
 	}
 
+	private function get_podcast_listen_rows($user_id) {
+		global $wpdb;
+
+		return $wpdb->get_results(
+			$wpdb->prepare("SELECT * FROM " . self::podcast_listens_table() . ' WHERE user_id = %d ORDER BY last_event_at DESC, id DESC', $user_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+	}
+
+	private function get_grant_application_rows($user_id, $profile_row = null) {
+		$repository = $this->get_grants_review_repository();
+		$email = '';
+
+		if (is_array($profile_row)) {
+			$email = sanitize_email((string) ($profile_row['email'] ?? ''));
+			if ($email === '') {
+				$profile = $this->decode_profile_row($profile_row);
+				$email = sanitize_email((string) ($profile['account_info']['email'] ?? ''));
+			}
+		}
+
+		if ($repository && method_exists($repository, 'get_member_applications')) {
+			$applications = $repository->get_member_applications((int) $user_id, $email);
+			if (is_array($applications)) {
+				return $applications;
+			}
+		}
+
+		$user_meta_applications = get_user_meta((int) $user_id, 'aac_grant_applications', true);
+		return is_array($user_meta_applications) ? $user_meta_applications : [];
+	}
+
+	private function get_grants_review_repository() {
+		static $repository = null;
+		static $initialized = false;
+
+		if ($initialized) {
+			return $repository;
+		}
+
+		$initialized = true;
+		$repository = null;
+
+		if (!class_exists('AAC_Grants_Review_Settings') || !class_exists('AAC_Grants_Review_Repository')) {
+			return null;
+		}
+
+		$settings = new AAC_Grants_Review_Settings();
+		$repository = new AAC_Grants_Review_Repository($settings);
+
+		return $repository;
+	}
+
 	private function flatten_assoc($value, $prefix = '') {
 		$rows = [];
 
@@ -775,6 +1125,19 @@ class AAC_Member_Portal_Member_Database {
 		return wp_json_encode($value);
 	}
 
+	private function format_milliseconds_for_display($milliseconds) {
+		$total_seconds = max(0, (int) floor(((int) $milliseconds) / 1000));
+		$hours = (int) floor($total_seconds / 3600);
+		$minutes = (int) floor(($total_seconds % 3600) / 60);
+		$seconds = $total_seconds % 60;
+
+		if ($hours > 0) {
+			return sprintf('%d:%02d:%02d', $hours, $minutes, $seconds);
+		}
+
+		return sprintf('%d:%02d', $minutes, $seconds);
+	}
+
 	private function is_assoc(array $array) {
 		return array_keys($array) !== range(0, count($array) - 1);
 	}
@@ -801,5 +1164,10 @@ class AAC_Member_Portal_Member_Database {
 	private static function transactions_table() {
 		global $wpdb;
 		return $wpdb->prefix . 'aac_member_db_transactions';
+	}
+
+	private static function podcast_listens_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'aac_member_db_podcast_listens';
 	}
 }

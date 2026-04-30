@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -8,14 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { getPortalUiSettings } from '@/lib/portalSettings';
-import { mainSiteHref } from '@/lib/mainWebsiteNav';
-import loginHeroLeftImageDev from '@/assets/login-hero-left-image.jpg';
-
-const PLUGIN_ASSET_BASE = mainSiteHref('/wp-content/plugins/aac-member-portal/app/assets');
-const HERO_MEDIA_REV = '329';
-const LOGIN_HERO_LEFT_IMAGE_URL = import.meta.env.DEV
-  ? loginHeroLeftImageDev
-  : `${PLUGIN_ASSET_BASE}/login-hero-left-image.jpg?v=${HERO_MEDIA_REV}`;
+import { getPmproSocialLoginHtml } from '@/lib/backendConfig';
+import grandTetonHero from '@/assets/grand-teton-hero.jpg';
+const DEFAULT_LOGIN_HERO_VIDEO_URL =
+  'https://player.vimeo.com/video/1125305190?background=1&autoplay=1&muted=1&loop=1&autopause=0&controls=0&title=0&byline=0&portrait=0';
+const LOGIN_HERO_TITLE = 'United\nWe Climb.';
 
 const getPortalRedirectTarget = (locationSearch) => {
   const searchCandidates = [locationSearch];
@@ -53,6 +50,12 @@ const getPortalRedirectTarget = (locationSearch) => {
   return null;
 };
 
+const cancelNativeSubmit = (event) => {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  event?.nativeEvent?.stopImmediatePropagation?.();
+};
+
 const LoginPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -60,13 +63,22 @@ const LoginPage = () => {
   const portalUiSettings = getPortalUiSettings();
   const portalContent = portalUiSettings.content;
   const portalDesign = portalUiSettings.design;
+  const loginHeroVideoUrl = DEFAULT_LOGIN_HERO_VIDEO_URL;
+  const loginBackgroundImageUrl = grandTetonHero;
+  const loginOverlayOpacity = loginHeroVideoUrl ? 0.2 : 1;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordModalMessage, setPasswordModalMessage] = useState('Password is Incorrect.');
+  const passwordInputRef = useRef(null);
+  const submitLockRef = useRef(false);
   const redirectTarget = getPortalRedirectTarget(location.search);
   const purchaseSuccess = new URLSearchParams(location.search).get('purchase_success') === '1';
+  const pmproSocialLoginHtml = getPmproSocialLoginHtml();
 
   useEffect(() => {
     if (user && !purchaseSuccess) {
@@ -80,7 +92,12 @@ const LoginPage = () => {
   }, [navigate, purchaseSuccess, redirectTarget, user]);
 
   const handleSubmit = async (event) => {
-    event.preventDefault();
+    cancelNativeSubmit(event);
+    if (submitLockRef.current || submitting || loading) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setSubmitting(true);
     setAuthMessage('');
     try {
@@ -92,9 +109,24 @@ const LoginPage = () => {
         return;
       }
 
-      const { error } = await signIn(email.trim(), password);
+      const { error } = await signIn(email.trim(), password, { suppressToast: true });
       if (error) {
-        setAuthMessage(error.message || 'Incorrect password. Please try again.');
+        const nextMessage = error.status === 401
+          ? 'Password is Incorrect.'
+          : (error.message || 'We could not sign you in right now.');
+
+        if (error.status === 401) {
+          setPasswordModalMessage(nextMessage);
+          setPasswordModalOpen(true);
+        } else {
+          setAuthMessage(nextMessage);
+        }
+
+        if (error.status === 401) {
+          window.requestAnimationFrame(() => {
+            passwordInputRef.current?.focus();
+          });
+        }
         return;
       }
 
@@ -105,6 +137,7 @@ const LoginPage = () => {
 
       navigate('/profile', { replace: true });
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -128,6 +161,13 @@ const LoginPage = () => {
     }
   };
 
+  const handleFieldKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      cancelNativeSubmit(event);
+      event.currentTarget?.form?.requestSubmit?.();
+    }
+  };
+
   const busy = loading || submitting;
 
   return (
@@ -137,14 +177,52 @@ const LoginPage = () => {
         <meta name="description" content={portalContent.login_hero_description} />
       </Helmet>
       <div className="relative min-h-screen overflow-hidden bg-[#030000] text-white">
-        <img
-          src={LOGIN_HERO_LEFT_IMAGE_URL}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,0,0,0.24),rgba(3,0,0,0.72)),radial-gradient(circle_at_top,rgba(248,194,53,0.12),transparent_24%)]" />
-        <div className="relative mx-auto flex min-h-screen max-w-6xl items-center px-4 pb-10 pt-24 sm:px-6 sm:pb-14 lg:px-8">
+        {passwordModalOpen ? (
+          <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md border border-[#8f1515]/30 bg-[#fffaf2] p-6 text-[#030000] shadow-[0_32px_80px_rgba(0,0,0,0.45)]">
+              <h2 className="text-2xl font-semibold text-[#8f1515]">Incorrect Password</h2>
+              <p className="mt-3 text-base leading-7 text-stone-700">
+                {passwordModalMessage}
+              </p>
+              <div className="mt-6 flex justify-end">
+                <Button
+                  type="button"
+                  className="h-11 rounded-none bg-[#8f1515] px-5 text-white hover:bg-[#6f1010]"
+                  onClick={() => {
+                    setPasswordModalOpen(false);
+                    window.requestAnimationFrame(() => {
+                      passwordInputRef.current?.focus();
+                    });
+                  }}
+                >
+                  Try Again
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {loginHeroVideoUrl ? (
+          <div className="absolute inset-0">
+            <iframe
+              title="AAC login hero video"
+              src={loginHeroVideoUrl}
+              className="pointer-events-none absolute left-1/2 top-1/2 h-[120%] w-[120%] min-w-[1280px] -translate-x-1/2 -translate-y-1/2"
+              frameBorder="0"
+              allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
+        ) : (
+          <img
+            src={loginBackgroundImageUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
+        <div className="absolute inset-0" style={{ background: portalDesign.loginOverlay, opacity: loginOverlayOpacity }} />
+        <div className="relative mx-auto flex min-h-screen max-w-6xl items-center px-4 pb-10 pt-[calc(var(--aac-portal-header-height)+1.5rem)] sm:px-6 sm:pb-14 sm:pt-[calc(var(--aac-portal-header-height)+2rem)] lg:px-8">
           <div className="grid w-full gap-8 lg:grid-cols-[0.95fr,0.75fr] lg:items-center">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -153,31 +231,40 @@ const LoginPage = () => {
             className="relative pt-8 lg:pt-0"
           >
             <div className="relative flex h-full items-center">
-              <div className="max-w-xl bg-black/44 px-6 py-6 backdrop-blur-[2px] sm:px-7 sm:py-7 lg:-translate-y-6">
+              <div className="max-w-[42rem] px-1 py-1 sm:px-0 sm:py-0 lg:-translate-y-6">
                 <p className="text-[0.72rem] font-semibold uppercase tracking-[0.3em] text-[#f8c235]">{portalContent.login_hero_kicker}</p>
-                <h1 className="mt-4 max-w-xl text-4xl leading-[0.95] text-white sm:text-5xl lg:text-6xl">
-                  {portalContent.login_hero_title}
+                <h1 className="mt-3 max-w-[38rem] whitespace-pre-line text-[4.4rem] leading-[0.92] text-white sm:text-[5.4rem] lg:text-[6.6rem] xl:text-[7.2rem]">
+                  {LOGIN_HERO_TITLE}
                 </h1>
-                <p className="mt-5 max-w-xl text-base leading-7 text-white/84 sm:text-lg">
+                <p className="mt-5 max-w-[38rem] text-lg leading-8 text-white/88 sm:text-[1.32rem]">
                   {portalContent.login_hero_description}
                 </p>
+                <div className="mt-6">
+                  <Link
+                    to="/join"
+                    className="inline-flex h-12 items-center justify-center border border-[#8f1515] bg-[#8f1515] px-6 text-sm font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#6f1010] hover:border-[#6f1010]"
+                  >
+                    Join Now
+                  </Link>
+                </div>
               </div>
             </div>
           </motion.div>
 
-          <motion.form
+          <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.08 }}
-            onSubmit={handleSubmit}
-            className="paper-panel self-center rounded-[2rem] border border-white/24 bg-[#f7f1e8]/94 p-6 text-black shadow-[0_32px_80px_rgba(0,0,0,0.42)] backdrop-blur-md sm:p-8 lg:-translate-y-6"
+            className="paper-panel self-center border p-6 text-black shadow-[0_32px_80px_rgba(0,0,0,0.42)] backdrop-blur-md sm:p-8 lg:-translate-y-6"
+            style={{ background: portalDesign.loginFormBackground, borderColor: portalDesign.panelBorderColor }}
+            data-aac-login-surface="true"
           >
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#8f1515]">
                   {forgotMode ? 'Reset password' : portalContent.login_form_kicker}
                 </p>
-                <h2 className="mt-2 text-3xl text-[#030000]">
+                <h2 className="mt-2 text-[1.85rem] leading-tight text-[#030000] sm:text-[2.05rem]">
                   {forgotMode ? 'Send a reset link.' : portalContent.login_form_title}
                 </h2>
               </div>
@@ -206,7 +293,12 @@ const LoginPage = () => {
               </div>
             ) : null}
 
-            <div className="space-y-5">
+            <form
+              className="space-y-5"
+              data-aac-login-form="true"
+              onSubmit={handleSubmit}
+              noValidate
+            >
               <div>
                 <Label htmlFor="login-email" className="text-stone-900">Email</Label>
                 <Input
@@ -214,6 +306,7 @@ const LoginPage = () => {
                   type="email"
                   value={email}
                   onChange={handleEmailChange}
+                  onKeyDown={handleFieldKeyDown}
                   required
                   className="mt-1 bg-white text-black"
                   autoComplete="email"
@@ -223,43 +316,62 @@ const LoginPage = () => {
               {!forgotMode ? (
                 <div>
                   <Label htmlFor="login-password" className="text-stone-900">Password</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    value={password}
-                    onChange={handlePasswordChange}
-                    required
-                    className="mt-1 bg-white text-black"
+                  <div className="relative mt-1">
+                    <Input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      ref={passwordInputRef}
+                      value={password}
+                      onChange={handlePasswordChange}
+                      onKeyDown={handleFieldKeyDown}
+                      required
+                      className="bg-white pr-20 text-black"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 border-0 bg-transparent p-0 text-xs font-semibold uppercase tracking-[0.14em] text-[#8f1515] shadow-none outline-none hover:text-[#6b1010] focus-visible:ring-0"
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={handleForgotModeToggle}
+                  className="text-left text-sm font-medium text-[#8f1515] transition-colors hover:text-[#6b1010]"
+                >
+                  {forgotMode ? 'Back to sign in' : portalContent.login_forgot_password_label}
+                </button>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={busy}
+                className="mt-8 h-12 w-full rounded-none text-base"
+                style={{
+                  backgroundColor: portalDesign.secondaryActionBackground,
+                  color: portalDesign.secondaryActionText,
+                }}
+              >
+                {busy ? 'Please wait…' : forgotMode ? 'Send reset link' : portalContent.login_submit_label}
+              </Button>
+
+              {!forgotMode && pmproSocialLoginHtml ? (
+                <div className="mt-5 border-t border-black/10 pt-5">
+                  <p className="mb-3 text-center text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-stone-600">
+                    Or continue with
+                  </p>
+                  <div
+                    className="aac-login-social text-black [&_.pmpro_btn]:h-11 [&_.pmpro_btn]:rounded-none [&_.pmpro_btn]:border [&_.pmpro_btn]:border-[#0c0a09]/12 [&_.pmpro_btn]:bg-white [&_.pmpro_btn]:px-4 [&_.pmpro_btn]:text-sm [&_.pmpro_btn]:font-semibold [&_.pmpro_btn]:text-[#030000] [&_.pmpro_btn:hover]:bg-stone-100 [&_.pmpro_login_wrap]:m-0 [&_.pmpro_login_wrap]:p-0 [&_.pmpro_login_wrap>hr]:hidden [&_.pmpro_social_login]:m-0 [&_.pmpro_social_login]:p-0"
+                    dangerouslySetInnerHTML={{ __html: pmproSocialLoginHtml }}
                   />
                 </div>
               ) : null}
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={handleForgotModeToggle}
-                className="text-left text-sm font-medium text-[#8f1515] transition-colors hover:text-[#6b1010]"
-              >
-                {forgotMode ? 'Back to sign in' : portalContent.login_forgot_password_label}
-              </button>
-              <Link to="/join" className="text-sm font-medium text-stone-600 transition-colors hover:text-[#8f1515]">
-                {portalContent.login_join_link_label}
-              </Link>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={busy}
-              className="mt-8 h-12 w-full rounded-full text-base"
-              style={{
-                backgroundColor: portalDesign.secondaryActionBackground,
-                color: portalDesign.secondaryActionText,
-              }}
-            >
-              {busy ? 'Please wait…' : forgotMode ? 'Send reset link' : portalContent.login_submit_label}
-            </Button>
-          </motion.form>
+            </form>
+          </motion.div>
           </div>
         </div>
       </div>

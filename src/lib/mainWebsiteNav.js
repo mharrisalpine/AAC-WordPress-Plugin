@@ -30,16 +30,6 @@ export const mainSiteHref = (path) => {
 export const AAC_MAIN_NAV = [
   {
     type: 'folder',
-    label: 'Get Involved',
-    path: '/get-involved',
-    children: [
-      { label: 'Volunteer', path: '/volunteer' },
-      { label: 'Donate', href: 'https://membership.americanalpineclub.org/donate', external: true },
-      { label: 'Sign Up', href: 'https://membership.americanalpineclub.org/join', external: true },
-    ],
-  },
-  {
-    type: 'folder',
     label: 'Membership',
     path: '/membership',
     children: [
@@ -54,6 +44,7 @@ export const AAC_MAIN_NAV = [
     path: '/stories',
     children: [
       { label: 'Articles & News', path: '/stories' },
+      { label: 'Featured Photographers', href: '/membership/#/photographers' },
       { label: 'The Prescription', path: '/prescription' },
       { label: 'The Line', path: '/line-archive' },
     ],

@@ -47,10 +47,10 @@ export function PortalNavLinks({ onNavigate, className }) {
   };
 
   return (
-    <nav className={cn('flex flex-col gap-6 px-4 py-4', className)} aria-label="Member portal">
+    <nav className={cn('portal-sidebar-nav flex flex-col gap-6 px-4 py-4', className)} aria-label="Member portal">
       {portalSections.map((section) => (
         <div key={section.title}>
-          <p className="mb-2 px-3 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-white/85">{section.title}</p>
+          <p className="portal-sidebar-section-title mb-3 px-3 text-[0.92rem] font-semibold uppercase tracking-[0.24em] text-white/85">{section.title}</p>
           <ul className="space-y-1">
             {section.items.filter((item) => {
               if (item.id === 'publications' && !canAccessPublications) {
@@ -62,17 +62,17 @@ export function PortalNavLinks({ onNavigate, className }) {
               const active = isItemActive(item.to, item.id);
               const Icon = iconRegistry[item.icon] || User;
               const itemClasses = cn(
-                'portal-sidebar-link flex items-center gap-3 rounded-[1.1rem] border px-3 py-3 text-sm font-medium text-white transition-all',
-                active ? 'portal-sidebar-link--active shadow-[0_12px_28px_rgba(0,0,0,0.42)]' : 'shadow-[0_10px_24px_rgba(0,0,0,0.28)]',
+                'portal-sidebar-link group relative flex items-center gap-3 border-b px-3 py-3.5 text-[1.05rem] font-medium text-white transition-all',
+                active ? 'portal-sidebar-link--active' : '',
               );
-              const icon = <Icon className={cn('h-5 w-5 shrink-0', active ? 'portal-sidebar-link__icon--active' : 'text-white')} />;
+              const icon = <Icon className={cn('h-5 w-5 shrink-0 transition-colors', active ? 'portal-sidebar-link__icon--active' : 'text-white')} />;
 
               if (item.href) {
                 return (
                   <li key={item.href + item.label}>
                     <a href={item.href} onClick={onNavigate} className={itemClasses}>
                       {icon}
-                      {item.label}
+                      <span className="portal-sidebar-link__label">{item.label}</span>
                     </a>
                   </li>
                 );
@@ -86,7 +86,7 @@ export function PortalNavLinks({ onNavigate, className }) {
                     className={itemClasses}
                   >
                     {icon}
-                    {item.label}
+                    <span className="portal-sidebar-link__label">{item.label}</span>
                   </Link>
                 </li>
               );
@@ -111,8 +111,8 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
     backgroundColor: '#030000',
     backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, ${design.sidebarOverlayStart || '0.18'}), rgba(5, 2, 2, ${design.sidebarOverlayEnd || '0.30'})), url("${sidebarTopoUrl}")`,
     backgroundPosition: 'center center, center top',
-    backgroundRepeat: 'no-repeat, repeat-y',
-    backgroundSize: '100% 100%, 100% auto',
+    backgroundRepeat: 'no-repeat, repeat',
+    backgroundSize: 'cover, 760px auto',
     '--portal-sidebar-button-bg': design.sidebarButtonBackground || '#000000',
     '--portal-sidebar-button-hover-bg': design.sidebarButtonHoverBackground || '#111111',
     '--portal-sidebar-button-active-bg': design.sidebarButtonActiveBackground || '#000000',
@@ -122,11 +122,11 @@ const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
   return (
     <>
       <aside
-        className="portal-sidebar-surface hidden w-[18.5rem] shrink-0 self-stretch border-r border-black/8 md:flex md:flex-col"
+        className="portal-sidebar-surface portal-sidebar-desktop hidden shrink-0 self-stretch border-r border-black/8 md:flex md:flex-col"
         style={sidebarSurfaceStyle}
         aria-label="Member portal navigation"
       >
-        <div className="sticky top-0 flex min-h-full flex-1 flex-col justify-start overflow-y-auto">
+        <div className="sticky top-0 flex min-h-full flex-1 flex-col justify-start overflow-visible">
           <PortalNavLinks className="pb-6" />
         </div>
       </aside>

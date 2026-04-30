@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Salesforce Sync
  * Description: Queue-based Salesforce sync plugin for AAC Member Portal and Paid Memberships Pro.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_SALESFORCE_SYNC_VERSION', '0.1.0');
+define('AAC_SALESFORCE_SYNC_VERSION', '0.1.1');
 define('AAC_SALESFORCE_SYNC_FILE', __FILE__);
 define('AAC_SALESFORCE_SYNC_DIR', plugin_dir_path(__FILE__));
 define('AAC_SALESFORCE_SYNC_URL', plugin_dir_url(__FILE__));

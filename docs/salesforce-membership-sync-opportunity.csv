@@ -1,0 +1,17 @@
+salesforce_object,field_label,field_api_name,field_type,field_kind,relationship_or_record_type,external_id,unique,required,recommended_wordpress_source,sync_direction,notes
+Opportunity,Membership Revenue Record Type,RecordTypeId,Record Type,Standard field,Membership,No,No,Yes,system assigned,Salesforce internal,Use a dedicated Membership Opportunity record type.
+Opportunity,Amount,Amount,Currency,Standard field,,No,No,Yes,member_db.transaction_record.total,WordPress -> Salesforce,Total paid for the purchase or renewal.
+Opportunity,Close Date,CloseDate,Date,Standard field,,No,No,Yes,member_db.transaction_record.timestamp,WordPress -> Salesforce,Use payment/transaction date.
+Opportunity,Stage,StageName,Picklist,Standard field,,No,No,Yes,derived from successful payment,WordPress -> Salesforce,Set to Closed Won for paid membership transactions.
+Opportunity,WordPress Order ID,WordPress_Order_ID__c,"Number(18,0)",Custom field,,Yes,Yes,Yes,member_db.transaction_record.id,WordPress -> Salesforce,Primary external key for one opportunity per WordPress order.
+Opportunity,AAC External Key,AAC_External_Key__c,Text(255),Custom field,,No,No,No,aac_external_key or generated term key,WordPress -> Salesforce,Optional secondary cross-system key.
+Opportunity,Membership Level,Membership_Level__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_level,WordPress -> Salesforce,Level that was purchased or renewed.
+Opportunity,Membership Action,Membership_Action__c,Picklist,Custom field,,No,No,No,derived from checkout context,WordPress -> Salesforce,Values like New/Renewal/Upgrade/Downgrade.
+Opportunity,Membership Term Start Date,Membership_Term_Start_Date__c,Date,Custom field,,No,No,No,current membership term start,WordPress -> Salesforce,Snapshot of the created term dates for easy revenue reporting.
+Opportunity,Membership Term End Date,Membership_Term_End_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.expiration_date,WordPress -> Salesforce,Snapshot of the created term dates for easy revenue reporting.
+Opportunity,Discount Group,Discount_Group__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.membership_discount_type,WordPress -> Salesforce,Discount used at purchase.
+Opportunity,Family Membership,Family_Membership__c,Checkbox,Custom field,,No,No,No,member_db.profile.family_membership.mode,WordPress -> Salesforce,Whether this purchase included family membership treatment.
+Opportunity,Source System,Source_System__c,Picklist,Custom field,,No,No,No,hardcoded WordPress/PMPro,WordPress -> Salesforce,Use for integration provenance.
+Opportunity,PMPro Code,PMPro_Code__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.code,WordPress -> Salesforce,Order or discount code from PMPro.
+Opportunity,Gateway,Gateway__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.gateway,WordPress -> Salesforce,Stripe/PayPal/etc.
+Opportunity,Auto Renew,Auto_Renew__c,Checkbox,Custom field,,No,No,No,member_db.profile.account_info.auto_renew,WordPress -> Salesforce,Snapshot of subscription intent at the time of purchase.

@@ -16,7 +16,7 @@
   --color-red-deep: #6b1010;
   --color-mustard: #f8c235;
   --color-mustard-deep: #dda914;
-  --aac-portal-header-height: 6.75rem;
+  --aac-portal-header-height: 4.75rem;
   color-scheme: light;
 }
 
@@ -83,15 +83,15 @@ h1, h2, h3, h4, h5, h6 {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  background-color: #f6f3ed;
+  background: #f3ebdf;
+}
+
+.portal-main-surface {
+  background-color: #f3ebdf;
   background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(246, 241, 232, 0.74)),
-    radial-gradient(circle at 16% 10%, rgba(248, 194, 53, 0.12), transparent 24%),
-    radial-gradient(circle at 84% 14%, rgba(3, 0, 0, 0.04), transparent 19%),
-    url('../app-page-topo.svg');
-  background-position: center center, 16% 10%, 84% 14%, center top;
-  background-repeat: no-repeat, no-repeat, no-repeat, repeat;
-  background-size: auto, auto, auto, 1120px auto;
+    linear-gradient(180deg, rgba(245, 238, 227, 0.94), rgba(243, 235, 223, 0.98)),
+    radial-gradient(circle at 16% 10%, rgba(248, 194, 53, 0.08), transparent 24%),
+    radial-gradient(circle at 84% 14%, rgba(3, 0, 0, 0.03), transparent 19%);
 }
 
 .paper-panel {
@@ -104,7 +104,14 @@ h1, h2, h3, h4, h5, h6 {
 
 .portal-sidebar-surface {
   position: relative;
+  z-index: 40;
   background-color: #030000;
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.44)),
+    url('/sidebar-topo-v2.svg');
+  background-position: center center, center top;
+  background-repeat: no-repeat, repeat;
+  background-size: cover, 760px auto;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --portal-sidebar-button-bg: #000000;
   --portal-sidebar-button-hover-bg: #111111;
@@ -117,8 +124,8 @@ h1, h2, h3, h4, h5, h6 {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.03), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0.028));
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.025), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.02));
   pointer-events: none;
 }
 
@@ -127,22 +134,97 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 1;
 }
 
+.portal-sidebar-desktop {
+  width: 5.25rem;
+  overflow: visible;
+  z-index: 45;
+}
+
+.portal-sidebar-desktop .portal-sidebar-nav {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.portal-sidebar-desktop .portal-sidebar-section-title {
+  opacity: 0;
+  max-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  transform: translateX(-6px);
+  white-space: nowrap;
+  transition:
+    opacity 180ms ease,
+    max-height 180ms ease,
+    margin-bottom 180ms ease,
+    transform 180ms ease;
+}
+
 .portal-sidebar-link {
-  background: var(--portal-sidebar-button-bg);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.09);
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.portal-sidebar-desktop .portal-sidebar-link {
+  justify-content: center;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
 }
 
 .portal-sidebar-link:hover {
-  background: var(--portal-sidebar-button-hover-bg);
+  background: transparent;
   border-color: var(--portal-sidebar-accent);
+  color: var(--portal-sidebar-accent);
 }
 
 .portal-sidebar-link--active {
-  background: var(--portal-sidebar-button-active-bg);
+  background: transparent;
   border-color: var(--portal-sidebar-accent);
+  color: var(--portal-sidebar-accent);
+}
+
+.portal-sidebar-link span,
+.portal-sidebar-link a {
+  letter-spacing: 0.01em;
+}
+
+.portal-sidebar-desktop .portal-sidebar-link__label {
+  position: absolute;
+  left: calc(100% + 0.9rem);
+  top: 50%;
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid rgba(248, 194, 53, 0.28);
+  background: rgba(8, 5, 5, 0.94);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+  white-space: nowrap;
+  transform: translate3d(-10px, -50%, 0);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.portal-sidebar-desktop .portal-sidebar-link:hover .portal-sidebar-link__label,
+.portal-sidebar-desktop .portal-sidebar-link:focus-visible .portal-sidebar-link__label,
+.portal-sidebar-desktop .portal-sidebar-link:focus-within .portal-sidebar-link__label {
+  opacity: 1;
+  transform: translate3d(0, -50%, 0);
 }
 
 .portal-sidebar-link__icon--active {
+  color: var(--portal-sidebar-accent);
+}
+
+.portal-sidebar-link:hover svg {
   color: var(--portal-sidebar-accent);
 }
 
@@ -164,4 +246,69 @@ h1, h2, h3, h4, h5, h6 {
 
 [data-aac-button="true"] {
   border-radius: 0 !important;
+}
+
+.memorial-app {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(137, 115, 88, 0.2), transparent 24%),
+    radial-gradient(circle at 85% 14%, rgba(214, 193, 154, 0.08), transparent 18%),
+    linear-gradient(180deg, #090c10 0%, #11151b 38%, #171b22 100%);
+  color: #f4ead9;
+}
+
+.memorial-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(244, 234, 217, 0.08);
+  background:
+    linear-gradient(180deg, rgba(16, 20, 25, 0.92), rgba(12, 16, 21, 0.9)),
+    linear-gradient(135deg, rgba(244, 234, 217, 0.03), rgba(244, 234, 217, 0));
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(18px);
+}
+
+.memorial-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(125deg, rgba(244, 234, 217, 0.06), transparent 26%, transparent 72%, rgba(244, 234, 217, 0.03));
+  pointer-events: none;
+}
+
+.memorial-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.memorial-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    radial-gradient(circle at top left, rgba(214, 193, 154, 0.08), transparent 28%);
+  background-size: 24px 24px, 24px 24px, auto;
+}
+
+.memorial-pulse {
+  transform-origin: center;
+  animation: memorialPulse 2.8s ease-out infinite;
+}
+
+@keyframes memorialPulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.96);
+  }
+
+  70% {
+    opacity: 0.08;
+    transform: scale(1.08);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
 }

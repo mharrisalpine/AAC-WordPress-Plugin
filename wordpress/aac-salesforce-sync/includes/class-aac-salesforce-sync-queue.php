@@ -5,6 +5,8 @@ if (!defined('ABSPATH')) {
 }
 
 class AAC_Salesforce_Sync_Queue {
+	private static $runner_kicked = false;
+
 	public static function table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'aac_salesforce_sync_queue';
@@ -21,7 +23,7 @@ class AAC_Salesforce_Sync_Queue {
 		$now = current_time('mysql');
 		$available_at = $available_at ?: $now;
 
-		return (bool) $wpdb->insert(
+		$inserted = (bool) $wpdb->insert(
 			self::table_name(),
 			[
 				'job_type' => sanitize_key($job_type),
@@ -41,9 +43,21 @@ class AAC_Salesforce_Sync_Queue {
 			],
 			['%s', '%s', '%d', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
 		);
+
+		if (
+			$inserted &&
+			!empty($settings['general']['enabled']) &&
+			!self::$runner_kicked &&
+			class_exists('AAC_Salesforce_Sync_Worker')
+		) {
+			self::$runner_kicked = true;
+			AAC_Salesforce_Sync_Worker::kick_queue_runner();
+		}
+
+		return $inserted;
 	}
 
-	public static function claim_next() {
+	public static function claim_next($force = false, $allowed_job_types = []) {
 		global $wpdb;
 
 		if (!$wpdb) {
@@ -52,14 +66,23 @@ class AAC_Salesforce_Sync_Queue {
 
 		$table = self::table_name();
 		$now = current_time('mysql');
-		$job = $wpdb->get_row(
-			$wpdb->prepare(
-				"SELECT * FROM {$table} WHERE status = %s AND available_at <= %s ORDER BY id ASC LIMIT 1",
-				'pending',
-				$now
-			),
-			ARRAY_A
-		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$allowed_job_types = array_values(array_filter(array_map('sanitize_key', (array) $allowed_job_types)));
+		$type_sql = '';
+		if ($allowed_job_types) {
+			$placeholders = implode(', ', array_fill(0, count($allowed_job_types), '%s'));
+			$type_sql = $wpdb->prepare(" AND job_type IN ({$placeholders})", ...$allowed_job_types);
+		}
+		if ($force) {
+			$job = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$table} WHERE status = %s{$type_sql} ORDER BY id ASC LIMIT 1", 'pending'),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		} else {
+			$job = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$table} WHERE status = %s AND available_at <= %s{$type_sql} ORDER BY id ASC LIMIT 1", 'pending', $now),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
 
 		if (!$job) {
 			return null;
@@ -137,6 +160,26 @@ class AAC_Salesforce_Sync_Queue {
 		]);
 	}
 
+	public static function make_pending_jobs_available_now() {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return 0;
+		}
+
+		$now = current_time('mysql');
+		$updated = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE " . self::table_name() . " SET available_at = %s, updated_at = %s WHERE status = %s",
+				$now,
+				$now,
+				'pending'
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is internal and values are prepared above.
+
+		return max(0, (int) $updated);
+	}
+
 	public static function reset_stale_locks($minutes = 15) {
 		global $wpdb;
 
@@ -204,6 +247,21 @@ class AAC_Salesforce_Sync_Queue {
 			$wpdb->prepare("SELECT * FROM " . self::table_name() . " WHERE id = %d", absint($job_id)),
 			ARRAY_A
 		);
+	}
+
+	public static function clear_all_jobs() {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return 0;
+		}
+
+		$deleted = $wpdb->query("TRUNCATE TABLE " . self::table_name()); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- internal table name only.
+		if (false === $deleted) {
+			return 0;
+		}
+
+		return is_numeric($deleted) ? (int) $deleted : 0;
 	}
 
 	private static function update_job($job_id, $fields) {

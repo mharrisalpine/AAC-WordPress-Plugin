@@ -1,50 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LogOut, Menu, Search, ShoppingCart, X } from 'lucide-react';
+import { DollarSign, LogIn, LogOut, Menu, Plus, Shield, ShoppingCart, User, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/hooks/useCart';
+import { useAuth } from '@/hooks/useAuth';
 import { Link, useLocation } from 'react-router-dom';
 import { MainSiteNavigation } from '@/components/MainSiteNavigation';
-import { mainSiteHref } from '@/lib/mainWebsiteNav';
+import { getPortalUiSettings } from '@/lib/portalSettings';
+import { getRescuePageUrl } from '@/lib/backendConfig';
 
 const LIGHT_LOGO_URL = 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/light-header-logo.svg';
 
 const ACTION_H = 'h-11 min-h-[2.75rem]';
+const UTILITY_LINK_CLASS = 'group inline-flex items-center gap-2 text-[0.88rem] font-semibold tracking-[0.01em] text-white transition-colors hover:text-white';
+const UTILITY_ICON_CLASS = 'h-[1.2rem] w-[1.2rem] text-[#f8c235] transition-transform duration-200 group-hover:scale-105';
 
-const utilityLinkBase =
-  'inline-flex items-center gap-2 rounded-none border border-white/10 bg-white/[0.03] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-white/80 transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]';
-
-const UtilityLinks = ({ className }) => {
-  const items = [
-    { label: 'Search', href: mainSiteHref('/search'), icon: Search },
-  ];
-
-  return (
-    <div className={className}>
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <a
-            key={item.label}
-            href={item.href}
-            className={utilityLinkBase}
-            {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            <span>{item.label}</span>
-          </a>
-        );
-      })}
-    </div>
-  );
-};
-
-const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLogout, showLogin, showJoin, className, compact = false }) => {
+const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLogout, showDonate, showLogin, showJoin, showProfile, showRescue, rescueHref, className, compact = false, style }) => {
   const actionHeight = compact ? 'h-10 min-h-[2.5rem]' : ACTION_H;
-  const actionPadding = compact ? 'px-3.5 text-[0.72rem] tracking-[0.12em]' : 'px-5 text-sm tracking-[0.14em]';
+  const actionPadding = compact ? 'px-3.5 text-[0.72rem] tracking-[0.12em]' : 'px-5 text-[0.95rem] tracking-[0.18em]';
   const iconButtonSize = compact ? 'h-10 w-10' : `${ACTION_H} w-11`;
+  const logoutButtonSize = compact ? 'h-10 w-10' : 'h-12 w-12';
 
   return (
-    <div className={className}>
+    <div className={className} style={style}>
       {showCart ? (
         <button
           type="button"
@@ -61,6 +38,33 @@ const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLog
         </button>
       ) : null}
 
+      {showDonate ? (
+        <Link
+          to="/donate"
+          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#8f1515] bg-[#8f1515] ${actionPadding} font-semibold uppercase text-white transition-colors hover:border-[#6b1010] hover:bg-[#6b1010]`}
+        >
+          Donate
+        </Link>
+      ) : null}
+
+      {showRescue ? (
+        <a
+          href={rescueHref}
+          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-white/10 bg-white/[0.03] ${actionPadding} font-semibold uppercase text-white transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]`}
+        >
+          Rescue
+        </a>
+      ) : null}
+
+      {showProfile ? (
+        <Link
+          to="/profile"
+          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black transition-colors hover:bg-[#e1ae14]`}
+        >
+          My Profile
+        </Link>
+      ) : null}
+
       {showJoin ? (
         <Link
           to="/join"
@@ -69,13 +73,6 @@ const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLog
           Join
         </Link>
       ) : null}
-
-      <Link
-        to="/donate"
-        className={`inline-flex ${actionHeight} items-center justify-center rounded-none bg-[#8f1515] ${actionPadding} font-semibold uppercase text-white transition-colors hover:bg-[#6b1010]`}
-      >
-        Donate
-      </Link>
 
       {showLogin ? (
         <Link
@@ -90,31 +87,90 @@ const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLog
         <Button
           type="button"
           onClick={onLogout}
-          className={`${actionHeight} rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black hover:bg-[#e1ae14]`}
+          className={`${logoutButtonSize} rounded-none border border-[#f8c235] bg-[#f8c235] p-0 text-black hover:bg-[#e1ae14]`}
+          aria-label="Log out"
+          title="Log out"
         >
-          <LogOut className="mr-1.5 hidden h-4 w-4 sm:inline" />
-          Log Out
+          <LogOut className={compact ? 'h-5 w-5' : 'h-6 w-6'} />
         </Button>
       ) : null}
     </div>
   );
 };
 
+const PublicUtilityNav = ({ rescueHref, showProfile, className }) => (
+  <div className={className}>
+    {showProfile ? (
+      <Link
+        to="/profile"
+        className={UTILITY_LINK_CLASS}
+      >
+        <User className={UTILITY_ICON_CLASS} />
+        Account
+      </Link>
+    ) : (
+      <>
+        <Link
+          to="/login"
+          className={UTILITY_LINK_CLASS}
+        >
+          <LogIn className={UTILITY_ICON_CLASS} />
+          Sign In
+        </Link>
+        <Link
+          to="/join"
+          className={UTILITY_LINK_CLASS}
+        >
+          <Plus className={UTILITY_ICON_CLASS} />
+          Join
+        </Link>
+      </>
+    )}
+    <Link
+      to="/donate"
+      className={UTILITY_LINK_CLASS}
+    >
+      <DollarSign className={UTILITY_ICON_CLASS} />
+      Donate
+    </Link>
+    <a
+      href={rescueHref}
+      className={UTILITY_LINK_CLASS}
+    >
+      <Shield className={UTILITY_ICON_CLASS} />
+      Rescue
+    </a>
+  </div>
+);
+
 /**
  * @param {object} props
  * @param {'portal' | 'public'} [props.variant] public = join page (no portal menu, no log out)
  */
 const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu }) => {
+  const portalUi = getPortalUiSettings();
+  const design = portalUi.design;
+  const { user } = useAuth();
   const isPublic = variant === 'public';
   const { cartItems } = useCart();
   const location = useLocation();
   const headerRef = useRef(null);
   const [mobileSiteNavOpen, setMobileSiteNavOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(false);
+  const hideTimerRef = useRef(null);
+  const lastScrollYRef = useRef(0);
   const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const isLoginRoute = location.pathname === '/login';
+  const isDonateRoute = location.pathname === '/donate';
+  const isHeroOverlayRoute = isPublic && (location.pathname === '/home' || location.pathname === '/join');
+  const usesTransparentPublicHeader = isPublic;
 
   const isStoreRelatedPage = location.pathname.startsWith('/store') || location.pathname.startsWith('/product');
   const showCart = isStoreRelatedPage;
+  const showSolidPublicChrome = !usesTransparentPublicHeader || isScrolled;
+  const showPublicProfileAction = isPublic && !!user;
+  const rescueHref = getRescuePageUrl();
 
   useEffect(() => {
     const headerNode = headerRef.current;
@@ -146,15 +202,121 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
     setMobileSiteNavOpen(false);
   }, [location.pathname, variant]);
 
+  useEffect(() => {
+    setIsHeaderHidden(false);
+    lastScrollYRef.current = window.scrollY;
+    if (hideTimerRef.current) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    lastScrollYRef.current = window.scrollY;
+
+    if (!usesTransparentPublicHeader) {
+      setIsScrolled(true);
+    } else {
+      setIsScrolled(window.scrollY > 8);
+    }
+
+    const showHeader = () => {
+      setIsHeaderHidden(false);
+    };
+
+    const scheduleHide = () => {
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+      }
+
+      hideTimerRef.current = window.setTimeout(() => {
+        if (window.scrollY > 32 && !mobileSiteNavOpen) {
+          setIsHeaderHidden(true);
+        }
+      }, 1500);
+    };
+
+    const updateScrolledState = () => {
+      const currentScrollY = window.scrollY;
+      const previousScrollY = lastScrollYRef.current;
+      const scrolledEnough = Math.abs(currentScrollY - previousScrollY) > 2;
+      const nearTop = currentScrollY <= 32;
+
+      setIsScrolled(currentScrollY > 8);
+
+      if (nearTop || scrolledEnough) {
+        showHeader();
+      }
+
+      scheduleHide();
+      lastScrollYRef.current = currentScrollY;
+    };
+
+    updateScrolledState();
+    window.addEventListener('scroll', updateScrolledState, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', updateScrolledState);
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
+  }, [location.pathname, usesTransparentPublicHeader, mobileSiteNavOpen]);
+
+  useEffect(() => {
+    if (mobileSiteNavOpen) {
+      setIsHeaderHidden(false);
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    if (window.scrollY <= 32) {
+      setIsHeaderHidden(false);
+      return undefined;
+    }
+
+    lastScrollYRef.current = window.scrollY;
+    hideTimerRef.current = window.setTimeout(() => {
+      setIsHeaderHidden(true);
+    }, 1500);
+
+    return () => {
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
+  }, [mobileSiteNavOpen]);
+
+  const headerBackground = usesTransparentPublicHeader && !isScrolled
+    ? 'transparent'
+    : design.navBackground;
+  const headerBorderColor = usesTransparentPublicHeader && !isScrolled
+    ? 'transparent'
+    : 'rgba(255,255,255,0.1)';
+  const headerBackdropFilter = 'none';
+  const chromeDividerColor = showSolidPublicChrome ? 'rgba(255,255,255,0.1)' : 'transparent';
+
   return (
     <header
       ref={headerRef}
-      className="sticky top-0 z-50 border-b border-white/10 bg-[#030000]/95 text-white backdrop-blur"
-      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      className={`${usesTransparentPublicHeader ? 'fixed inset-x-0 top-0' : 'sticky top-0'} z-50 border-b text-white transition-[background-color,border-color,box-shadow,backdrop-filter,transform] duration-300 ${isHeaderHidden ? '-translate-y-full' : 'translate-y-0'}`}
+      style={{
+        background: headerBackground,
+        borderColor: headerBorderColor,
+        boxShadow: usesTransparentPublicHeader && !isScrolled ? 'none' : '0 1px 0 rgba(255,255,255,0.04)',
+        backdropFilter: headerBackdropFilter,
+        WebkitBackdropFilter: headerBackdropFilter,
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+      }}
     >
-      <div className="mx-auto max-w-[1600px] px-4 py-3 md:px-6">
+      <div className="w-full px-0">
         <div className="flex flex-col gap-3 xl:hidden">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
             <div className="flex min-w-0 items-center gap-2">
               {!isPublic ? (
                 <Button
@@ -196,45 +358,62 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
             onCartClick={onCartClick}
             onLogout={onLogout}
             showLogout={!isPublic}
-            showLogin={isPublic && !isLoginRoute}
-            showJoin={isPublic && isLoginRoute}
-            className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3"
+            showDonate={isPublic && !isDonateRoute}
+            showLogin={isPublic && !showPublicProfileAction && !isLoginRoute}
+            showJoin={isPublic && !showPublicProfileAction && isLoginRoute}
+            showProfile={showPublicProfileAction}
+            showRescue={isPublic}
+            rescueHref={rescueHref}
+            className="flex flex-wrap items-center gap-1.5 border-t border-white/10 px-4 pt-3 md:px-6"
             compact
+            style={{ borderColor: chromeDividerColor }}
           />
 
           {mobileSiteNavOpen ? (
-            <div className="space-y-3 border-t border-white/10 pt-3">
-              <UtilityLinks className="flex flex-wrap items-center gap-2" />
+            <div className="space-y-3 border-t border-white/10 px-4 pb-4 pt-3 md:px-6" style={{ borderColor: chromeDividerColor }}>
               <MainSiteNavigation className="min-w-0" />
             </div>
           ) : null}
         </div>
 
-        <div className="hidden xl:flex xl:flex-col xl:gap-3">
-          <div className="flex items-center justify-end gap-4 border-b border-white/10 pb-4">
-            <UtilityLinks className="flex flex-wrap items-center justify-end gap-2" />
-
-            <HeaderActions
-              showCart={showCart && !isPublic}
-              cartItemCount={cartItemCount}
-              onCartClick={onCartClick}
-              onLogout={onLogout}
-              showLogout={!isPublic}
-              showLogin={isPublic && !isLoginRoute}
-              showJoin={isPublic && isLoginRoute}
-              className="flex shrink-0 items-center gap-2"
+        <div className="hidden xl:flex xl:min-h-[4.75rem] xl:items-stretch xl:gap-6">
+          <Link to="/home" className="flex shrink-0 items-center border-r border-white/10 px-6" style={{ borderColor: chromeDividerColor }}>
+            <img
+              alt="American Alpine Club Logo"
+              className="h-12 w-auto"
+              src={LIGHT_LOGO_URL}
             />
-          </div>
+          </Link>
 
-          <div className="relative flex items-center justify-end pb-1">
-            <Link to="/home" className="absolute left-0 flex items-center">
-              <img
-                alt="American Alpine Club Logo"
-                className="h-14 w-auto"
-                src={LIGHT_LOGO_URL}
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+            {isPublic ? (
+              <PublicUtilityNav
+                rescueHref={rescueHref}
+                showProfile={showPublicProfileAction}
+                className="ml-auto flex w-fit items-center justify-end gap-7 self-end rounded-none bg-black/95 px-7 py-2.5 shadow-[0_18px_42px_rgba(0,0,0,0.34)] backdrop-blur"
               />
-            </Link>
-            <MainSiteNavigation className="min-w-0 justify-end" />
+            ) : null}
+
+            <div className="flex min-w-0 items-center gap-4 pb-3 pr-6">
+              <MainSiteNavigation className="min-w-0 flex-1 justify-start" />
+              {!isPublic ? (
+                <HeaderActions
+                  showCart={showCart}
+                  cartItemCount={cartItemCount}
+                  onCartClick={onCartClick}
+                  onLogout={onLogout}
+                  showLogout
+                  showDonate={false}
+                  showLogin={false}
+                  showJoin={false}
+                  showProfile={false}
+                  showRescue={false}
+                  rescueHref={rescueHref}
+                  className="flex shrink-0 items-center gap-2"
+                  compact
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

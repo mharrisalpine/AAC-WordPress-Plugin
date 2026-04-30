@@ -1,0 +1,16 @@
+salesforce_object,field_label,field_api_name,field_type,field_kind,relationship_or_record_type,external_id,unique,required,recommended_wordpress_source,sync_direction,notes
+Payment_Transaction__c,Name,Name,Auto Number,Standard field,,No,No,Yes,system assigned,Salesforce internal,Use auto number for the raw payment audit object.
+Payment_Transaction__c,Contact,Contact__c,Lookup(Contact),Custom field,Contact,No,No,Yes,member matched by WordPress user id,Bidirectional,Every transaction should point back to the member.
+Payment_Transaction__c,Opportunity,Opportunity__c,Lookup(Opportunity),Custom field,Opportunity,No,No,No,created membership Opportunity,Bidirectional,Link raw payment to the revenue record.
+Payment_Transaction__c,Membership Term,Membership_Term__c,Lookup(Membership_Term__c),Custom field,Membership_Term__c,No,No,No,created membership term,Bidirectional,Link raw payment to the coverage term it created.
+Payment_Transaction__c,PMPro Order ID,PMPro_Order_ID__c,"Number(18,0)",Custom field,,Yes,Yes,Yes,member_db.transaction_record.id,WordPress -> Salesforce,Primary external key for transaction upsert.
+Payment_Transaction__c,Payment Transaction ID,Payment_Transaction_ID__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.payment_transaction_id,WordPress -> Salesforce,Gateway transaction identifier.
+Payment_Transaction__c,Subscription Transaction ID,Subscription_Transaction_ID__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.subscription_transaction_id,WordPress -> Salesforce,Recurring subscription identifier if present.
+Payment_Transaction__c,Amount,Amount__c,Currency,Custom field,,No,No,Yes,member_db.transaction_record.total,WordPress -> Salesforce,Total transaction amount.
+Payment_Transaction__c,Subtotal,Subtotal__c,Currency,Custom field,,No,No,No,member_db.transaction_record.subtotal,WordPress -> Salesforce,Optional separate subtotal if useful for reporting.
+Payment_Transaction__c,Tax,Tax__c,Currency,Custom field,,No,No,No,member_db.transaction_record.tax,WordPress -> Salesforce,Optional tax field.
+Payment_Transaction__c,Status,Status__c,Picklist,Custom field,,No,No,No,member_db.transaction_record.status,WordPress -> Salesforce,Raw transaction/payment status from PMPro.
+Payment_Transaction__c,Gateway,Gateway__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.gateway,WordPress -> Salesforce,Stripe/PayPal/etc.
+Payment_Transaction__c,Transaction Date,Transaction_Date__c,Date/Time,Custom field,,No,No,Yes,member_db.transaction_record.timestamp,WordPress -> Salesforce,Raw payment timestamp.
+Payment_Transaction__c,Code,Code__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.code,WordPress -> Salesforce,PMPro order/discount/reference code.
+Payment_Transaction__c,Membership Level,Membership_Level__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_level,WordPress -> Salesforce,Denormalized level for easy payment reporting.

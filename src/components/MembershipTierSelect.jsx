@@ -50,15 +50,15 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
               type="button"
               onClick={() => onSelect(t.id)}
               className={cn(
-                'flex min-h-[340px] flex-col rounded-2xl border p-6 text-left shadow-sm transition',
+                'flex min-h-[340px] flex-col rounded-none border p-6 text-left shadow-sm transition',
                 selected
-                  ? 'border-[#c8a43a] bg-[rgba(200,164,58,0.12)] ring-2 ring-[#c8a43a] ring-offset-2 ring-offset-[#faf8f5]'
-                  : 'border-stone-200 bg-white hover:border-stone-300 hover:shadow-md',
+                  ? 'border-[#b71c1c] bg-white ring-2 ring-[#b71c1c] ring-offset-0'
+                  : 'border-stone-300 bg-white hover:border-stone-500 hover:shadow-md',
               )}
             >
               <div className="flex flex-1 flex-col">
                 <span className="text-xl font-bold text-stone-900">{t.label}</span>
-                <span className="mt-2 text-3xl font-semibold tracking-tight text-[#a07f21]">
+                <span className="mt-2 text-3xl font-semibold tracking-tight text-[#8f1515]">
                   {priceLabel}
                   {t.priceCents === 0 ? null : isOneTimeMembershipTierId(t.id) ? (
                     <span className="text-base font-medium text-stone-500"> one-time</span>
@@ -69,7 +69,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                 <p className="mt-3 text-sm leading-relaxed text-stone-600">{t.blurb}</p>
                 <TierBenefitsList benefits={t.benefits} />
                 {selected ? (
-                  <span className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#6b5310]">Selected</span>
+                  <span className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#8f1515]">Selected</span>
                 ) : (
                   <span className="mt-4 text-xs font-medium text-stone-400">Tap to select</span>
                 )}

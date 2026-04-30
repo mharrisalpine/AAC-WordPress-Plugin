@@ -62,7 +62,7 @@ export const AAC_CUTTING_EDGE_PODCASTS = [
   }),
 ];
 
-const extractSpotifyEpisodeId = (value = '') => {
+export const extractSpotifyEpisodeId = (value = '') => {
   const input = String(value || '');
   const match = input.match(/spotify\.com\/(?:embed\/)?episode\/([A-Za-z0-9]+)/i);
   return match?.[1] || '';
@@ -76,6 +76,11 @@ export const toSpotifyEmbedUrl = (value = '') => {
 export const toSpotifySourceUrl = (value = '') => {
   const episodeId = extractSpotifyEpisodeId(value);
   return episodeId ? `https://open.spotify.com/episode/${episodeId}` : '';
+};
+
+export const toSpotifyEpisodeUri = (value = '') => {
+  const episodeId = extractSpotifyEpisodeId(value);
+  return episodeId ? `spotify:episode:${episodeId}` : '';
 };
 
 export const normalizePodcastEpisode = (episode = {}, index = 0) => {

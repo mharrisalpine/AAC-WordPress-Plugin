@@ -94,17 +94,27 @@ class AAC_Member_Portal_PMPro {
 
 		$primary = self::get_primary_membership($user_id);
 		$current_level_id = $primary ? (int) $primary['level_id'] : null;
-		$current_subscription_id = self::get_current_subscription_id($user_id, $current_level_id);
+		$current_subscription_id = self::find_subscription_id($user_id, (int) $current_level_id, ['active', 'trialing']);
+		$current_level_checkout_url = $current_level_id ? self::pmpro_page_url('checkout', ['level' => $current_level_id]) : '';
+		if (
+			$current_level_checkout_url !== ''
+			&& !$current_subscription_id
+			&& !empty($primary['expiration_date'])
+			&& self::is_future_membership_date($primary['expiration_date'])
+		) {
+			// This is the "turn auto-renew back on without charging twice" lane.
+			$current_level_checkout_url = add_query_arg('aac_reactivate_autorenew', '1', $current_level_checkout_url);
+		}
 
 		return [
 			'account_url' => self::pmpro_page_url('account'),
 			'billing_url' => $current_subscription_id
 				? self::pmpro_page_url('billing', ['pmpro_subscription_id' => $current_subscription_id])
-				: self::pmpro_page_url('billing'),
+				: '',
 			'cancel_url' => $current_level_id ? self::pmpro_page_url('cancel', ['levelstocancel' => $current_level_id]) : self::pmpro_page_url('cancel'),
 			'current_level_id' => $current_level_id,
 			'current_subscription_id' => $current_subscription_id,
-			'current_level_checkout_url' => $current_level_id ? self::pmpro_page_url('checkout', ['level' => $current_level_id]) : '',
+			'current_level_checkout_url' => $current_level_checkout_url,
 			'levels' => (object) $levels,
 		];
 	}
@@ -269,29 +279,6 @@ class AAC_Member_Portal_PMPro {
 
 		$order = $wpdb->get_row($query); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
 		return is_object($order) ? $order : null;
-	}
-
-	private static function get_current_subscription_id($user_id, $level_id = null) {
-		$user_id = (int) $user_id;
-		$level_id = $level_id !== null ? (int) $level_id : 0;
-
-		if ($user_id <= 0) {
-			return null;
-		}
-
-		$subscription_id = self::find_subscription_id($user_id, $level_id, ['active', 'trialing']);
-		if ($subscription_id) {
-			return $subscription_id;
-		}
-
-		if ($level_id > 0) {
-			$subscription_id = self::find_subscription_id($user_id, $level_id);
-			if ($subscription_id) {
-				return $subscription_id;
-			}
-		}
-
-		return self::find_subscription_id($user_id, 0);
 	}
 
 	private static function get_first_membership_start_date($user_id) {
@@ -615,6 +602,20 @@ class AAC_Member_Portal_PMPro {
 
 		$url = pmpro_url($page, $query);
 		return is_string($url) ? $url : '';
+	}
+
+	private static function is_future_membership_date($date_string) {
+		$date_string = self::normalize_subscription_date_value($date_string);
+		if ($date_string === '') {
+			return false;
+		}
+
+		$expiration_unix = strtotime($date_string . ' 23:59:59');
+		if ($expiration_unix === false) {
+			return false;
+		}
+
+		return $expiration_unix >= current_time('timestamp');
 	}
 
 	private static function get_all_levels() {

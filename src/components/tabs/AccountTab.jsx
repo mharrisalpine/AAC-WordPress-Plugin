@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, KeyRound, Receipt, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -24,8 +24,10 @@ const AccountTab = ({ profile }) => {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
   const [accountData, setAccountData] = useState(null);
+  const accountDataRef = useRef(null);
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
   const [localTransactions, setLocalTransactions] = useState([]);
   const [remoteTransactions, setRemoteTransactions] = useState([]);
 
@@ -104,15 +106,36 @@ const AccountTab = ({ profile }) => {
 
   useEffect(() => {
     if (profile && profile.account_info) {
-      setAccountData(normalizeAccountInfo(profile.account_info));
+      const normalizedProfileAccountInfo = normalizeAccountInfo(profile.account_info);
+      accountDataRef.current = normalizedProfileAccountInfo;
+      setAccountData(normalizedProfileAccountInfo);
     }
   }, [profile]);
 
+  const patchAccountData = useCallback((patch) => {
+    setAccountData((current) => {
+      const currentValue = current || {};
+      const nextValue = normalizeAccountInfo({
+        ...currentValue,
+        ...(typeof patch === 'function' ? patch(currentValue) : patch),
+      });
+      accountDataRef.current = nextValue;
+      return nextValue;
+    });
+  }, []);
+
+  const currentProfileAccountInfo = normalizeAccountInfo(profile?.account_info || {});
+  const publicationFieldKeys = ['aaj_pref', 'anac_pref', 'acj_pref', 'guidebook_pref'];
+  const publicationPreferencesDirty = publicationFieldKeys.some(
+    (key) => (accountData?.[key] || '') !== (currentProfileAccountInfo?.[key] || '')
+  );
+
   const handleSave = async () => {
-    const nextAccountData = accountData;
+    const nextAccountData = accountDataRef.current || accountData;
     const normalizedAccountData = normalizeAccountInfo(nextAccountData);
     setSaving(true);
     try {
+      accountDataRef.current = normalizedAccountData;
       setAccountData(normalizedAccountData);
       await updateProfile({ account_info: normalizedAccountData });
       toast({
@@ -124,9 +147,43 @@ const AccountTab = ({ profile }) => {
     }
   };
 
+  const handlePublicationPreferencesSave = async () => {
+    if (!accountData) {
+      return;
+    }
+
+    const publicationPreferencePayload = publicationFieldKeys.reduce((payload, key) => {
+      payload[key] = accountData[key];
+      return payload;
+    }, {});
+
+    const normalizedAccountData = normalizeAccountInfo({
+      ...currentProfileAccountInfo,
+      ...publicationPreferencePayload,
+    });
+
+      setSavingPreferences(true);
+    try {
+      const nextAccountData = normalizeAccountInfo({
+        ...(accountDataRef.current || currentProfileAccountInfo),
+        ...publicationPreferencePayload,
+      });
+      accountDataRef.current = nextAccountData;
+      setAccountData(nextAccountData);
+      await updateProfile({ account_info: normalizedAccountData });
+      toast({
+        title: 'Publication preferences saved',
+        description: 'These updates were saved to your profile and queued for Salesforce sync.',
+      });
+    } finally {
+      setSavingPreferences(false);
+    }
+  };
+
   const handlePhotoSave = async (newUrl) => {
     if (newUrl) {
       const updatedData = normalizeAccountInfo({ ...accountData, photo_url: newUrl });
+      accountDataRef.current = updatedData;
       setAccountData(updatedData);
       await updateProfile({ account_info: updatedData });
       toast({
@@ -162,6 +219,7 @@ const AccountTab = ({ profile }) => {
     }
 
     const nextAccountData = { ...accountData, auto_renew: false };
+    accountDataRef.current = nextAccountData;
     setAccountData(nextAccountData);
     await updateProfile({
       account_info: nextAccountData,
@@ -196,10 +254,6 @@ const AccountTab = ({ profile }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h2 className="text-3xl font-bold mb-6 text-black">
-            {portalContent.account_settings_title || 'Account Settings'}
-          </h2>
-
           <div className="max-w-2xl mx-auto space-y-6">
             {/* Profile Photo */}
             <div className="card-gradient rounded-2xl p-6 border border-stone-200">
@@ -245,7 +299,7 @@ const AccountTab = ({ profile }) => {
                   <Input
                     id="first_name"
                     value={accountData.first_name || ''}
-                    onChange={(e) => setAccountData({ ...accountData, first_name: e.target.value })}
+                    onChange={(e) => patchAccountData({ first_name: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
                   />
                 </div>
@@ -255,7 +309,7 @@ const AccountTab = ({ profile }) => {
                   <Input
                     id="last_name"
                     value={accountData.last_name || ''}
-                    onChange={(e) => setAccountData({ ...accountData, last_name: e.target.value })}
+                    onChange={(e) => patchAccountData({ last_name: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
                   />
                 </div>
@@ -266,7 +320,7 @@ const AccountTab = ({ profile }) => {
                     id="email"
                     type="email"
                     value={accountData.email || ''}
-                    onChange={(e) => setAccountData({ ...accountData, email: e.target.value })}
+                    onChange={(e) => patchAccountData({ email: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
                   />
                 </div>
@@ -276,7 +330,18 @@ const AccountTab = ({ profile }) => {
                   <Input
                     id="phone"
                     value={accountData.phone || ''}
-                    onChange={(e) => setAccountData({ ...accountData, phone: e.target.value })}
+                    onChange={(e) => patchAccountData({ phone: e.target.value })}
+                    className="bg-white border-[#d9d9d9] text-black mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="birthdate" className="text-black">Birthdate</Label>
+                  <Input
+                    id="birthdate"
+                    type="date"
+                    value={accountData.birthdate || ''}
+                    onChange={(e) => patchAccountData({ birthdate: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
                   />
                 </div>
@@ -286,7 +351,7 @@ const AccountTab = ({ profile }) => {
                   <Input
                     id="street"
                     value={accountData.street || ''}
-                    onChange={(e) => setAccountData({ ...accountData, street: e.target.value })}
+                    onChange={(e) => patchAccountData({ street: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
                   />
                 </div>
@@ -296,7 +361,7 @@ const AccountTab = ({ profile }) => {
                   <Input
                     id="address2"
                     value={accountData.address2 || ''}
-                    onChange={(e) => setAccountData({ ...accountData, address2: e.target.value })}
+                    onChange={(e) => patchAccountData({ address2: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
                   />
                 </div>
@@ -304,22 +369,22 @@ const AccountTab = ({ profile }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <Label htmlFor="city" className="text-black">City</Label>
-                        <Input id="city" value={accountData.city || ''} onChange={(e) => setAccountData({...accountData, city: e.target.value})} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="city" value={accountData.city || ''} onChange={(e) => patchAccountData({ city: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                     <div>
                         <Label htmlFor="state" className="text-black">State / Province</Label>
-                        <Input id="state" value={accountData.state || ''} onChange={(e) => setAccountData({...accountData, state: e.target.value})} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="state" value={accountData.state || ''} onChange={(e) => patchAccountData({ state: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <Label htmlFor="zip" className="text-black">ZIP / Postal Code</Label>
-                        <Input id="zip" value={accountData.zip || ''} onChange={(e) => setAccountData({...accountData, zip: e.target.value})} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="zip" value={accountData.zip || ''} onChange={(e) => patchAccountData({ zip: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                     <div>
                         <Label htmlFor="country" className="text-black">Country</Label>
-                        <Input id="country" value={accountData.country || ''} onChange={(e) => setAccountData({...accountData, country: e.target.value})} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="country" value={accountData.country || ''} onChange={(e) => patchAccountData({ country: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                 </div>
 
@@ -327,9 +392,9 @@ const AccountTab = ({ profile }) => {
                   <Label htmlFor="size" className="text-black">T-Shirt Size</Label>
                   <select
                     id="size"
-                    value={accountData.size || 'none'}
-                    onChange={(e) => setAccountData({ ...accountData, size: e.target.value })}
-                    className="w-full bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2 mt-1"
+                    value={accountData.size || 'No T-shirt'}
+                    onChange={(e) => patchAccountData({ size: e.target.value })}
+                    className="mt-1 flex h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black"
                   >
                     {TSHIRT_SIZE_OPTIONS.map((size) => (
                       <option key={size} value={size}>
@@ -337,6 +402,54 @@ const AccountTab = ({ profile }) => {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-stone-200 bg-white/70 p-4">
+                  <div>
+                    <h4 className="text-base font-semibold text-black">Communication Preferences</h4>
+                    <p className="text-sm text-black/60">
+                      These settings help the AAC and connected systems respect how this member wants to be contacted.
+                    </p>
+                  </div>
+
+                  <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-black">Email Opt Out</p>
+                      <p className="text-xs text-black/60">Do not send email outreach or marketing messages.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(accountData.email_opt_out)}
+                      onChange={(e) => patchAccountData({ email_opt_out: e.target.checked })}
+                      className="h-5 w-5 accent-[#b71c1c]"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-black">Do Not Call</p>
+                      <p className="text-xs text-black/60">Avoid phone outreach for this member.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(accountData.do_not_call)}
+                      onChange={(e) => patchAccountData({ do_not_call: e.target.checked })}
+                      className="h-5 w-5 accent-[#b71c1c]"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-black">Do Not Contact</p>
+                      <p className="text-xs text-black/60">Use this when the member should not receive general outreach at all.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(accountData.do_not_contact)}
+                      onChange={(e) => patchAccountData({ do_not_contact: e.target.checked })}
+                      className="h-5 w-5 accent-[#b71c1c]"
+                    />
+                  </label>
                 </div>
 
                 <Button
@@ -359,8 +472,8 @@ const AccountTab = ({ profile }) => {
                     <p className="text-[#999999] text-sm">Choose how you receive this annual publication</p>
                   </div>
                   <select
-                    value={accountData.aaj_pref || accountData.publication_pref || 'Digital'}
-                    onChange={(e) => setAccountData({ ...accountData, aaj_pref: e.target.value, publication_pref: e.target.value })}
+                    value={accountData.aaj_pref || 'Digital'}
+                    onChange={(e) => patchAccountData({ aaj_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
                     <option value="Print">Print</option>
@@ -375,7 +488,7 @@ const AccountTab = ({ profile }) => {
                   </div>
                   <select
                     value={accountData.anac_pref || 'Digital'}
-                    onChange={(e) => setAccountData({ ...accountData, anac_pref: e.target.value })}
+                    onChange={(e) => patchAccountData({ anac_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
                     <option value="Print">Print</option>
@@ -390,7 +503,7 @@ const AccountTab = ({ profile }) => {
                   </div>
                   <select
                     value={accountData.acj_pref || 'Digital'}
-                    onChange={(e) => setAccountData({ ...accountData, acj_pref: e.target.value })}
+                    onChange={(e) => patchAccountData({ acj_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
                     <option value="Print">Print</option>
@@ -405,12 +518,25 @@ const AccountTab = ({ profile }) => {
                   </div>
                   <select
                     value={accountData.guidebook_pref || 'Digital'}
-                    onChange={(e) => setAccountData({ ...accountData, guidebook_pref: e.target.value })}
+                    onChange={(e) => patchAccountData({ guidebook_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
                     <option value="Print">Print</option>
                     <option value="Digital">Digital</option>
                   </select>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <Button
+                    onClick={handlePublicationPreferencesSave}
+                    disabled={savingPreferences || !publicationPreferencesDirty}
+                    className="h-12 w-full rounded-full bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
+                  >
+                    {savingPreferences ? 'Saving...' : 'Save Publication Preferences'}
+                  </Button>
+                  <p className="text-sm text-black/60">
+                    Saving here updates your member profile and triggers the outbound Salesforce field sync queue.
+                  </p>
                 </div>
 
               </div>

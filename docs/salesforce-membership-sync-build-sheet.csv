@@ -1,0 +1,66 @@
+salesforce_object,field_label,field_api_name,field_type,field_kind,relationship_or_record_type,external_id,unique,required,recommended_wordpress_source,sync_direction,notes
+Contact,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",Custom field,,Yes,Yes,Yes,member_db.profile_row.user_id,WordPress -> Salesforce,Primary cross-system key for Contact matching.
+Contact,AAC Member ID,AAC_Member_ID__c,Text(255),Custom field,,No,No,No,member_db.profile_row.member_id,WordPress -> Salesforce,Member-facing AAC ID if available.
+Contact,Current Membership Level,Current_Membership_Level__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_level,Bidirectional,Current active level snapshot for reporting and segmentation.
+Contact,Current Membership Status,Current_Membership_Status__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_status,Bidirectional,Snapshot field only; historical term status belongs on Membership_Term__c.
+Contact,Current Term Start Date,Current_Term_Start_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.renewal_date or membership term start,Bidirectional,Prefer to derive from current active membership term.
+Contact,Current Term End Date,Current_Term_End_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.expiration_date,Bidirectional,Prefer to derive from current active membership term.
+Contact,Family Membership,Family_Membership__c,Checkbox,Custom field,,No,No,No,member_db.profile.family_membership.mode,Bidirectional,True when the member purchased or currently holds a family plan.
+Contact,Family Account Role,Family_Account_Role__c,Picklist,Custom field,,No,No,No,member_db.profile_row.account_role,Bidirectional,Values like Parent or Child.
+Contact,Discount Group,Discount_Group__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.membership_discount_type,Bidirectional,Student/Military or other AAC-defined discount grouping.
+Contact,Auto Renew,Auto_Renew__c,Checkbox,Custom field,,No,No,No,member_db.profile.account_info.auto_renew,Bidirectional,Helpful contact-level snapshot even though billing system owns the real subscription.
+Contact,Publication Preference,Publication_Preference__c,Text(255),Custom field,,No,No,No,member_db.profile.account_info.publication_pref,Bidirectional,Top-level publication preference snapshot.
+Contact,T-Shirt Size,T_Shirt_Size__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.size,Bidirectional,Use the current WordPress picklist labels exactly if possible.
+Contact,Profile Photo URL,AAC_Profile_Photo_URL__c,URL,Custom field,,No,No,No,member_db.profile.account_info.photo_url,WordPress -> Salesforce,Use a custom writable URL field; do not map to Salesforce standard PhotoUrl.
+Contact,Birthdate,Birthdate,Date,Standard field,,No,No,No,member_db.profile.account_info.birthdate,Bidirectional,Standard Salesforce Contact birthdate field.
+Opportunity,Membership Revenue Record Type,RecordTypeId,Record Type,Standard field,Membership,No,No,Yes,system assigned,Salesforce internal,Use a dedicated Membership Opportunity record type.
+Opportunity,Amount,Amount,Currency,Standard field,,No,No,Yes,member_db.transaction_record.total,WordPress -> Salesforce,Total paid for the purchase or renewal.
+Opportunity,Close Date,CloseDate,Date,Standard field,,No,No,Yes,member_db.transaction_record.timestamp,WordPress -> Salesforce,Use payment/transaction date.
+Opportunity,Stage,StageName,Picklist,Standard field,,No,No,Yes,derived from successful payment,WordPress -> Salesforce,Set to Closed Won for paid membership transactions.
+Opportunity,WordPress Order ID,WordPress_Order_ID__c,"Number(18,0)",Custom field,,Yes,Yes,Yes,member_db.transaction_record.id,WordPress -> Salesforce,Primary external key for one opportunity per WordPress order.
+Opportunity,AAC External Key,AAC_External_Key__c,Text(255),Custom field,,No,No,No,aac_external_key or generated term key,WordPress -> Salesforce,Optional secondary cross-system key.
+Opportunity,Membership Level,Membership_Level__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_level,WordPress -> Salesforce,Level that was purchased or renewed.
+Opportunity,Membership Action,Membership_Action__c,Picklist,Custom field,,No,No,No,derived from checkout context,WordPress -> Salesforce,Values like New/Renewal/Upgrade/Downgrade.
+Opportunity,Membership Term Start Date,Membership_Term_Start_Date__c,Date,Custom field,,No,No,No,current membership term start,WordPress -> Salesforce,Snapshot of the created term dates for easy revenue reporting.
+Opportunity,Membership Term End Date,Membership_Term_End_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.expiration_date,WordPress -> Salesforce,Snapshot of the created term dates for easy revenue reporting.
+Opportunity,Discount Group,Discount_Group__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.membership_discount_type,WordPress -> Salesforce,Discount used at purchase.
+Opportunity,Family Membership,Family_Membership__c,Checkbox,Custom field,,No,No,No,member_db.profile.family_membership.mode,WordPress -> Salesforce,Whether this purchase included family membership treatment.
+Opportunity,Source System,Source_System__c,Picklist,Custom field,,No,No,No,hardcoded WordPress/PMPro,WordPress -> Salesforce,Use for integration provenance.
+Opportunity,PMPro Code,PMPro_Code__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.code,WordPress -> Salesforce,Order or discount code from PMPro.
+Opportunity,Gateway,Gateway__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.gateway,WordPress -> Salesforce,Stripe/PayPal/etc.
+Opportunity,Auto Renew,Auto_Renew__c,Checkbox,Custom field,,No,No,No,member_db.profile.account_info.auto_renew,WordPress -> Salesforce,Snapshot of subscription intent at the time of purchase.
+Membership_Term__c,Name,Name,Auto Number,Standard field,,No,No,Yes,system assigned,Salesforce internal,Use auto number rather than text naming.
+Membership_Term__c,Contact,Contact__c,Lookup(Contact),Custom field,Contact,No,No,Yes,member matched by WordPress user id,Bidirectional,Each term belongs to one member contact.
+Membership_Term__c,Opportunity,Opportunity__c,Lookup(Opportunity),Custom field,Opportunity,No,No,Yes,created membership Opportunity,Bidirectional,Financial parent for the membership term.
+Membership_Term__c,WordPress User ID,WordPress_User_ID__c,"Number(18,0)",Custom field,,No,No,Yes,member_db.profile_row.user_id,WordPress -> Salesforce,Helpful denormalized matching field on the term record.
+Membership_Term__c,AAC External Key,AAC_External_Key__c,Text(255),Custom field,,Yes,Yes,Yes,generated per term,WordPress -> Salesforce,Best external key for term upsert and superseding logic.
+Membership_Term__c,Membership Level,Membership_Level__c,Picklist,Custom field,,No,No,Yes,member_db.profile_row.membership_level,Bidirectional,Level for this specific term.
+Membership_Term__c,Status,Status__c,Picklist,Custom field,,No,No,Yes,member_db.profile_row.membership_status,Bidirectional,Values like Active/Scheduled/Expired/Cancelled/Superseded.
+Membership_Term__c,Start Date,Start_Date__c,Date,Custom field,,No,No,Yes,current term start,Bidirectional,The actual start of coverage/access.
+Membership_Term__c,End Date,End_Date__c,Date,Custom field,,No,No,Yes,member_db.profile_row.expiration_date,Bidirectional,The actual end of coverage/access.
+Membership_Term__c,Renewal Date,Renewal_Date__c,Date,Custom field,,No,No,No,member_db.profile_row.renewal_date,Bidirectional,Optional if AAC distinguishes renewal from start date.
+Membership_Term__c,Auto Renew,Auto_Renew__c,Checkbox,Custom field,,No,No,No,member_db.profile.account_info.auto_renew,Bidirectional,Subscription intent for this term.
+Membership_Term__c,Family Membership,Family_Membership__c,Checkbox,Custom field,,No,No,No,member_db.profile.family_membership.mode,Bidirectional,Whether this term includes family-plan treatment.
+Membership_Term__c,Family Account Role,Family_Account_Role__c,Picklist,Custom field,,No,No,No,member_db.profile_row.account_role,Bidirectional,Parent/Child role at the time of the term.
+Membership_Term__c,Discount Group,Discount_Group__c,Picklist,Custom field,,No,No,No,member_db.profile.account_info.membership_discount_type,Bidirectional,Discount bucket attached to the term.
+Membership_Term__c,Rescue Benefit Amount,Rescue_Benefit_Amount__c,Currency,Custom field,,No,No,No,member_db.profile.benefits_info.rescue_amount,WordPress -> Salesforce,Current rescue coverage for the term.
+Membership_Term__c,Medical Benefit Amount,Medical_Benefit_Amount__c,Currency,Custom field,,No,No,No,member_db.profile.benefits_info.medical_amount,WordPress -> Salesforce,Current medical coverage for the term.
+Membership_Term__c,Mortal Remains Amount,Mortal_Remains_Amount__c,Currency,Custom field,,No,No,No,member_db.profile.benefits_info.mortal_remains_amount,WordPress -> Salesforce,Current mortal remains transport coverage for the term.
+Membership_Term__c,Rescue Reimbursement Process,Rescue_Reimbursement_Process__c,Checkbox,Custom field,,No,No,No,member_db.profile.benefits_info.rescue_reimbursement_process,WordPress -> Salesforce,Boolean coverage/process flag.
+Membership_Term__c,Previous Term,Previous_Term__c,Lookup(Membership_Term__c),Custom field,Membership_Term__c,No,No,No,previous active term lookup,Salesforce internal,Use in automation when rolling to a new membership term.
+Membership_Term__c,Superseded By,Superseded_By__c,Lookup(Membership_Term__c),Custom field,Membership_Term__c,No,No,No,new replacement term lookup,Salesforce internal,Use to point old active term to the new one.
+Payment_Transaction__c,Name,Name,Auto Number,Standard field,,No,No,Yes,system assigned,Salesforce internal,Use auto number for the raw payment audit object.
+Payment_Transaction__c,Contact,Contact__c,Lookup(Contact),Custom field,Contact,No,No,Yes,member matched by WordPress user id,Bidirectional,Every transaction should point back to the member.
+Payment_Transaction__c,Opportunity,Opportunity__c,Lookup(Opportunity),Custom field,Opportunity,No,No,No,created membership Opportunity,Bidirectional,Link raw payment to the revenue record.
+Payment_Transaction__c,Membership Term,Membership_Term__c,Lookup(Membership_Term__c),Custom field,Membership_Term__c,No,No,No,created membership term,Bidirectional,Link raw payment to the coverage term it created.
+Payment_Transaction__c,PMPro Order ID,PMPro_Order_ID__c,"Number(18,0)",Custom field,,Yes,Yes,Yes,member_db.transaction_record.id,WordPress -> Salesforce,Primary external key for transaction upsert.
+Payment_Transaction__c,Payment Transaction ID,Payment_Transaction_ID__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.payment_transaction_id,WordPress -> Salesforce,Gateway transaction identifier.
+Payment_Transaction__c,Subscription Transaction ID,Subscription_Transaction_ID__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.subscription_transaction_id,WordPress -> Salesforce,Recurring subscription identifier if present.
+Payment_Transaction__c,Amount,Amount__c,Currency,Custom field,,No,No,Yes,member_db.transaction_record.total,WordPress -> Salesforce,Total transaction amount.
+Payment_Transaction__c,Subtotal,Subtotal__c,Currency,Custom field,,No,No,No,member_db.transaction_record.subtotal,WordPress -> Salesforce,Optional separate subtotal if useful for reporting.
+Payment_Transaction__c,Tax,Tax__c,Currency,Custom field,,No,No,No,member_db.transaction_record.tax,WordPress -> Salesforce,Optional tax field.
+Payment_Transaction__c,Status,Status__c,Picklist,Custom field,,No,No,No,member_db.transaction_record.status,WordPress -> Salesforce,Raw transaction/payment status from PMPro.
+Payment_Transaction__c,Gateway,Gateway__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.gateway,WordPress -> Salesforce,Stripe/PayPal/etc.
+Payment_Transaction__c,Transaction Date,Transaction_Date__c,Date/Time,Custom field,,No,No,Yes,member_db.transaction_record.timestamp,WordPress -> Salesforce,Raw payment timestamp.
+Payment_Transaction__c,Code,Code__c,Text(255),Custom field,,No,No,No,member_db.transaction_record.code,WordPress -> Salesforce,PMPro order/discount/reference code.
+Payment_Transaction__c,Membership Level,Membership_Level__c,Picklist,Custom field,,No,No,No,member_db.profile_row.membership_level,WordPress -> Salesforce,Denormalized level for easy payment reporting.

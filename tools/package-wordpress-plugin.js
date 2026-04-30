@@ -12,6 +12,12 @@ const pluginDir = path.join(projectRoot, 'wordpress', 'aac-member-portal');
 const pluginAppDir = path.join(pluginDir, 'app');
 const pluginZipPath = path.join(projectRoot, 'wordpress', 'aac-member-portal.zip');
 const execFileAsync = promisify(execFile);
+const EXTRA_PLUGIN_ASSETS = [
+  {
+    source: path.join(projectRoot, 'src', 'assets', 'photographers-hero.jpg'),
+    target: path.join(pluginAppDir, 'assets', 'photographers-hero.jpg'),
+  },
+];
 
 const JS_COMPATIBILITY_ALIASES = [
   'index-154a6d6e.js',
@@ -48,6 +54,10 @@ const MEDIA_COMPATIBILITY_ALIASES = [
   {
     pattern: /^join-hero-uploaded-video-web-[^.]+\.webm$/,
     alias: 'join-hero-uploaded-video-web.webm',
+  },
+  {
+    pattern: /^photographers-hero-[^.]+\.jpg$/,
+    alias: 'photographers-hero.jpg',
   },
 ];
 
@@ -102,6 +112,15 @@ async function createPluginZip() {
   });
 }
 
+async function copyExtraPluginAssets() {
+  await Promise.all(
+    EXTRA_PLUGIN_ASSETS.map(async ({ source, target }) => {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.copyFile(source, target);
+    }),
+  );
+}
+
 async function main() {
   await ensureDirectoryExists(distDir);
   await ensureDirectoryExists(pluginDir);
@@ -109,6 +128,7 @@ async function main() {
   await fs.rm(pluginAppDir, { recursive: true, force: true });
   await fs.mkdir(pluginAppDir, { recursive: true });
   await fs.cp(distDir, pluginAppDir, { recursive: true });
+  await copyExtraPluginAssets();
   await createCompatibilityAliases();
   await createPluginZip();
 

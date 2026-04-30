@@ -4,6 +4,7 @@ import { normalizeAccountInfo } from '@/lib/memberProfile';
 
 const USERS_KEY = 'aac_fake_users_v1';
 const SESSION_KEY = 'aac_fake_session_v1';
+const PODCAST_LISTENS_KEY = 'aac_fake_podcast_listens_v1';
 
 const defaultPodcasts = AAC_CUTTING_EDGE_PODCASTS;
 
@@ -48,6 +49,10 @@ const saveSession = (session) => writeJson(SESSION_KEY, session);
 
 const clearSession = () => localStorage.removeItem(SESSION_KEY);
 
+const getPodcastListens = () => readJson(PODCAST_LISTENS_KEY, []);
+
+const savePodcastListens = (rows) => writeJson(PODCAST_LISTENS_KEY, rows);
+
 const getDefaultProfile = ({ email, firstName, lastName }) => ({
   account_info: normalizeAccountInfo({
     first_name: firstName || '',
@@ -60,14 +65,12 @@ const getDefaultProfile = ({ email, firstName, lastName }) => ({
     state: '',
     zip: '',
     country: 'US',
-    size: 'M',
-    publication_pref: 'Digital',
+    size: 'No T-shirt',
     aaj_pref: 'Digital',
     anac_pref: 'Digital',
     acj_pref: 'Digital',
     guidebook_pref: 'Digital',
     auto_renew: false,
-    payment_method: '',
   }),
   profile_info: {
     member_id: `AAC-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -289,6 +292,58 @@ export const fakeAuthDb = {
     };
   },
 
+  async submitGrantApplication(payload = {}) {
+    const { user, users } = requireCurrentUser();
+    const fields = Array.isArray(payload.fields)
+      ? payload.fields.map((field) => ({
+          field_key: String(field.field_key || '').trim(),
+          label: String(field.label || '').trim(),
+          type: String(field.type || '').trim(),
+          value: String(field.value || '').trim(),
+        }))
+      : [];
+    const fieldValue = (fieldKey) => fields.find((field) => field.field_key === fieldKey)?.value || '';
+    const nextApplication = {
+      id: makeId('grant'),
+      review_application_id: null,
+      grant_slug: String(payload.grant_slug || '').trim(),
+      grant_name: String(payload.grant_name || '').trim(),
+      category: String(payload.category || '').trim(),
+      application_date: new Date().toISOString(),
+      status: 'Submitted',
+      status_key: 'submitted',
+      project_title: String(payload.project_title || fieldValue('project_title') || '').trim(),
+      requested_amount: String(payload.requested_amount || fieldValue('requested_amount') || '').trim(),
+      objective_location: String(payload.objective_location || fieldValue('objective_location') || '').trim(),
+      discipline: String(payload.discipline || fieldValue('discipline') || '').trim(),
+      team_name: String(payload.team_name || fieldValue('team_name') || '').trim(),
+      summary: String(payload.summary || fieldValue('summary') || '').trim(),
+      fields,
+      last_note: '',
+      reviewed_at: '',
+    };
+
+    const nextProfile = mergeProfile(user.profile, {
+      grant_applications: [nextApplication, ...(user.profile?.grant_applications || [])],
+    });
+
+    const nextUsers = users.map((entry) => (
+      entry.id === user.id
+        ? { ...entry, profile: nextProfile }
+        : entry
+    ));
+
+    saveUsers(nextUsers);
+    const nextUser = nextUsers.find((entry) => entry.id === user.id);
+
+    return {
+      success: true,
+      application: nextApplication,
+      profile: nextUser.profile,
+      fakeBackend: true,
+    };
+  },
+
   async submitContactMessage({ name, email, message }) {
     const existing = readJson('aac_fake_contact_messages_v1', []);
     existing.unshift({
@@ -305,6 +360,75 @@ export const fakeAuthDb = {
   async getLatestPodcasts() {
     return {
       podcasts: defaultPodcasts,
+      fakeBackend: true,
+    };
+  },
+
+  async recordPodcastListen(payload = {}) {
+    const { user } = requireCurrentUser();
+    const episodeId = String(payload.episode_id || '').trim();
+    if (!episodeId) {
+      throw new Error('Episode ID is required.');
+    }
+
+    const normalizedStatus = String(payload.status || 'started').trim().toLowerCase() === 'completed'
+      ? 'completed'
+      : 'started';
+    const completionPercent = Number.isFinite(Number(payload.completion_percent))
+      ? Math.max(0, Math.min(100, Number(payload.completion_percent)))
+      : 0;
+    const now = new Date().toISOString();
+    const listens = getPodcastListens();
+    const existingIndex = listens.findIndex((entry) => entry.user_id === user.id && entry.episode_id === episodeId);
+    const existing = existingIndex >= 0 ? listens[existingIndex] : null;
+    const durationMs = Number.isFinite(Number(payload.duration_ms)) ? Math.max(0, Number(payload.duration_ms)) : Number(existing?.duration_ms || 0);
+    let lastPositionMs = Number.isFinite(Number(payload.last_position_ms))
+      ? Math.max(0, Number(payload.last_position_ms))
+      : Number(existing?.last_position_ms || 0);
+    const resolvedCompletionPercent = normalizedStatus === 'completed'
+      ? Math.max(completionPercent, Number(existing?.completion_percent || 0), 100)
+      : Math.max(completionPercent, Number(existing?.completion_percent || 0));
+
+    if (normalizedStatus === 'completed' && durationMs > 0) {
+      lastPositionMs = Math.max(lastPositionMs, durationMs);
+    } else {
+      lastPositionMs = Math.max(lastPositionMs, Number(existing?.last_position_ms || 0));
+    }
+
+    const nextRow = {
+      id: existing?.id || makeId('podcast'),
+      user_id: user.id,
+      episode_id: episodeId,
+      episode_title: String(payload.episode_title || existing?.episode_title || '').trim(),
+      source_url: String(payload.source_url || existing?.source_url || '').trim(),
+      source_page_url: String(payload.source_page_url || existing?.source_page_url || '').trim(),
+      embed_url: String(payload.embed_url || existing?.embed_url || '').trim(),
+      status: normalizedStatus === 'completed' || existing?.status === 'completed' ? 'completed' : 'started',
+      completion_percent: resolvedCompletionPercent,
+      duration_ms: durationMs,
+      last_position_ms: lastPositionMs,
+      started_at: existing?.started_at || now,
+      completed_at: normalizedStatus === 'completed'
+        ? now
+        : (existing?.completed_at || ''),
+      completion_count: normalizedStatus === 'completed'
+        ? Number(existing?.completion_count || 0) + 1
+        : Number(existing?.completion_count || 0),
+      last_event_at: now,
+      raw_payload: payload,
+    };
+
+    if (existingIndex >= 0) {
+      listens[existingIndex] = nextRow;
+    } else {
+      listens.unshift(nextRow);
+    }
+
+    savePodcastListens(listens);
+
+    return {
+      success: true,
+      listen: nextRow,
       fakeBackend: true,
     };
   },

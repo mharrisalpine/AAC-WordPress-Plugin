@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { createDonationPaymentIntent, formatDollars } from '@/lib/fakePaymentFlows';
 import { useFakePayment } from '@/hooks/useFakePayment';
+import grandTetonHero from '@/assets/grand-teton-hero.jpg';
 
 const DONATION_FUNDS = [
   'General AAC Fund',
@@ -49,10 +50,10 @@ const DonationPage = () => {
         <title>Donate - American Alpine Club</title>
         <meta name="description" content="Support the American Alpine Club by making a donation." />
       </Helmet>
-      <div className="relative min-h-screen overflow-hidden pt-24">
+      <div className="relative min-h-[100svh] overflow-hidden">
         <div className="absolute inset-0 bg-[#030000]" />
         <motion.img
-          src="https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Fillers.jpg"
+          src={grandTetonHero}
           alt=""
           aria-hidden="true"
           className="absolute inset-0 h-full w-full object-cover opacity-30"
@@ -75,7 +76,7 @@ const DonationPage = () => {
           transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
         />
 
-        <div className="relative mx-auto grid max-w-[1600px] gap-8 px-4 pb-16 sm:px-6 lg:grid-cols-[0.92fr,1.08fr] lg:items-start lg:px-10 xl:px-14">
+        <div className="relative mx-auto grid min-h-[100svh] max-w-[1600px] gap-8 px-4 pb-16 pt-[calc(var(--aac-portal-header-height)+1.5rem)] sm:px-6 sm:pt-[calc(var(--aac-portal-header-height)+2rem)] lg:grid-cols-[0.92fr,1.08fr] lg:items-start lg:px-10 xl:px-14 xl:pt-[calc(var(--aac-portal-header-height)+2.5rem)]">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}

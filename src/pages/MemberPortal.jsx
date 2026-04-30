@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { useOutletContext, useLocation } from 'react-router-dom';
 import ProfileTab from '@/components/tabs/ProfileTab';
-import RescueTab from '@/components/tabs/RescueTab';
 import DiscountsTab from '@/components/tabs/DiscountsTab';
 import StoreTab from '@/components/tabs/StoreTab';
 import AccountTab from '@/components/tabs/AccountTab';
@@ -23,7 +22,7 @@ const MemberPortal = ({ storeTab }) => {
 
   useEffect(() => {
     const tabFromUrl = location.pathname.substring(1);
-    if (['rescue', 'discounts', 'store', 'podcasts', 'account'].includes(tabFromUrl)) {
+    if (['discounts', 'store', 'podcasts', 'account'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     } else if (storeTab) {
       setActiveTab(storeTab);
@@ -56,8 +55,6 @@ const MemberPortal = ({ storeTab }) => {
     switch (activeTab) {
       case 'profile':
         return <ProfileTab profile={profile} />;
-      case 'rescue':
-        return <RescueTab profile={profile} />;
       case 'discounts':
         return <DiscountsTab profile={profile} />;
       case 'store':
