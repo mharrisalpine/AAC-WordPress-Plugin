@@ -724,6 +724,15 @@ class AAC_Member_Portal_Admin {
 			'dashicons-admin-generic',
 			56
 		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Member Portal Settings',
+			'Member Portal Settings',
+			'manage_options',
+			self::MENU_SLUG,
+			[$this, 'render_admin_page']
+		);
 	}
 
 	public function register_settings() {

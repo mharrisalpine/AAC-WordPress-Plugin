@@ -1529,6 +1529,11 @@ class AAC_Member_Portal_API {
 			'state' => sanitize_text_field($account_info['state'] ?? ''),
 			'zip' => sanitize_text_field($account_info['zip'] ?? ''),
 			'country' => sanitize_text_field($account_info['country'] ?? ''),
+			'emergency_contact_first_name' => sanitize_text_field($account_info['emergency_contact_first_name'] ?? ''),
+			'emergency_contact_last_name' => sanitize_text_field($account_info['emergency_contact_last_name'] ?? ''),
+			'emergency_contact_phone' => sanitize_text_field($account_info['emergency_contact_phone'] ?? ''),
+			'emergency_contact_email' => sanitize_email($account_info['emergency_contact_email'] ?? ''),
+			'emergency_contact_relationship' => sanitize_text_field($account_info['emergency_contact_relationship'] ?? ''),
 			'size' => $this->normalize_tshirt_size_value($account_info['size'] ?? $stored_tshirt_size, $stored_tshirt_size),
 			'email_opt_out' => !empty($account_info['email_opt_out']),
 			'do_not_call' => !empty($account_info['do_not_call']),
@@ -1553,6 +1558,11 @@ class AAC_Member_Portal_API {
 			'state',
 			'zip',
 			'country',
+			'emergency_contact_first_name',
+			'emergency_contact_last_name',
+			'emergency_contact_phone',
+			'emergency_contact_email',
+			'emergency_contact_relationship',
 			'size',
 			'email_opt_out',
 			'do_not_call',
@@ -1632,6 +1642,42 @@ class AAC_Member_Portal_API {
 		$account_info['state'] = $this->get_preferred_user_meta_value($user_id, ['bstate'], $account_info['state'] ?? '');
 		$account_info['zip'] = $this->get_preferred_user_meta_value($user_id, ['bzipcode'], $account_info['zip'] ?? '');
 		$account_info['country'] = $this->get_preferred_user_meta_value($user_id, ['bcountry'], $account_info['country'] ?? '');
+		$account_info['emergency_contact_first_name'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value(
+				$user_id,
+				$this->get_emergency_contact_meta_key_candidates('emergency_contact_first_name'),
+				$account_info['emergency_contact_first_name'] ?? ''
+			)
+		);
+		$account_info['emergency_contact_last_name'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value(
+				$user_id,
+				$this->get_emergency_contact_meta_key_candidates('emergency_contact_last_name'),
+				$account_info['emergency_contact_last_name'] ?? ''
+			)
+		);
+		$account_info['emergency_contact_phone'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value(
+				$user_id,
+				$this->get_emergency_contact_meta_key_candidates('emergency_contact_phone'),
+				$account_info['emergency_contact_phone'] ?? ''
+			)
+		);
+		$account_info['emergency_contact_email'] = sanitize_email(
+			$this->get_preferred_user_meta_value(
+				$user_id,
+				$this->get_emergency_contact_meta_key_candidates('emergency_contact_email'),
+				$account_info['emergency_contact_email'] ?? ''
+			)
+		);
+		$account_info['emergency_contact_relationship'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value(
+				$user_id,
+				$this->get_emergency_contact_meta_key_candidates('emergency_contact_relationship'),
+				$account_info['emergency_contact_relationship'] ?? ''
+			)
+		);
+		$account_info['emergency_contact_relationship_options'] = $this->get_emergency_contact_relationship_options();
 		$account_info['birthdate'] = $this->sanitize_birthdate_value(
 			$this->get_preferred_user_meta_value($user_id, ['birthdate'], $account_info['birthdate'] ?? '')
 		);
@@ -1675,6 +1721,71 @@ class AAC_Member_Portal_API {
 
 		$normalized = strtolower(trim((string) $value));
 		return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+	}
+
+	private function get_emergency_contact_meta_key_candidates($logical_key) {
+		$fallback_map = [
+			'emergency_contact_first_name' => ['emergency_contact_first_name', 'emergency_first_name', 'emergency_first'],
+			'emergency_contact_last_name' => ['emergency_contact_last_name', 'emergency_last_name', 'emergency_last'],
+			'emergency_contact_phone' => ['emergency_contact_phone', 'emergency_phone', 'emergency_contact_phone_number'],
+			'emergency_contact_email' => ['emergency_contact_email', 'emergency_email'],
+			'emergency_contact_relationship' => ['emergency_contact_relationship', 'emergency_relationship'],
+		];
+
+		$candidates = $fallback_map[$logical_key] ?? [$logical_key];
+		if (function_exists('aac_member_portal') && aac_member_portal() && method_exists(aac_member_portal(), 'get_emergency_contact_meta_key_candidates')) {
+			$resolved = aac_member_portal()->get_emergency_contact_meta_key_candidates($logical_key);
+			if (is_array($resolved) && !empty($resolved)) {
+				$candidates = array_merge($resolved, $candidates);
+			}
+		}
+
+		$normalized = [];
+		foreach ($candidates as $candidate) {
+			$normalized_candidate = sanitize_key((string) $candidate);
+			if ($normalized_candidate !== '' && !in_array($normalized_candidate, $normalized, true)) {
+				$normalized[] = $normalized_candidate;
+			}
+		}
+
+		return $normalized;
+	}
+
+	private function get_emergency_contact_relationship_options() {
+		$options = [];
+		if (function_exists('aac_member_portal') && aac_member_portal() && method_exists(aac_member_portal(), 'get_emergency_contact_relationship_options')) {
+			$options = aac_member_portal()->get_emergency_contact_relationship_options();
+		}
+
+		if (!is_array($options) || empty($options)) {
+			$options = [
+				['value' => 'Spouse / Partner', 'label' => 'Spouse / Partner'],
+				['value' => 'Parent', 'label' => 'Parent'],
+				['value' => 'Sibling', 'label' => 'Sibling'],
+				['value' => 'Child', 'label' => 'Child'],
+				['value' => 'Friend', 'label' => 'Friend'],
+				['value' => 'Other', 'label' => 'Other'],
+			];
+		}
+
+		return array_values(array_filter(array_map(static function ($option) {
+			if (is_string($option)) {
+				$value = trim($option);
+				return $value === '' ? null : ['value' => $value, 'label' => $value];
+			}
+
+			if (!is_array($option)) {
+				return null;
+			}
+
+			$value = sanitize_text_field($option['value'] ?? $option['label'] ?? '');
+			$label = sanitize_text_field($option['label'] ?? $option['value'] ?? '');
+			if ($value === '' || $label === '') {
+				return null;
+			}
+
+			return ['value' => $value, 'label' => $label];
+		}, $options)));
 	}
 
 	private function sanitize_profile_info($profile_info) {

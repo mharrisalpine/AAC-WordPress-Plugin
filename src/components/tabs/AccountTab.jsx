@@ -126,6 +126,16 @@ const AccountTab = ({ profile }) => {
 
   const currentProfileAccountInfo = normalizeAccountInfo(profile?.account_info || {});
   const publicationFieldKeys = ['aaj_pref', 'anac_pref', 'acj_pref', 'guidebook_pref'];
+  const emergencyRelationshipOptions = Array.isArray(accountData?.emergency_contact_relationship_options) && accountData.emergency_contact_relationship_options.length
+    ? accountData.emergency_contact_relationship_options
+    : [
+        { value: 'Spouse / Partner', label: 'Spouse / Partner' },
+        { value: 'Parent', label: 'Parent' },
+        { value: 'Sibling', label: 'Sibling' },
+        { value: 'Child', label: 'Child' },
+        { value: 'Friend', label: 'Friend' },
+        { value: 'Other', label: 'Other' },
+      ];
   const publicationPreferencesDirty = publicationFieldKeys.some(
     (key) => (accountData?.[key] || '') !== (currentProfileAccountInfo?.[key] || '')
   );
@@ -402,6 +412,75 @@ const AccountTab = ({ profile }) => {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-stone-200 bg-white/70 p-4">
+                  <div>
+                    <h4 className="text-base font-semibold text-black">Emergency Contact</h4>
+                    <p className="text-sm text-black/60">
+                      This information comes from your PMPro Emergency Contact user fields and is saved with your member profile.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="emergency_contact_first_name" className="text-black">First Name</Label>
+                      <Input
+                        id="emergency_contact_first_name"
+                        value={accountData.emergency_contact_first_name || ''}
+                        onChange={(e) => patchAccountData({ emergency_contact_first_name: e.target.value })}
+                        className="bg-white border-[#d9d9d9] text-black mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="emergency_contact_last_name" className="text-black">Last Name</Label>
+                      <Input
+                        id="emergency_contact_last_name"
+                        value={accountData.emergency_contact_last_name || ''}
+                        onChange={(e) => patchAccountData({ emergency_contact_last_name: e.target.value })}
+                        className="bg-white border-[#d9d9d9] text-black mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="emergency_contact_phone" className="text-black">Phone Number</Label>
+                      <Input
+                        id="emergency_contact_phone"
+                        value={accountData.emergency_contact_phone || ''}
+                        onChange={(e) => patchAccountData({ emergency_contact_phone: e.target.value })}
+                        className="bg-white border-[#d9d9d9] text-black mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="emergency_contact_email" className="text-black">Email</Label>
+                      <Input
+                        id="emergency_contact_email"
+                        type="email"
+                        value={accountData.emergency_contact_email || ''}
+                        onChange={(e) => patchAccountData({ emergency_contact_email: e.target.value })}
+                        className="bg-white border-[#d9d9d9] text-black mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="emergency_contact_relationship" className="text-black">Relationship</Label>
+                    <select
+                      id="emergency_contact_relationship"
+                      value={accountData.emergency_contact_relationship || ''}
+                      onChange={(e) => patchAccountData({ emergency_contact_relationship: e.target.value })}
+                      className="mt-1 flex h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black"
+                    >
+                      <option value="">Select relationship</option>
+                      {emergencyRelationshipOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="space-y-3 rounded-xl border border-stone-200 bg-white/70 p-4">

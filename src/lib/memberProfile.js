@@ -134,6 +134,32 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.state = normalized.state || '';
   normalized.zip = normalized.zip || '';
   normalized.country = normalized.country || '';
+  normalized.emergency_contact_first_name = normalized.emergency_contact_first_name || '';
+  normalized.emergency_contact_last_name = normalized.emergency_contact_last_name || '';
+  normalized.emergency_contact_phone = normalized.emergency_contact_phone || '';
+  normalized.emergency_contact_email = normalized.emergency_contact_email || '';
+  normalized.emergency_contact_relationship = normalized.emergency_contact_relationship || '';
+  normalized.emergency_contact_relationship_options = Array.isArray(normalized.emergency_contact_relationship_options)
+    ? normalized.emergency_contact_relationship_options
+        .map((option) => {
+          if (typeof option === 'string') {
+            return { value: option, label: option };
+          }
+
+          if (option && typeof option === 'object') {
+            const value = String(option.value || option.label || '').trim();
+            const label = String(option.label || option.value || '').trim();
+            if (!value || !label) {
+              return null;
+            }
+
+            return { value, label };
+          }
+
+          return null;
+        })
+        .filter(Boolean)
+    : [];
   normalized.publication_pref = derivedPublicationPref;
   normalized.aaj_pref = normalizePrintDigitalPreference(normalized.aaj_pref, derivedPublicationPref);
   normalized.anac_pref = normalizePrintDigitalPreference(normalized.anac_pref, derivedPublicationPref);

@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { useToast } from '@/components/ui/use-toast';
 import { scheduleLinkedAccountRemoval } from '@/lib/memberApi';
-import { canManageGrantApprovals, getRescuePageUrl } from '@/lib/backendConfig';
+import { getRescuePageUrl } from '@/lib/backendConfig';
 import { formatGrantApplicationDate, grantStatusClassName, normalizeGrantApplications } from '@/lib/grants';
 import { getTierDisplayLabel } from '@/lib/membershipTiers';
 import { formatTShirtSizeLabel, normalizePrintDigitalPreference } from '@/lib/memberProfile';
@@ -124,7 +124,6 @@ const MemberProfilePage = () => {
   const portalUiSettings = getPortalUiSettings();
   const portalContent = portalUiSettings.content;
   const portalDesign = portalUiSettings.design;
-  const showGrantApprovalsCard = canManageGrantApprovals();
   const location = useLocation();
   const [removingSlotId, setRemovingSlotId] = React.useState('');
 
@@ -570,28 +569,6 @@ const MemberProfilePage = () => {
                   onClick={() => navigate('/grants')}
                 >
                   View grants page
-                </Button>
-              </div>
-            </InfoCard>
-          ) : null}
-
-          {showGrantApprovalsCard ? (
-            <InfoCard
-              icon={Shield}
-              title="Grant Approvals"
-              description="Open the front-end reviewer workspace to assign volunteer reviewers, review submissions, and approve or reject applications."
-            >
-              <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 px-5 py-4 text-sm leading-6 text-stone-700">
-                This page opens the public-facing grants approval workspace, but only WordPress admins and reviewer-capable users can access it.
-              </div>
-              <div className="mt-5 flex justify-center">
-                <Button
-                  type="button"
-                  className="min-h-[3rem] rounded-full px-6"
-                  style={{ backgroundColor: portalDesign.primaryActionBackground, color: portalDesign.primaryActionText }}
-                  onClick={() => navigate('/grant-approvals')}
-                >
-                  Open grant approvals
                 </Button>
               </div>
             </InfoCard>

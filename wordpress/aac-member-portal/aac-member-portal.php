@@ -17,6 +17,7 @@ define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
 
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-pmpro.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-api.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-redpoint-api.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-admin.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-database.php';
 
@@ -46,10 +47,12 @@ final class AAC_Member_Portal_Plugin {
 		// 3. keep a mirrored member database around for reporting and review
 		// It is a lot, but at least the chaos is organized.
 		new AAC_Member_Portal_API();
+		new AAC_Member_Portal_Redpoint_API();
 		new AAC_Member_Portal_Admin();
 		new AAC_Member_Portal_Member_Database();
 
 		add_shortcode(self::SHORTCODE, [$this, 'render_shortcode']);
+		add_action('plugins_loaded', [$this, 'maybe_repair_pmpro_user_fields_settings'], 5);
 		add_action('plugins_loaded', [$this, 'maybe_disable_broken_wp_fusion_pmpro_hooks'], 100);
 		add_action('init', [$this, 'maybe_shim_broken_wp_fusion_user_service'], 20);
 		add_action('init', [$this, 'maybe_disable_broken_wp_fusion_pmpro_hooks'], 1000);
@@ -2017,6 +2020,61 @@ final class AAC_Member_Portal_Plugin {
 		return false;
 	}
 
+	public function maybe_repair_pmpro_user_fields_settings() {
+		$current_settings = get_option('pmpro_user_fields_settings', null);
+		if (!is_array($current_settings)) {
+			return;
+		}
+
+		$needs_update = false;
+		$normalized_settings = [];
+
+		foreach ($current_settings as $group) {
+			$group_data = is_object($group) ? get_object_vars($group) : (is_array($group) ? $group : []);
+			if (!$group_data) {
+				$needs_update = true;
+				continue;
+			}
+
+			$group_name = sanitize_text_field((string) ($group_data['name'] ?? ''));
+			if ($group_name === 'Emergency Contact') {
+				$needs_update = true;
+				continue;
+			}
+
+			$fields = $group_data['fields'] ?? [];
+			$normalized_fields = [];
+			if (is_array($fields)) {
+				foreach ($fields as $field) {
+					$field_data = is_object($field) ? get_object_vars($field) : (is_array($field) ? $field : []);
+					if (!$field_data) {
+						$needs_update = true;
+						continue;
+					}
+
+					if (is_array($field)) {
+						$needs_update = true;
+					}
+
+					$normalized_fields[] = (object) $field_data;
+				}
+			} else {
+				$needs_update = true;
+			}
+
+			$group_data['fields'] = $normalized_fields;
+			if (is_array($group)) {
+				$needs_update = true;
+			}
+
+			$normalized_settings[] = (object) $group_data;
+		}
+
+		if ($needs_update) {
+			update_option('pmpro_user_fields_settings', $normalized_settings, false);
+		}
+	}
+
 	private function should_apply_international_print_surcharge($level_id = 0) {
 		return (int) $level_id === 3;
 	}
@@ -3021,6 +3079,13 @@ final class AAC_Member_Portal_Plugin {
 		update_user_meta($user_id, 'bstate', sanitize_text_field($account_info['state'] ?? ''));
 		update_user_meta($user_id, 'bzipcode', sanitize_text_field($account_info['zip'] ?? ''));
 		update_user_meta($user_id, 'bcountry', sanitize_text_field($account_info['country'] ?? ''));
+		$this->update_emergency_contact_user_meta($user_id, [
+			'emergency_contact_first_name' => sanitize_text_field($account_info['emergency_contact_first_name'] ?? ''),
+			'emergency_contact_last_name' => sanitize_text_field($account_info['emergency_contact_last_name'] ?? ''),
+			'emergency_contact_phone' => sanitize_text_field($account_info['emergency_contact_phone'] ?? ''),
+			'emergency_contact_email' => sanitize_email($account_info['emergency_contact_email'] ?? ''),
+			'emergency_contact_relationship' => sanitize_text_field($account_info['emergency_contact_relationship'] ?? ''),
+		]);
 		update_user_meta($user_id, 'aaj_preference', $this->normalize_print_digital_value($account_info['aaj_pref'] ?? 'Digital'));
 		update_user_meta($user_id, 'anac_preference', $this->normalize_print_digital_value($account_info['anac_pref'] ?? 'Digital'));
 		update_user_meta($user_id, 'american_climbing_journal_preference', $this->normalize_print_digital_value($account_info['acj_pref'] ?? 'Digital'));
@@ -3064,6 +3129,189 @@ final class AAC_Member_Portal_Plugin {
 		update_user_meta($user_id, 'aac_partner_family_additional_adult', !empty($family_config['additional_adult']) ? '1' : '0');
 		update_user_meta($user_id, 'aac_partner_family_dependents', max(0, (int) ($family_config['dependent_count'] ?? 0)));
 		update_user_meta($user_id, 'aac_family_account_role', $this->get_family_account_role($user_id, $family_config));
+	}
+
+	public function get_emergency_contact_meta_key_candidates($logical_key) {
+		$fallback_map = [
+			'emergency_contact_first_name' => ['emergency_contact_first_name', 'emergency_first_name', 'emergency_first'],
+			'emergency_contact_last_name' => ['emergency_contact_last_name', 'emergency_last_name', 'emergency_last'],
+			'emergency_contact_phone' => ['emergency_contact_phone', 'emergency_phone', 'emergency_contact_phone_number'],
+			'emergency_contact_email' => ['emergency_contact_email', 'emergency_email'],
+			'emergency_contact_relationship' => ['emergency_contact_relationship', 'emergency_relationship'],
+		];
+
+		$candidates = $fallback_map[$logical_key] ?? [$logical_key];
+		$config = $this->get_pmpro_emergency_contact_field_config();
+		if (!empty($config[$logical_key]['meta_key'])) {
+			array_unshift($candidates, $config[$logical_key]['meta_key']);
+		}
+
+		$normalized = [];
+		foreach ($candidates as $candidate) {
+			$normalized_candidate = sanitize_key((string) $candidate);
+			if ($normalized_candidate !== '' && !in_array($normalized_candidate, $normalized, true)) {
+				$normalized[] = $normalized_candidate;
+			}
+		}
+
+		return $normalized;
+	}
+
+	public function get_emergency_contact_relationship_options() {
+		$config = $this->get_pmpro_emergency_contact_field_config();
+		$options = $config['emergency_contact_relationship']['options'] ?? [];
+
+		return array_values(array_filter(array_map(static function ($option) {
+			if (is_string($option)) {
+				$value = trim($option);
+				return $value === '' ? null : ['value' => $value, 'label' => $value];
+			}
+
+			if (!is_array($option)) {
+				return null;
+			}
+
+			$value = sanitize_text_field($option['value'] ?? $option['label'] ?? '');
+			$label = sanitize_text_field($option['label'] ?? $option['value'] ?? '');
+			if ($value === '' || $label === '') {
+				return null;
+			}
+
+			return ['value' => $value, 'label' => $label];
+		}, $options)));
+	}
+
+	private function update_emergency_contact_user_meta($user_id, $account_info) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || !is_array($account_info)) {
+			return;
+		}
+
+		foreach ($this->get_pmpro_emergency_contact_field_config() as $logical_key => $field) {
+			$meta_key = sanitize_key((string) ($field['meta_key'] ?? ''));
+			if ($meta_key === '') {
+				continue;
+			}
+
+			$value = $account_info[$logical_key] ?? '';
+			update_user_meta($user_id, $meta_key, $value);
+		}
+	}
+
+	private function get_pmpro_emergency_contact_field_config() {
+		$config = [
+			'emergency_contact_first_name' => ['meta_key' => 'emergency_contact_first_name', 'label' => 'First Name', 'options' => []],
+			'emergency_contact_last_name' => ['meta_key' => 'emergency_contact_last_name', 'label' => 'Last Name', 'options' => []],
+			'emergency_contact_phone' => ['meta_key' => 'emergency_contact_phone', 'label' => 'Phone Number', 'options' => []],
+			'emergency_contact_email' => ['meta_key' => 'emergency_contact_email', 'label' => 'Email', 'options' => []],
+			'emergency_contact_relationship' => ['meta_key' => 'emergency_contact_relationship', 'label' => 'Relationship', 'options' => []],
+		];
+
+		$groups = get_option('pmpro_user_fields_settings', []);
+		if (!is_array($groups)) {
+			return $config;
+		}
+
+		foreach ($groups as $group) {
+			$group_data = is_object($group) ? get_object_vars($group) : (is_array($group) ? $group : []);
+			$group_name = sanitize_text_field($group_data['name'] ?? '');
+			if (strcasecmp($group_name, 'Emergency Contact') !== 0) {
+				continue;
+			}
+
+			$fields = $group_data['fields'] ?? [];
+			if (is_object($fields)) {
+				$fields = get_object_vars($fields);
+			}
+
+			if (!is_array($fields)) {
+				break;
+			}
+
+			foreach ($fields as $field) {
+				$field_data = is_object($field) ? get_object_vars($field) : (is_array($field) ? $field : []);
+				$meta_key = sanitize_key((string) ($field_data['name'] ?? ''));
+				$label = sanitize_text_field($field_data['label'] ?? '');
+				if ($meta_key === '' && $label === '') {
+					continue;
+				}
+
+				$slot = $this->match_emergency_contact_field_slot($meta_key, $label);
+				if (!$slot || !isset($config[$slot])) {
+					continue;
+				}
+
+				if ($meta_key !== '') {
+					$config[$slot]['meta_key'] = $meta_key;
+				}
+				if ($label !== '') {
+					$config[$slot]['label'] = $label;
+				}
+				if ($slot === 'emergency_contact_relationship') {
+					$config[$slot]['options'] = $this->normalize_pmpro_field_options($field_data['options'] ?? []);
+				}
+			}
+
+			break;
+		}
+
+		return $config;
+	}
+
+	private function match_emergency_contact_field_slot($meta_key, $label) {
+		$haystack = strtolower(trim($meta_key . ' ' . $label));
+		$haystack = str_replace(['-', '_'], ' ', $haystack);
+
+		if (strpos($haystack, 'relationship') !== false) {
+			return 'emergency_contact_relationship';
+		}
+		if (strpos($haystack, 'phone') !== false) {
+			return 'emergency_contact_phone';
+		}
+		if (strpos($haystack, 'email') !== false) {
+			return 'emergency_contact_email';
+		}
+		if (strpos($haystack, 'last') !== false) {
+			return 'emergency_contact_last_name';
+		}
+		if (strpos($haystack, 'first') !== false) {
+			return 'emergency_contact_first_name';
+		}
+
+		return null;
+	}
+
+	private function normalize_pmpro_field_options($options) {
+		if (is_object($options)) {
+			$options = get_object_vars($options);
+		}
+
+		if (!is_array($options)) {
+			return [];
+		}
+
+		$normalized = [];
+		foreach ($options as $key => $option) {
+			if (is_object($option)) {
+				$option = get_object_vars($option);
+			}
+
+			if (is_array($option)) {
+				$value = sanitize_text_field($option['value'] ?? $option['label'] ?? $option['text'] ?? $key);
+				$label = sanitize_text_field($option['label'] ?? $option['text'] ?? $option['value'] ?? $key);
+			} else {
+				$value = sanitize_text_field(is_string($key) ? $key : (string) $option);
+				$label = sanitize_text_field((string) $option);
+			}
+
+			if ($value === '' || $label === '') {
+				continue;
+			}
+
+			$normalized[] = ['value' => $value, 'label' => $label];
+		}
+
+		return $normalized;
 	}
 
 	private function sanitize_birthdate_value($value) {
@@ -3405,8 +3653,6 @@ final class AAC_Member_Portal_Plugin {
 		}
 		unset($section);
 
-		$sections = $this->append_admin_approval_sidebar_item($sections, true);
-
 		return array_values(array_filter($sections, static function ($section) {
 			return !empty($section['items']);
 		}));
@@ -3514,8 +3760,6 @@ final class AAC_Member_Portal_Plugin {
 		}
 		unset($section);
 
-		$sections = $this->append_admin_approval_sidebar_item($sections, false);
-
 		return array_values(array_filter($sections, static function ($section) {
 			return !empty($section['items']);
 		}));
@@ -3599,62 +3843,8 @@ final class AAC_Member_Portal_Plugin {
 			'events' => ['icon' => 'users', 'route' => '/meetups'],
 			'lodging' => ['icon' => 'bed', 'route' => '/lodging'],
 			'grants' => ['icon' => 'scroll-text', 'route' => '/grants'],
-			'grant_approval' => ['icon' => 'scroll-text', 'route' => '/grant-approvals'],
 			'contact' => ['icon' => 'mail', 'route' => '/contact'],
 		];
-	}
-
-	private function append_admin_approval_sidebar_item($sections, $template_mode = false) {
-		if (!current_user_can('manage_options')) {
-			return $sections;
-		}
-
-		$item = $template_mode
-			? [
-				'id' => 'grant_approval',
-				'label' => 'Grant Approvals',
-				'href' => $this->build_portal_app_url('/grant-approvals'),
-				'icon' => 'scroll-text',
-				'order' => 55,
-				'active' => false,
-			]
-			: [
-				'id' => 'grant_approval',
-				'label' => 'Grant Approvals',
-				'icon' => 'scroll-text',
-				'route' => '/grant-approvals',
-				'order' => 55,
-			];
-
-		$target_section_id = 'explore';
-
-		foreach ($sections as &$section) {
-			$section_id = $template_mode ? ($section['id'] ?? '') : ($section['id'] ?? '');
-			if ($section_id !== $target_section_id) {
-				continue;
-			}
-
-			foreach ($section['items'] as $existing_item) {
-				if (($existing_item['id'] ?? '') === 'grant_approval') {
-					return $sections;
-				}
-			}
-
-			$section['items'][] = $item;
-			usort($section['items'], static function ($left, $right) {
-				return ($left['order'] ?? 0) <=> ($right['order'] ?? 0);
-			});
-			return $sections;
-		}
-		unset($section);
-
-		$sections[] = [
-			'id' => $target_section_id,
-			'title' => 'Explore',
-			'items' => [$item],
-		];
-
-		return $sections;
 	}
 
 	private function get_resolved_sidebar_background_url($settings) {

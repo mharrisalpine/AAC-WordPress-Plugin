@@ -23,7 +23,6 @@ import LinkedAccountsPage from '@/pages/LinkedAccountsPage';
 import MemberJoinPage from '@/pages/MemberJoinPage';
 import HomePage from '@/pages/HomePage';
 import FeaturedPhotographersPage from '@/pages/FeaturedPhotographersPage';
-import GrantApprovalsPage from '@/pages/GrantApprovalsPage';
 import '@/index.css';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/contexts/AppAuthContext';
@@ -70,7 +69,6 @@ ReactDOM.createRoot(mountElement).render(
                 <Route path="podcasts" element={<MemberPortal storeTab="podcasts" />} />
                 <Route path="meetups" element={<MeetupsPage />} />
                 <Route path="grants" element={<GrantApplicationPage />} />
-                <Route path="grant-approvals" element={<GrantApprovalsPage />} />
                 <Route path="lodging" element={<LodgingPage />} />
                 <Route path="home" element={<HomePage />} />
                 <Route path="photographers" element={<FeaturedPhotographersPage />} />
