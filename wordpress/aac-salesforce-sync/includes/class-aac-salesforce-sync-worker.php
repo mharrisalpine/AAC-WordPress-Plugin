@@ -7,6 +7,62 @@ if (!defined('ABSPATH')) {
 class AAC_Salesforce_Sync_Worker {
 	const CRON_HOOK = 'aac_salesforce_sync_process_queue';
 	const ASYNC_HOOK = 'aac_salesforce_sync_process_queue_now';
+	const INBOUND_CONTACT_FIELDS = [
+		'wordpress_user_id',
+		'aac_external_key',
+		'salesforce_contact_id',
+		'first_name',
+		'last_name',
+		'email',
+		'phone',
+		'street',
+		'city',
+		'state',
+		'postal_code',
+		'country',
+	];
+	const INBOUND_MEMBERSHIP_FIELDS = [
+		'wordpress_user_id',
+		'aac_external_key',
+		'email',
+		'salesforce_membership_id',
+		'member_id',
+		'membership_level',
+		'status',
+		'renewal_date',
+		'expiration_date',
+		'auto_renew',
+		'rescue_amount',
+		'medical_amount',
+		'mortal_remains_amount',
+		'rescue_reimbursement_process',
+		'pmpro_level_id',
+	];
+	const INBOUND_TRANSACTION_FIELDS = [
+		'amount',
+		'billing_amount',
+		'code',
+		'discount',
+		'discount_code',
+		'donation',
+		'gateway',
+		'order_code',
+		'order_id',
+		'payment_amount',
+		'payment_transaction_id',
+		'pmpro_order_id',
+		'pmpro_order_code',
+		'stripe_customer_id',
+		'stripe_subscription_id',
+		'subscription_id',
+		'subscription_transaction_id',
+		'subtotal',
+		'tax',
+		'total',
+		'transaction_id',
+	];
+
+	private $inbound_sync_user_ids = [];
 
 	public function __construct() {
 		add_action('init', ['AAC_Salesforce_Sync_Installer', 'maybe_install_schema']);
@@ -110,7 +166,7 @@ class AAC_Salesforce_Sync_Worker {
 
 	public function enqueue_member_jobs($user_id, $source = 'wordpress') {
 		$user_id = (int) $user_id;
-		if ($user_id <= 0) {
+		if ($user_id <= 0 || $this->is_inbound_sync_user($user_id)) {
 			return;
 		}
 
@@ -126,7 +182,7 @@ class AAC_Salesforce_Sync_Worker {
 
 	public function enqueue_membership_job($user_id, $source = 'wordpress', $extra_payload = []) {
 		$user_id = (int) $user_id;
-		if ($user_id <= 0 || !$this->is_sync_enabled('membership')) {
+		if ($user_id <= 0 || $this->is_inbound_sync_user($user_id) || !$this->is_sync_enabled('membership')) {
 			return;
 		}
 
@@ -145,7 +201,7 @@ class AAC_Salesforce_Sync_Worker {
 		$user_id = (int) $user_id;
 		$order_id = (int) $order_id;
 
-		if ($user_id <= 0 || !$this->is_sync_enabled('transaction')) {
+		if ($user_id <= 0 || $this->is_inbound_sync_user($user_id) || !$this->is_sync_enabled('transaction')) {
 			return;
 		}
 
@@ -257,120 +313,181 @@ class AAC_Salesforce_Sync_Worker {
 	}
 
 	public function sync_contact_from_salesforce($payload) {
+		$payload = $this->prepare_inbound_profile_payload($payload, self::INBOUND_CONTACT_FIELDS, 'contact');
 		$user = $this->find_user_for_inbound_payload($payload);
 		if (!$user instanceof WP_User) {
 			throw new RuntimeException('Could not locate WordPress user for inbound Salesforce contact payload.');
 		}
 
-		$account_info = get_user_meta($user->ID, 'aac_account_info', true);
-		$account_info = is_array($account_info) ? $account_info : [];
+		$this->begin_inbound_sync($user->ID);
+		try {
+			$account_info = get_user_meta($user->ID, 'aac_account_info', true);
+			$account_info = is_array($account_info) ? $account_info : [];
 
-		$updates = [];
-		if (!empty($payload['first_name'])) {
-			$account_info['first_name'] = sanitize_text_field($payload['first_name']);
-			$updates['first_name'] = sanitize_text_field($payload['first_name']);
-		}
-		if (!empty($payload['last_name'])) {
-			$account_info['last_name'] = sanitize_text_field($payload['last_name']);
-			$updates['last_name'] = sanitize_text_field($payload['last_name']);
-		}
-		if (!empty($payload['email'])) {
-			$account_info['email'] = sanitize_email($payload['email']);
-			$updates['user_email'] = sanitize_email($payload['email']);
-		}
-		if (isset($payload['phone'])) {
-			$account_info['phone'] = sanitize_text_field((string) $payload['phone']);
-		}
-		if (isset($payload['street'])) {
-			$account_info['street'] = sanitize_text_field((string) $payload['street']);
-		}
-		if (isset($payload['city'])) {
-			$account_info['city'] = sanitize_text_field((string) $payload['city']);
-		}
-		if (isset($payload['state'])) {
-			$account_info['state'] = sanitize_text_field((string) $payload['state']);
-		}
-		if (isset($payload['postal_code'])) {
-			$account_info['zip'] = sanitize_text_field((string) $payload['postal_code']);
-		}
-		if (isset($payload['country'])) {
-			$account_info['country'] = sanitize_text_field((string) $payload['country']);
-		}
+			$updates = [];
+			if (!empty($payload['first_name'])) {
+				$account_info['first_name'] = sanitize_text_field($payload['first_name']);
+				$updates['first_name'] = sanitize_text_field($payload['first_name']);
+			}
+			if (!empty($payload['last_name'])) {
+				$account_info['last_name'] = sanitize_text_field($payload['last_name']);
+				$updates['last_name'] = sanitize_text_field($payload['last_name']);
+			}
+			if (!empty($payload['email'])) {
+				$account_info['email'] = sanitize_email($payload['email']);
+				$updates['user_email'] = sanitize_email($payload['email']);
+			}
+			if (isset($payload['phone'])) {
+				$account_info['phone'] = sanitize_text_field((string) $payload['phone']);
+			}
+			if (isset($payload['street'])) {
+				$account_info['street'] = sanitize_text_field((string) $payload['street']);
+			}
+			if (isset($payload['city'])) {
+				$account_info['city'] = sanitize_text_field((string) $payload['city']);
+			}
+			if (isset($payload['state'])) {
+				$account_info['state'] = sanitize_text_field((string) $payload['state']);
+			}
+			if (isset($payload['postal_code'])) {
+				$account_info['zip'] = sanitize_text_field((string) $payload['postal_code']);
+			}
+			if (isset($payload['country'])) {
+				$account_info['country'] = sanitize_text_field((string) $payload['country']);
+			}
 
-		if (!empty($updates)) {
-			$updates['ID'] = $user->ID;
-			wp_update_user($updates);
-		}
+			if (!empty($updates)) {
+				$updates['ID'] = $user->ID;
+				wp_update_user($updates);
+			}
 
-		update_user_meta($user->ID, 'aac_account_info', $account_info);
-		if (!empty($payload['salesforce_contact_id'])) {
-			update_user_meta($user->ID, 'aac_sf_contact_id', sanitize_text_field($payload['salesforce_contact_id']));
+			update_user_meta($user->ID, 'aac_account_info', $account_info);
+			if (!empty($payload['salesforce_contact_id'])) {
+				update_user_meta($user->ID, 'aac_sf_contact_id', sanitize_text_field($payload['salesforce_contact_id']));
+			}
+		} finally {
+			$this->end_inbound_sync($user->ID);
 		}
 
 		return $user->ID;
 	}
 
 	public function sync_membership_from_salesforce($payload) {
+		$payload = $this->prepare_inbound_profile_payload($payload, self::INBOUND_MEMBERSHIP_FIELDS, 'membership');
 		$user = $this->find_user_for_inbound_payload($payload);
 		if (!$user instanceof WP_User) {
 			throw new RuntimeException('Could not locate WordPress user for inbound Salesforce membership payload.');
 		}
 
-		$profile_info = get_user_meta($user->ID, 'aac_profile_info', true);
-		$benefits_info = get_user_meta($user->ID, 'aac_benefits_info', true);
-		$account_info = get_user_meta($user->ID, 'aac_account_info', true);
-		$profile_info = is_array($profile_info) ? $profile_info : [];
-		$benefits_info = is_array($benefits_info) ? $benefits_info : [];
-		$account_info = is_array($account_info) ? $account_info : [];
+		$this->begin_inbound_sync($user->ID);
+		try {
+			$profile_info = get_user_meta($user->ID, 'aac_profile_info', true);
+			$benefits_info = get_user_meta($user->ID, 'aac_benefits_info', true);
+			$account_info = get_user_meta($user->ID, 'aac_account_info', true);
+			$profile_info = is_array($profile_info) ? $profile_info : [];
+			$benefits_info = is_array($benefits_info) ? $benefits_info : [];
+			$account_info = is_array($account_info) ? $account_info : [];
 
-		$profile_map = [
-			'member_id' => 'member_id',
-			'membership_level' => 'tier',
-			'status' => 'status',
-			'renewal_date' => 'renewal_date',
-			'expiration_date' => 'expiration_date',
-		];
+			$profile_map = [
+				'member_id' => 'member_id',
+				'membership_level' => 'tier',
+				'status' => 'status',
+				'renewal_date' => 'renewal_date',
+				'expiration_date' => 'expiration_date',
+			];
 
-		foreach ($profile_map as $source => $target) {
-			if (array_key_exists($source, $payload)) {
-				$profile_info[$target] = sanitize_text_field((string) $payload[$source]);
+			foreach ($profile_map as $source => $target) {
+				if (array_key_exists($source, $payload)) {
+					$profile_info[$target] = sanitize_text_field((string) $payload[$source]);
+				}
 			}
-		}
 
-		if (array_key_exists('auto_renew', $payload)) {
-			$account_info['auto_renew'] = !empty($payload['auto_renew']);
-		}
-
-		$benefit_map = [
-			'rescue_amount' => 'rescue_amount',
-			'medical_amount' => 'medical_amount',
-			'mortal_remains_amount' => 'mortal_remains_amount',
-		];
-
-		foreach ($benefit_map as $source => $target) {
-			if (array_key_exists($source, $payload)) {
-				$benefits_info[$target] = (float) $payload[$source];
+			if (array_key_exists('auto_renew', $payload)) {
+				$account_info['auto_renew'] = !empty($payload['auto_renew']);
 			}
-		}
 
-		if (array_key_exists('rescue_reimbursement_process', $payload)) {
-			$benefits_info['rescue_reimbursement_process'] = !empty($payload['rescue_reimbursement_process']);
-		}
+			$benefit_map = [
+				'rescue_amount' => 'rescue_amount',
+				'medical_amount' => 'medical_amount',
+				'mortal_remains_amount' => 'mortal_remains_amount',
+			];
 
-		update_user_meta($user->ID, 'aac_profile_info', $profile_info);
-		update_user_meta($user->ID, 'aac_benefits_info', $benefits_info);
-		update_user_meta($user->ID, 'aac_account_info', $account_info);
+			foreach ($benefit_map as $source => $target) {
+				if (array_key_exists($source, $payload)) {
+					$benefits_info[$target] = (float) $payload[$source];
+				}
+			}
 
-		if (!empty($payload['salesforce_membership_id'])) {
-			update_user_meta($user->ID, 'aac_sf_membership_id', sanitize_text_field($payload['salesforce_membership_id']));
-		}
+			if (array_key_exists('rescue_reimbursement_process', $payload)) {
+				$benefits_info['rescue_reimbursement_process'] = !empty($payload['rescue_reimbursement_process']);
+			}
 
-		if (function_exists('pmpro_changeMembershipLevel') && array_key_exists('pmpro_level_id', $payload)) {
-			$pmpro_level_id = absint($payload['pmpro_level_id']);
-			pmpro_changeMembershipLevel($pmpro_level_id, $user->ID);
+			update_user_meta($user->ID, 'aac_profile_info', $profile_info);
+			update_user_meta($user->ID, 'aac_benefits_info', $benefits_info);
+			update_user_meta($user->ID, 'aac_account_info', $account_info);
+
+			if (!empty($payload['salesforce_membership_id'])) {
+				update_user_meta($user->ID, 'aac_sf_membership_id', sanitize_text_field($payload['salesforce_membership_id']));
+			}
+
+			if (function_exists('pmpro_changeMembershipLevel') && array_key_exists('pmpro_level_id', $payload)) {
+				$pmpro_level_id = absint($payload['pmpro_level_id']);
+				pmpro_changeMembershipLevel($pmpro_level_id, $user->ID);
+			}
+		} finally {
+			$this->end_inbound_sync($user->ID);
 		}
 
 		return $user->ID;
+	}
+
+	private function begin_inbound_sync($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id > 0) {
+			$this->inbound_sync_user_ids[$user_id] = true;
+		}
+	}
+
+	private function end_inbound_sync($user_id) {
+		unset($this->inbound_sync_user_ids[(int) $user_id]);
+	}
+
+	private function is_inbound_sync_user($user_id) {
+		return !empty($this->inbound_sync_user_ids[(int) $user_id]);
+	}
+
+	private function prepare_inbound_profile_payload($payload, $allowed_fields, $payload_type) {
+		$payload = is_array($payload) ? $payload : [];
+		$allowed_fields = array_fill_keys($allowed_fields, true);
+		$transaction_fields = array_fill_keys(self::INBOUND_TRANSACTION_FIELDS, true);
+		$rejected_fields = [];
+		$prepared = [];
+
+		foreach ($payload as $key => $value) {
+			$key = sanitize_key((string) $key);
+			if ($key === '') {
+				continue;
+			}
+
+			if (isset($transaction_fields[$key])) {
+				$rejected_fields[] = $key;
+				continue;
+			}
+
+			if (isset($allowed_fields[$key])) {
+				$prepared[$key] = $value;
+			}
+		}
+
+		if ($rejected_fields) {
+			throw new RuntimeException(sprintf(
+				'Inbound Salesforce %s payload cannot include transaction/order fields: %s.',
+				sanitize_key((string) $payload_type),
+				implode(', ', array_unique($rejected_fields))
+			));
+		}
+
+		return $prepared;
 	}
 
 	private function process_job($job, AAC_Salesforce_Sync_Salesforce_Client $client, $settings) {

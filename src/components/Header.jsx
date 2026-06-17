@@ -158,13 +158,14 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
   const [mobileSiteNavOpen, setMobileSiteNavOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
+  const forceSolidPublicHeader = false;
   const hideTimerRef = useRef(null);
   const lastScrollYRef = useRef(0);
   const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const isLoginRoute = location.pathname === '/login';
   const isDonateRoute = location.pathname === '/donate';
   const isHeroOverlayRoute = isPublic && (location.pathname === '/home' || location.pathname === '/join');
-  const usesTransparentPublicHeader = isPublic;
+  const usesTransparentPublicHeader = isPublic && !forceSolidPublicHeader;
 
   const isStoreRelatedPage = location.pathname.startsWith('/store') || location.pathname.startsWith('/product');
   const showCart = isStoreRelatedPage;
@@ -214,6 +215,16 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
   useEffect(() => {
     lastScrollYRef.current = window.scrollY;
 
+    if (forceSolidPublicHeader) {
+      setIsScrolled(true);
+      setIsHeaderHidden(false);
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      return undefined;
+    }
+
     if (!usesTransparentPublicHeader) {
       setIsScrolled(true);
     } else {
@@ -262,9 +273,18 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
         hideTimerRef.current = null;
       }
     };
-  }, [location.pathname, usesTransparentPublicHeader, mobileSiteNavOpen]);
+  }, [location.pathname, usesTransparentPublicHeader, mobileSiteNavOpen, forceSolidPublicHeader]);
 
   useEffect(() => {
+    if (forceSolidPublicHeader) {
+      setIsHeaderHidden(false);
+      if (hideTimerRef.current) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      return undefined;
+    }
+
     if (mobileSiteNavOpen) {
       setIsHeaderHidden(false);
       if (hideTimerRef.current) {
@@ -290,7 +310,7 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
         hideTimerRef.current = null;
       }
     };
-  }, [mobileSiteNavOpen]);
+  }, [mobileSiteNavOpen, forceSolidPublicHeader]);
 
   const headerBackground = usesTransparentPublicHeader && !isScrolled
     ? 'transparent'
@@ -304,7 +324,7 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
   return (
     <header
       ref={headerRef}
-      className={`${usesTransparentPublicHeader ? 'fixed inset-x-0 top-0' : 'sticky top-0'} z-50 border-b text-white transition-[background-color,border-color,box-shadow,backdrop-filter,transform] duration-300 ${isHeaderHidden ? '-translate-y-full' : 'translate-y-0'}`}
+      className={`${usesTransparentPublicHeader ? 'fixed inset-x-0 top-0' : 'sticky top-0'} z-50 border-b text-white transition-[background-color,border-color,box-shadow,backdrop-filter,transform] duration-300 ${(forceSolidPublicHeader || !isHeaderHidden) ? 'translate-y-0' : '-translate-y-full'}`}
       style={{
         background: headerBackground,
         borderColor: headerBorderColor,

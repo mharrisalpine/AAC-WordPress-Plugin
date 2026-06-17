@@ -167,7 +167,10 @@ class AAC_Salesforce_Sync_REST {
 		}
 
 		if ('transaction' === $type) {
-			$this->worker->enqueue_transaction_job($user_id, absint($payload['order_id'] ?? 0), 'salesforce');
+			return new WP_REST_Response([
+				'success' => false,
+				'message' => 'Salesforce inbound sync may update member profile and membership access data only. Transactions remain WordPress/PMPro outbound-only.',
+			], 400);
 		} elseif ('membership' === $type) {
 			$this->worker->enqueue_membership_job($user_id, 'salesforce');
 		} else {

@@ -21,9 +21,25 @@ extract_form_action() {
 	perl -ne 'print "$1\n" if /<form action="([^"]+)"/' | head -n1
 }
 
+normalize_admin_url() {
+	local target="${1:-}"
+	if [[ -z "$target" ]]; then
+		return 0
+	fi
+	target=$(printf '%s' "$target" | perl -MHTML::Entities -pe 'decode_entities($_);')
+	target="${target#./}"
+	if [[ "$target" == http* ]]; then
+		printf '%s' "$target"
+	elif [[ "$target" == /* ]]; then
+		printf '%s%s' "$BASE_URL" "$target"
+	else
+		printf '%s/wp-admin/%s' "$BASE_URL" "$target"
+	fi
+}
+
 solve_challenge_if_present() {
 	local html="$1"
-	if [[ "$html" != *"jetpack_protect_process_math_form"* ]]; then
+	if [[ "$html" != *'name="jetpack_protect_answer"'* ]]; then
 		printf '%s' "$html"
 		return
 	fi
@@ -35,9 +51,7 @@ solve_challenge_if_present() {
 	if [[ -z "${action_url:-}" ]]; then
 		action_url="$BASE_URL/wp-login.php"
 	fi
-	if [[ "$action_url" != http* ]]; then
-		action_url="$BASE_URL${action_url#/}"
-	fi
+	action_url=$(normalize_admin_url "$action_url")
 
 	solved=$(curl -s -L -b "$cookie_jar" -c "$cookie_jar" \
 		-d "jetpack_protect_num=$answer&jetpack_protect_answer=$token&jetpack_protect_process_math_form=1" \
@@ -93,7 +107,8 @@ if printf '%s' "$upload_response" | grep -q 'Plugin updated successfully\|Plugin
 fi
 
 if [[ -n "${overwrite_link:-}" ]]; then
-	overwrite_response=$(curl -s -L -b "$cookie_jar" -c "$cookie_jar" "$BASE_URL/wp-admin/$overwrite_link")
+	overwrite_url=$(normalize_admin_url "$overwrite_link")
+	overwrite_response=$(curl -s -L -b "$cookie_jar" -c "$cookie_jar" "$overwrite_url")
 	overwrite_response=$(solve_challenge_if_present "$overwrite_response")
 	if printf '%s' "$overwrite_response" | grep -q 'Plugin updated successfully\|Plugin installed successfully'; then
 		printf '%s\n' "$overwrite_response" | grep -n 'Plugin updated successfully\|Plugin installed successfully' | sed -n '1,20p'

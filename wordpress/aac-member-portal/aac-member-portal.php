@@ -20,6 +20,7 @@ require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-api.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-redpoint-api.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-admin.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-database.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-daily-member-export.php';
 
 final class AAC_Member_Portal_Null_WP_Fusion_User {
 	public function push_user_meta(...$args) {
@@ -50,6 +51,7 @@ final class AAC_Member_Portal_Plugin {
 		new AAC_Member_Portal_Redpoint_API();
 		new AAC_Member_Portal_Admin();
 		new AAC_Member_Portal_Member_Database();
+		new AAC_Member_Portal_Daily_Member_Export();
 
 		add_shortcode(self::SHORTCODE, [$this, 'render_shortcode']);
 		add_action('plugins_loaded', [$this, 'maybe_repair_pmpro_user_fields_settings'], 5);
@@ -105,7 +107,7 @@ final class AAC_Member_Portal_Plugin {
 			self::SCRIPT_HANDLE,
 			$asset_files['script'],
 			[],
-			$asset_files['version'] ?? AAC_MEMBER_PORTAL_VERSION,
+			AAC_MEMBER_PORTAL_VERSION,
 			true
 		);
 		wp_script_add_data(self::SCRIPT_HANDLE, 'type', 'module');
@@ -115,7 +117,7 @@ final class AAC_Member_Portal_Plugin {
 				self::STYLE_HANDLE,
 				$asset_files['style'],
 				[],
-				$asset_files['version'] ?? AAC_MEMBER_PORTAL_VERSION
+				AAC_MEMBER_PORTAL_VERSION
 			);
 		}
 	}
@@ -885,7 +887,7 @@ final class AAC_Member_Portal_Plugin {
 												<span class="aac-membership-discounts__icon" aria-hidden="true">
 													<?php echo $discount['icon']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 												</span>
-													<span class="aac-membership-discounts__body">
+												<span class="aac-membership-discounts__body">
 													<span class="aac-membership-discounts__copy">
 														<strong><?php echo esc_html($discount['label']); ?></strong>
 													</span>
@@ -3382,26 +3384,16 @@ final class AAC_Member_Portal_Plugin {
 		$script_path = null;
 		$style_path = null;
 
-		$stable_script = $asset_dir . 'portal-app.js';
-		if (file_exists($stable_script)) {
-			$script_path = $stable_script;
-		}
-
-		$stable_style = $asset_dir . 'portal-app.css';
-		if (file_exists($stable_style)) {
-			$style_path = $stable_style;
-		}
-
-		if ((!$script_path || !$style_path) && file_exists($index_html_path) && is_readable($index_html_path)) {
+		if (file_exists($index_html_path) && is_readable($index_html_path)) {
 			$index_html = (string) file_get_contents($index_html_path);
-			if (!$script_path && preg_match('#src="/?assets/(index-[^"]+\.js)"#', $index_html, $script_match)) {
+			if (preg_match('#src="/?assets/(index-[^"]+\.js)"#', $index_html, $script_match)) {
 				$candidate = $asset_dir . $script_match[1];
 				if (file_exists($candidate)) {
 					$script_path = $candidate;
 				}
 			}
 
-			if (!$style_path && preg_match('#href="/?assets/(index-[^"]+\.css)"#', $index_html, $style_match)) {
+			if (preg_match('#href="/?assets/(index-[^"]+\.css)"#', $index_html, $style_match)) {
 				$candidate = $asset_dir . $style_match[1];
 				if (file_exists($candidate)) {
 					$style_path = $candidate;
@@ -3417,21 +3409,9 @@ final class AAC_Member_Portal_Plugin {
 			$style_path = $this->first_glob_match($asset_dir . 'index-*.css');
 		}
 
-		$version_parts = [AAC_MEMBER_PORTAL_VERSION];
-		foreach ([$script_path, $style_path, $index_html_path] as $version_source) {
-			if ($version_source && file_exists($version_source)) {
-				$version_parts[] = (string) (@filemtime($version_source) ?: 0);
-			}
-		}
-
-		$asset_version = implode('.', array_filter($version_parts, static function ($part) {
-			return $part !== '';
-		}));
-
 		return [
 			'script' => $script_path ? $asset_url . basename($script_path) : null,
 			'style' => $style_path ? $asset_url . basename($style_path) : null,
-			'version' => $asset_version,
 		];
 	}
 
@@ -4366,6 +4346,8 @@ final class AAC_Member_Portal_Plugin {
 }
 
 register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Member_Database', 'activate']);
+register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Daily_Member_Export', 'activate']);
+register_deactivation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Daily_Member_Export', 'deactivate']);
 $GLOBALS['aac_member_portal_plugin'] = new AAC_Member_Portal_Plugin();
 
 function aac_member_portal() {

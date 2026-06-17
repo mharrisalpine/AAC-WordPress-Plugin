@@ -87,7 +87,7 @@ $member = !empty($members[0]) && is_array($members[0]) ? $members[0] : null;
 			justify-content: center;
 			min-height: 52px;
 			padding: 0 20px;
-			background: #111;
+			background: #bf1822;
 			color: #fff;
 			text-decoration: none;
 			font-weight: 700;
@@ -145,7 +145,7 @@ $member = !empty($members[0]) && is_array($members[0]) ? $members[0] : null;
 <?php wp_body_open(); ?>
 <main class="aac-redpoint-shell">
 	<section class="aac-redpoint-card">
-		<p class="aac-redpoint-eyebrow">Admin Lookup</p>
+		<p class="aac-redpoint-eyebrow">Member Lookup</p>
 		<h1 class="aac-redpoint-title">Redpoint Member Lookup</h1>
 		<p class="aac-redpoint-copy">Search by exact email address or phone number. Results only appear for an exact match.</p>
 	</section>
@@ -155,7 +155,7 @@ $member = !empty($members[0]) && is_array($members[0]) ? $members[0] : null;
 			<div class="aac-redpoint-search-row">
 				<div class="aac-redpoint-field">
 					<label for="aac-redpoint-search">Email or Phone Number</label>
-					<input class="aac-redpoint-input" id="aac-redpoint-search" type="search" name="search" value="<?php echo $search_value; ?>" placeholder="name@example.com or 3032148285" autocomplete="off">
+					<input class="aac-redpoint-input" id="aac-redpoint-search" type="search" name="search" value="<?php echo $search_value; ?>" placeholder="Enter member email or phone number" autocomplete="off">
 				</div>
 				<button class="aac-redpoint-button" type="submit">Search</button>
 				<a class="aac-redpoint-button aac-redpoint-button--secondary" href="<?php echo esc_url(home_url('/redpoint/')); ?>">Reset</a>

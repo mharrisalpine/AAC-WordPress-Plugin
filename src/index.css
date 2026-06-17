@@ -40,6 +40,16 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+body.aac-join-scroll-locked,
+body.aac-join-scroll-locked #root {
+  overflow: hidden;
+}
+
+body.aac-join-scroll-locked .topo-lines,
+body.aac-join-scroll-locked .topo-lines > main {
+  overflow: hidden;
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: futura-pt-bold, futura-pt, Futura, 'Futura PT', 'Century Gothic', 'Trebuchet MS', 'Gill Sans', ui-sans-serif, sans-serif;
   font-weight: 700;
@@ -100,6 +110,23 @@ h1, h2, h3, h4, h5, h6 {
     linear-gradient(135deg, #fffefe 0%, #f5efe4 100%);
   border: 1px solid rgba(3, 0, 0, 0.1);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.08);
+}
+
+[data-aac-login-surface="true"] {
+  background: rgba(0, 0, 0, 0.58) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.52) !important;
+}
+
+[data-aac-login-surface="true"] h2,
+[data-aac-login-surface="true"] label {
+  color: #ffffff !important;
+}
+
+[data-aac-login-surface="true"] p[class*="tracking-"],
+[data-aac-login-surface="true"] button[type="button"] {
+  color: #f8c235 !important;
 }
 
 .portal-sidebar-surface {

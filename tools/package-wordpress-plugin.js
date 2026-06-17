@@ -23,12 +23,18 @@ const JS_COMPATIBILITY_ALIASES = [
   'index-154a6d6e.js',
   'index-5387f896.js',
   'index-24a16865.js',
+  'index-3ef14e59.js',
 ];
 
 const CSS_COMPATIBILITY_ALIASES = [
   'index-03c3ab31.css',
   'index-595f891c.css',
 ];
+
+const STABLE_ASSET_ALIASES = {
+  js: 'portal-app.js',
+  css: 'portal-app.css',
+};
 
 const MEDIA_COMPATIBILITY_ALIASES = [
   {
@@ -76,6 +82,8 @@ async function createCompatibilityAliases() {
   const latestCss = assetEntries.find((entry) => /^index-[^.]+\.css$/.test(entry));
 
   if (latestJs) {
+    await fs.copyFile(path.join(assetsDir, latestJs), path.join(assetsDir, STABLE_ASSET_ALIASES.js));
+
     await Promise.all(JS_COMPATIBILITY_ALIASES.map(async (alias) => {
       if (alias === latestJs) {
         return;
@@ -86,6 +94,8 @@ async function createCompatibilityAliases() {
   }
 
   if (latestCss) {
+    await fs.copyFile(path.join(assetsDir, latestCss), path.join(assetsDir, STABLE_ASSET_ALIASES.css));
+
     await Promise.all(CSS_COMPATIBILITY_ALIASES.map(async (alias) => {
       if (alias === latestCss) {
         return;

@@ -179,9 +179,9 @@ const LoginPage = () => {
       <div className="relative min-h-screen overflow-hidden bg-[#030000] text-white">
         {passwordModalOpen ? (
           <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm">
-            <div className="w-full max-w-md border border-[#8f1515]/30 bg-[#fffaf2] p-6 text-[#030000] shadow-[0_32px_80px_rgba(0,0,0,0.45)]">
-              <h2 className="text-2xl font-semibold text-[#8f1515]">Incorrect Password</h2>
-              <p className="mt-3 text-base leading-7 text-stone-700">
+            <div className="w-full max-w-md border border-white/18 bg-black/68 p-6 text-white shadow-[0_32px_80px_rgba(0,0,0,0.52)] backdrop-blur-md">
+              <h2 className="text-2xl font-semibold text-[#f8c235]">Incorrect Password</h2>
+              <p className="mt-3 text-base leading-7 text-white/78">
                 {passwordModalMessage}
               </p>
               <div className="mt-6 flex justify-end">
@@ -255,20 +255,20 @@ const LoginPage = () => {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.08 }}
-            className="paper-panel self-center border p-6 text-black shadow-[0_32px_80px_rgba(0,0,0,0.42)] backdrop-blur-md sm:p-8 lg:-translate-y-6"
-            style={{ background: portalDesign.loginFormBackground, borderColor: portalDesign.panelBorderColor }}
+            className="self-center border border-white/18 p-6 text-white shadow-[0_32px_80px_rgba(0,0,0,0.52)] backdrop-blur-md sm:p-8 lg:-translate-y-6"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.58)' }}
             data-aac-login-surface="true"
           >
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#8f1515]">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-[#f8c235]">
                   {forgotMode ? 'Reset password' : portalContent.login_form_kicker}
                 </p>
-                <h2 className="mt-2 text-[1.85rem] leading-tight text-[#030000] sm:text-[2.05rem]">
+                <h2 className="mt-2 text-[1.85rem] leading-tight text-white sm:text-[2.05rem]">
                   {forgotMode ? 'Send a reset link.' : portalContent.login_form_title}
                 </h2>
               </div>
-              <div className="rounded-2xl bg-[#8f1515]/10 p-3 text-[#8f1515]">
+              <div className="rounded-2xl border border-white/12 bg-white/6 p-3 text-[#f8c235]">
                 {forgotMode ? <Mail className="h-6 w-6" /> : <LockKeyhole className="h-6 w-6" />}
               </div>
             </div>
@@ -300,7 +300,7 @@ const LoginPage = () => {
               noValidate
             >
               <div>
-                <Label htmlFor="login-email" className="text-stone-900">Email</Label>
+                <Label htmlFor="login-email" className="text-white">Email</Label>
                 <Input
                   id="login-email"
                   type="email"
@@ -315,7 +315,7 @@ const LoginPage = () => {
 
               {!forgotMode ? (
                 <div>
-                  <Label htmlFor="login-password" className="text-stone-900">Password</Label>
+                  <Label htmlFor="login-password" className="text-white">Password</Label>
                   <div className="relative mt-1">
                     <Input
                       id="login-password"
@@ -330,7 +330,7 @@ const LoginPage = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword((value) => !value)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 border-0 bg-transparent p-0 text-xs font-semibold uppercase tracking-[0.14em] text-[#8f1515] shadow-none outline-none hover:text-[#6b1010] focus-visible:ring-0"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 border-0 bg-transparent p-0 text-xs font-semibold uppercase tracking-[0.14em] text-[#f8c235] shadow-none outline-none hover:text-[#ffd86a] focus-visible:ring-0"
                     >
                       {showPassword ? 'Hide' : 'Show'}
                     </button>
@@ -341,7 +341,7 @@ const LoginPage = () => {
                 <button
                   type="button"
                   onClick={handleForgotModeToggle}
-                  className="text-left text-sm font-medium text-[#8f1515] transition-colors hover:text-[#6b1010]"
+                  className="text-left text-sm font-medium text-[#f8c235] transition-colors hover:text-[#ffd86a]"
                 >
                   {forgotMode ? 'Back to sign in' : portalContent.login_forgot_password_label}
                 </button>
@@ -360,8 +360,8 @@ const LoginPage = () => {
               </Button>
 
               {!forgotMode && pmproSocialLoginHtml ? (
-                <div className="mt-5 border-t border-black/10 pt-5">
-                  <p className="mb-3 text-center text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-stone-600">
+                <div className="mt-5 border-t border-white/12 pt-5">
+                  <p className="mb-3 text-center text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/68">
                     Or continue with
                   </p>
                   <div

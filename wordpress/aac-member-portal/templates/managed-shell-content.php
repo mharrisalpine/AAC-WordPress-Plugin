@@ -138,7 +138,11 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		margin-left: 0;
 		min-height: 100vh;
 		overflow-x: clip;
-		background: #ffffff;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(246, 241, 232, 0.74)),
+			radial-gradient(circle at 16% 10%, rgba(248, 194, 53, 0.12), transparent 24%),
+			radial-gradient(circle at 84% 14%, rgba(3, 0, 0, 0.04), transparent 19%),
+			url('<?php echo esc_url(AAC_MEMBER_PORTAL_URL . 'app/app-page-topo.svg'); ?>') center top / 1120px auto repeat;
 		color: #0c0a09;
 	}
 
@@ -571,11 +575,11 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	.aac-managed-card {
 		margin-top: 1.5rem;
-		border: 0;
+		border: 1px solid rgba(0, 0, 0, 0.08);
 		border-radius: 0;
-		background: transparent;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
 		padding: 1.5rem;
-		box-shadow: none;
+		box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
 	}
 
 	.aac-managed-card .pmpro_section,
@@ -739,6 +743,52 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields > .pmpro_card > .pmpro_card_content {
 		border-radius: 0 !important;
 		padding: 1.15rem 1.2rem !important;
+	}
+
+	html:has(body.pmpro-checkout),
+	body.pmpro-checkout,
+	body.pmpro-checkout #page,
+	body.pmpro-checkout .site,
+	body.pmpro-checkout .site-content,
+	body.pmpro-checkout .entry-content,
+	body.pmpro-checkout #aac-member-portal-root,
+	body.pmpro-checkout .aac-managed-shell,
+	body.pmpro-checkout .aac-managed-card {
+		background: #fff !important;
+		background-image: none !important;
+	}
+
+	body.pmpro-checkout .aac-managed-card .pmpro,
+	body.pmpro-checkout .aac-managed-card .pmpro_section,
+	body.pmpro-checkout .aac-managed-card form.pmpro_form,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout_gateway,
+	body.pmpro-checkout .aac-managed-card .pmpro_invoice,
+	body.pmpro-checkout .aac-managed-card .pmpro_checkout-fields,
+	body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset,
+	body.pmpro-checkout .aac-managed-card .pmpro_card,
+	body.pmpro-checkout .aac-managed-card .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields > .pmpro_card,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields > .pmpro_card > .pmpro_card_content,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_card_fields,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_payment-discount-code,
+	body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_form_fields,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__card,
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__card-inner,
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__dependents,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row--total,
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__pricing-note,
+	body.pmpro-checkout .aac-managed-card .aac-checkout-autorenew,
+	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-donation #pmprodon_donation_input,
+	body.pmpro-checkout .aac-managed-card .aac-order-summary,
+	body.pmpro-checkout .aac-managed-card .aac-order-summary__row,
+	body.pmpro-checkout .aac-managed-card .aac-order-summary__row--total {
+		background: #fff !important;
+		background-image: none !important;
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_pricing_fields {
@@ -917,605 +967,6 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		right: 0.65rem;
 	}
 
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_fieldset > .pmpro_card,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_checkout-fields > .pmpro_card,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_checkout-fields > .pmpro_card > .pmpro_card_content {
-		background: transparent !important;
-		border: 0 !important;
-		box-shadow: none !important;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_checkout-fields > .pmpro_card > .pmpro_card_content {
-		padding: 0 !important;
-		gap: 1.15rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_fields,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_checkout-fields {
-		display: grid;
-		gap: 1.4rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_label {
-		margin: 0;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: rgba(12, 10, 9, 0.58);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_input,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input[type="text"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input[type="email"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input[type="password"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input[type="tel"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input[type="date"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input[type="number"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step select,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step textarea {
-		min-height: 0;
-		padding: 0.7rem 0 0.8rem;
-		border: 0;
-		border-bottom: 1px solid rgba(12, 10, 9, 0.75);
-		background: transparent;
-		box-shadow: none;
-		font-size: 1.15rem;
-		line-height: 1.4;
-		color: #0c0a09;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step textarea {
-		min-height: 7rem;
-		padding-top: 0.8rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input::placeholder,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step textarea::placeholder {
-		color: rgba(12, 10, 9, 0.34);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step input:focus,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step select:focus,
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step textarea:focus {
-		border-color: #8f1515;
-		outline: none;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .pmpro_form_field .select2-container {
-		width: 100% !important;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .select2-container--default .select2-selection--single {
-		min-height: 0;
-		border: 0;
-		border-bottom: 1px solid rgba(12, 10, 9, 0.75);
-		background: transparent;
-		border-radius: 0;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .select2-container--default .select2-selection--single .select2-selection__rendered {
-		padding-left: 0;
-		padding-right: 2rem;
-		line-height: 2.8rem;
-		font-size: 1.15rem;
-		color: #0c0a09;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .select2-container--default .select2-selection--single .select2-selection__arrow {
-		height: 2.8rem;
-		right: 0;
-	}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-wizard {
-			display: grid;
-			grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-			gap: clamp(2rem, 4vw, 3.5rem);
-			align-items: start;
-			max-width: 82rem;
-			margin: 0 auto;
-			padding: 0 clamp(1rem, 2vw, 1.75rem);
-			background: #ffffff;
-		}
-
-		body.pmpro-checkout.aac-member-portal-embed .aac-managed-card .aac-checkout-wizard {
-			max-width: 86rem;
-			margin: 0 auto;
-			padding: 0 clamp(1rem, 2vw, 1.75rem);
-			background: #ffffff;
-		}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail {
-		position: sticky;
-		top: 2rem;
-		display: flex;
-		flex-direction: column;
-		align-self: start;
-		order: 1;
-		padding: 0;
-		background: #ffffff;
-		max-height: calc(100vh - 4rem);
-		overflow: hidden;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail-kicker {
-		margin: 0 0 0.45rem;
-		font-size: 0.7rem;
-		font-weight: 600;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: rgba(12, 10, 9, 0.58);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail-title {
-		margin: 0;
-		font-size: clamp(1.55rem, 2vw, 1.9rem);
-		font-weight: 700;
-		line-height: 1;
-		color: #0c0a09;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail-status {
-		margin-top: 1rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail-count {
-		display: inline-block;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: rgba(12, 10, 9, 0.58);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail-meter {
-		margin-top: 0.8rem;
-		height: 1px;
-		background: rgba(12, 10, 9, 0.12);
-		overflow: hidden;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail-meter-bar {
-		height: 100%;
-		width: 0;
-		background: #8f1515;
-		transition: width 0.28s ease;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__steps {
-		list-style: none;
-		margin: 1.4rem 0 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		flex: 1 1 auto;
-		min-height: 0;
-		gap: 0;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		scrollbar-gutter: stable;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step {
-		margin: 0;
-		padding: 0;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step-button {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		gap: 0.9rem;
-		align-items: center;
-		width: 100%;
-		border: 0;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-		background: transparent;
-		padding: 0.95rem 0;
-		text-align: left;
-		color: #0c0a09;
-		cursor: pointer;
-		transition: color 0.2s ease, transform 0.2s ease;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step:last-child .aac-checkout-wizard__step-button {
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step-button:hover {
-		transform: translateY(-1px);
-		color: #8f1515;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step-index {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.9rem;
-		height: 1.9rem;
-		border: 1px solid currentColor;
-		border-radius: 999px;
-		background: transparent;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step-label {
-		display: block;
-		margin: 0;
-		font-size: 0.8rem;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: inherit;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-active .aac-checkout-wizard__step-button {
-		color: #8f1515;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-active .aac-checkout-wizard__step-index {
-		background: #8f1515;
-		color: #fff;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-done .aac-checkout-wizard__step-button {
-		color: #0c0a09;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-done .aac-checkout-wizard__step-index {
-		background: #0c0a09;
-		border-color: #0c0a09;
-		color: #fff;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-done .aac-checkout-wizard__step-index::before {
-		content: "✓";
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-done .aac-checkout-wizard__step-index {
-		font-size: 0;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__step.is-done .aac-checkout-wizard__step-index::before {
-		font-size: 0.88rem;
-	}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__content {
-			min-width: 0;
-			max-width: 58rem;
-			order: 2;
-			background: #ffffff;
-		}
-
-	body.pmpro-checkout .aac-managed-card--embed,
-	body.pmpro-checkout .aac-managed-card--embed .pmpro,
-	body.pmpro-checkout .aac-managed-card--embed form.pmpro_form,
-	body.pmpro-checkout .aac-managed-card--embed .pmpro_checkout-fields,
-	body.pmpro-checkout .aac-managed-card--embed .pmpro_form_fieldset,
-	body.pmpro-checkout .aac-managed-card--embed .pmpro_form_fieldset > .pmpro_card,
-	body.pmpro-checkout .aac-managed-card--embed .pmpro_form_fieldset > .pmpro_card > .pmpro_card_content {
-		background: #ffffff !important;
-		box-shadow: none !important;
-	}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-selection {
-			display: grid;
-			gap: 1rem;
-			padding: 0 0 1rem;
-			border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-selection__label {
-			margin: 0;
-			font-size: 0.7rem;
-			font-weight: 600;
-			letter-spacing: 0.18em;
-			text-transform: uppercase;
-			color: rgba(12, 10, 9, 0.58);
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-selection__grid {
-			display: grid;
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-			gap: 1rem;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card {
-			display: flex;
-			flex-direction: column;
-			gap: 0.8rem;
-			min-height: 14rem;
-			padding: 1.15rem 1.05rem;
-			border: 1px solid rgba(12, 10, 9, 0.14);
-			background: #fff;
-			text-align: left;
-			cursor: pointer;
-			transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card:hover {
-			border-color: #0c0a09;
-			transform: translateY(-1px);
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card[data-selected="true"] {
-			border-color: #8f1515;
-			box-shadow: inset 0 0 0 1px #8f1515;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card__name {
-			margin: 0;
-			font-size: 1.15rem;
-			font-weight: 700;
-			line-height: 1.1;
-			color: #0c0a09;
-			letter-spacing: 0.02em;
-			text-transform: uppercase;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card__price {
-			font-size: 0.82rem;
-			font-weight: 600;
-			letter-spacing: 0.14em;
-			text-transform: uppercase;
-			color: #8f1515;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card__blurb {
-			margin: 0;
-			font-size: 0.92rem;
-			line-height: 1.55;
-			color: rgba(12, 10, 9, 0.7);
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card__state {
-			margin-top: auto;
-			font-size: 0.72rem;
-			font-weight: 600;
-			letter-spacing: 0.16em;
-			text-transform: uppercase;
-			color: rgba(12, 10, 9, 0.58);
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-card[data-selected="true"] .aac-checkout-tier-card__state {
-			color: #8f1515;
-		}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-progress {
-		display: none;
-		margin-bottom: 1.4rem;
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-		background: transparent;
-		padding: 0 0 1rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-kicker {
-		margin: 0 0 0.3rem;
-		font-size: 0.7rem;
-		font-weight: 600;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: rgba(12, 10, 9, 0.58);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-title-row {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.75rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-title {
-		margin: 0;
-		font-size: 1.4rem;
-		font-weight: 700;
-		color: #0c0a09;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-count {
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: rgba(12, 10, 9, 0.58);
-		white-space: nowrap;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-meter {
-		margin-top: 0.95rem;
-		height: 1px;
-		background: rgba(12, 10, 9, 0.12);
-		overflow: hidden;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-meter-bar {
-		height: 100%;
-		width: 0;
-		background: #8f1515;
-		transition: width 0.28s ease;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step {
-		scroll-margin-top: 1.5rem;
-		display: none;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step.is-active {
-		display: block;
-		animation: aac-checkout-step-fade 0.28s ease;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step + .aac-checkout-step {
-		margin-top: 1.1rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__header {
-		margin-bottom: 1.5rem;
-		padding: 0;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__eyebrow {
-		margin: 0 0 0.3rem;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: rgba(12, 10, 9, 0.58);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__title {
-		margin: 0;
-		font-size: clamp(2rem, 4vw, 3.1rem);
-		font-weight: 700;
-		line-height: 0.95;
-		letter-spacing: -0.03em;
-		color: #0c0a09;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__body {
-		display: grid;
-		gap: 1.4rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__footer {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		justify-content: flex-start;
-		gap: 1.25rem;
-		margin-top: 2rem;
-		padding-top: 1.6rem;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__footer--final {
-		justify-content: flex-start;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__spacer {
-		display: none;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__nav-button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 3.35rem;
-		padding: 0.95rem 1.55rem;
-		border: 1px solid rgba(12, 10, 9, 0.12);
-		background: transparent;
-		color: #0c0a09;
-		font-size: 0.74rem;
-		font-weight: 600;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		cursor: pointer;
-		transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__nav-button:hover {
-		border-color: #0c0a09;
-		color: #0c0a09;
-		transform: translateY(-1px);
-	}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-step__nav-button--primary {
-			border-color: #8f1515;
-			background: #8f1515;
-			color: #fff;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-step__nav-button--primary:hover {
-			background: #6b1010;
-			border-color: #6b1010;
-			color: #fff;
-		}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__error {
-		flex: 1 1 100%;
-		display: none;
-		border: 1px solid rgba(185, 28, 28, 0.2);
-		background: #fff5f5;
-		padding: 0.9rem 1rem;
-		color: #991b1b;
-		font-size: 0.9rem;
-		font-weight: 500;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step__error.is-visible {
-		display: block;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step[data-aac-step-slug="payment"] .aac-checkout-step__header {
-		padding-bottom: 0.75rem;
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step[data-aac-step-slug="payment"] .aac-checkout-step__body {
-		gap: 1.15rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step[data-aac-step-slug="payment"] [data-aac-magazine-summary] {
-		border-width: 2px;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step [data-aac-step-invalid="true"],
-	body.pmpro-checkout .aac-managed-card .aac-checkout-step .select2-container[data-aac-step-invalid="true"] .select2-selection--single {
-		border-color: #b91c1c !important;
-		box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.12);
-	}
-
-	@keyframes aac-checkout-step-fade {
-		from {
-			opacity: 0;
-			transform: translateY(10px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	@media (max-width: 1080px) {
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-selection__grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-wizard {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 1.4rem;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__rail {
-			display: none;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-wizard__mobile-progress {
-			display: block;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-checkout-step__header {
-			padding-left: 0;
-			padding-right: 0;
-		}
-	}
-
-	@media (max-width: 640px) {
-		body.pmpro-checkout .aac-managed-card .aac-checkout-tier-selection__grid {
-			grid-template-columns: minmax(0, 1fr);
-		}
-	}
-
 	body.pmpro-checkout .aac-managed-card .aac-email-availability {
 		margin: 0.45rem 0 0;
 		font-size: 0.9rem;
@@ -1563,7 +1014,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__grid {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 1.1rem;
+		gap: 1rem;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__field {
@@ -1584,23 +1035,21 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		pointer-events: none;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card {
-			display: flex;
-			flex-direction: column;
-			align-items: flex-start;
-			justify-content: flex-start;
-			gap: 0.95rem;
-			height: 100%;
-			min-height: 12.75rem;
-			padding: 1rem 0;
-		border: 0;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 1rem;
+		height: 100%;
+		min-height: 16.5rem;
+		padding: 1rem 1.05rem;
+		border: 1px solid rgba(12, 10, 9, 0.1);
 		border-radius: 0;
-		background: transparent;
+		background: #fff;
 		box-shadow: none;
 		color: #292524;
-		transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
+		transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:hover .aac-membership-discounts__card {
@@ -1614,37 +1063,37 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card {
-		border-top-color: rgba(143, 21, 21, 0.92);
-		border-bottom-color: rgba(143, 21, 21, 0.92);
-		background: transparent;
+		border-color: rgba(143, 21, 21, 0.92);
+		box-shadow: none;
+		background: #fff;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon {
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-			width: 2.35rem;
-			height: 2.35rem;
+		width: 4.5rem;
+		height: 4.5rem;
 		border-radius: 999px;
-		border: 1px solid currentColor;
-		background: transparent;
-		color: rgba(12, 10, 9, 0.72);
-	}
-
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon svg {
-			width: 1rem;
-			height: 1rem;
-		}
-
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon {
+		background: rgba(143, 21, 21, 0.08);
 		color: #8f1515;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__body {
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__icon svg {
+		width: 2rem;
+		height: 2rem;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon {
+		background: rgba(143, 21, 21, 0.08);
+		color: #b71c1c;
+	}
+
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__body {
 		display: flex;
 		flex: 1 1 auto;
 		flex-direction: column;
-			gap: 0.55rem;
+		gap: 0.7rem;
 		width: 100%;
 	}
 
@@ -1652,44 +1101,34 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		display: grid;
 		gap: 0.32rem;
 		color: #57534e;
-		text-align: left;
+		text-align: center;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__copy strong {
-			color: #0c0a09;
-			font-size: 0.88rem;
-			line-height: 1.2;
-			letter-spacing: 0.12em;
-			text-transform: uppercase;
-		}
-
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__copy span,
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__copy p {
-			font-size: 0.88rem;
-			line-height: 1.55;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__copy strong {
+		color: #0c0a09;
+		font-size: 1.02rem;
+		line-height: 1.2;
+	}
 
 	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__footer {
 		margin-top: auto;
 		display: flex;
-		justify-content: flex-start;
+		justify-content: center;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-membership-discounts__price {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.4rem;
-			width: fit-content;
-			padding: 0.18rem 0;
-			border-radius: 0;
-			border: 0;
-			border-bottom: 1px solid rgba(143, 21, 21, 0.18);
-			background: transparent;
-			color: #8f1515;
-			font-size: 0.69rem;
-			font-weight: 600;
-			text-transform: uppercase;
-			letter-spacing: 0.12em;
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__price {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		width: fit-content;
+		padding: 0.35rem 0.65rem;
+		border-radius: 999px;
+		background: rgba(143, 21, 21, 0.08);
+		color: #8f1515;
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__intro {
@@ -1720,7 +1159,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		padding: 0;
 		border-radius: 0;
 		overflow: hidden;
-		border: 1px solid rgba(12, 10, 9, 0.12);
+		border: 1px solid rgba(12, 10, 9, 0.1);
 		box-shadow: none;
 		background: #fff;
 		color: #0c0a09;
@@ -1734,7 +1173,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: center;
 		min-height: 12.75rem;
 		padding: 0.75rem 0.75rem 0.25rem;
-		background: #fff;
+		background: linear-gradient(180deg, rgba(245, 240, 231, 0.98), rgba(236, 229, 215, 0.92));
 		border-bottom: 1px solid rgba(12, 10, 9, 0.08);
 	}
 
@@ -1763,19 +1202,17 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__eyebrow {
 		display: inline-block;
 		font-size: 0.68rem;
-		font-weight: 600;
-		letter-spacing: 0.16em;
+		font-weight: 700;
+		letter-spacing: 0.22em;
 		text-transform: uppercase;
 		color: #78716c;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__title {
 		margin: 0;
-		font-size: 0.96rem;
+		font-size: 1rem;
 		line-height: 1.2;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
+		font-weight: 700;
 		color: #0c0a09;
 	}
 
@@ -1809,16 +1246,13 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		align-items: center;
 		justify-content: center;
 		width: 100%;
-		min-height: 2.85rem;
-		padding: 0.75rem 1.25rem;
+		min-height: 2.7rem;
+		padding: 0.8rem 1.4rem;
 		border-radius: 0;
-		border: 1px solid rgba(12, 10, 9, 0.14);
-		background: transparent;
+		border: 1px solid rgba(12, 10, 9, 0.18);
+		background: #fff;
 		color: #292524;
-		font-weight: 600;
-		font-size: 0.74rem;
-		letter-spacing: 0.16em;
-		text-transform: uppercase;
+		font-weight: 700;
 		cursor: pointer;
 		transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, color 160ms ease;
 	}
@@ -1834,14 +1268,14 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice.is-active {
-		background: #0c0a09;
-		border-color: #0c0a09;
+		background: #8f1515;
+		border-color: #8f1515;
 		color: #fff;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-member-preferences__input:checked + .aac-member-preferences__choice {
-		background: #0c0a09;
-		border-color: #0c0a09;
+		background: #8f1515;
+		border-color: #8f1515;
 		color: #fff;
 	}
 
@@ -1939,7 +1373,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		overflow: hidden;
 		border: 1px solid rgba(12, 10, 9, 0.1);
 		border-radius: 0;
-		background: #fff;
+		background: rgba(255, 255, 255, 0.9);
 		box-shadow: none;
 		transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 	}
@@ -1965,7 +1399,7 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		justify-content: center;
 		min-height: 15.5rem;
 		padding: 1rem 1rem 0.35rem;
-		background: #fff;
+		background: linear-gradient(180deg, rgba(245, 240, 231, 0.98), rgba(236, 229, 215, 0.92));
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__cover-image {
@@ -2011,20 +1445,17 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		white-space: nowrap;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__selector {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.55rem;
-			padding: 0.22rem 0;
-			border: 0;
-			border-bottom: 1px solid rgba(12, 10, 9, 0.14);
-			border-radius: 0;
-			background: transparent;
-			color: #292524;
-			font-size: 0.74rem;
-			font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__selector {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.55rem 0.8rem;
+		border: 1px solid rgba(12, 10, 9, 0.14);
+		border-radius: 999px;
+		background: rgba(12, 10, 9, 0.03);
+		color: #292524;
+		font-size: 0.92rem;
+		font-weight: 700;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__check {
@@ -2050,15 +1481,15 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		transition: transform 160ms ease;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__input:checked + .aac-magazine-addons__card .aac-magazine-addons__selector {
-			border-bottom-color: #0c0a09;
-			background: transparent;
-			color: #0c0a09;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__input:checked + .aac-magazine-addons__card .aac-magazine-addons__selector {
+		border-color: #8f1515;
+		background: rgba(143, 21, 21, 0.1);
+		color: #8f1515;
+	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__input:checked + .aac-magazine-addons__card .aac-magazine-addons__check {
-		background: #0c0a09;
-		color: #0c0a09;
+		background: #8f1515;
+		color: #8f1515;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__input:checked + .aac-magazine-addons__card .aac-magazine-addons__check::after {
@@ -2076,19 +1507,18 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		gap: 0.75rem;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-partner-family__mode-option {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.55rem;
-			padding: 0.45rem 0;
-			border: 0;
-			border-bottom: 1px solid rgba(12, 10, 9, 0.14);
-			border-radius: 0;
-			background: transparent;
-			color: #292524;
-			font-weight: 600;
-			cursor: pointer;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__mode-option {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.8rem 1rem;
+		border: 1px solid rgba(12, 10, 9, 0.12);
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.92);
+		color: #292524;
+		font-weight: 600;
+		cursor: pointer;
+	}
 
 	body.pmpro-checkout .aac-managed-card .aac-partner-family__details {
 		display: grid;
@@ -2107,19 +1537,17 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		pointer-events: none;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-partner-family__card-inner,
-		body.pmpro-checkout .aac-managed-card .aac-partner-family__dependents {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 1rem;
-			padding: 1rem 0;
-			border: 0;
-			border-top: 1px solid rgba(12, 10, 9, 0.08);
-			border-bottom: 1px solid rgba(12, 10, 9, 0.08);
-			border-radius: 0;
-			background: transparent;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__card-inner,
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__dependents {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1rem 1.05rem;
+		border: 1px solid rgba(12, 10, 9, 0.08);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.92);
+	}
 
 	body.pmpro-checkout .aac-managed-card .aac-partner-family__card-copy {
 		display: grid;
@@ -2137,11 +1565,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		color: #8f1515;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-partner-family__card input:checked + .aac-partner-family__card-inner {
-			border-top-color: rgba(12, 10, 9, 0.85);
-			border-bottom-color: rgba(12, 10, 9, 0.85);
-			background: transparent;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-partner-family__card input:checked + .aac-partner-family__card-inner {
+		border-color: rgba(143, 21, 21, 0.35);
+		background: rgba(143, 21, 21, 0.08);
+	}
 
 	body.pmpro-checkout .aac-managed-card .aac-partner-family__dependents {
 		align-items: flex-start;
@@ -2167,12 +1594,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary {
 		margin: 0;
-		padding: 1rem 0;
-		border: 0;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-		border-radius: 0;
-		background: transparent;
+		padding: 1rem 1.05rem;
+		border: 1px solid rgba(12, 10, 9, 0.08);
+		border-radius: 1rem;
+		background: linear-gradient(180deg, rgba(250, 249, 246, 0.98), rgba(245, 239, 228, 0.98));
 		color: #292524;
 	}
 
@@ -2197,12 +1622,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo {
 		margin: 0 0 0.85rem;
-		padding: 0.9rem 0;
-		border: 0;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-		border-radius: 0;
-		background: transparent;
+		padding: 1rem;
+		border: 1px solid rgba(12, 10, 9, 0.08);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.7);
 		display: grid;
 		gap: 0.75rem;
 	}
@@ -2285,17 +1708,16 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		gap: 0.5rem;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 1rem;
-			padding: 0.7rem 0;
-			border: 0;
-			border-bottom: 1px solid rgba(12, 10, 9, 0.12);
-			border-radius: 0;
-			background: transparent;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.75rem 0.85rem;
+		border: 1px solid rgba(12, 10, 9, 0.12);
+		border-radius: 0;
+		background: #fff;
+	}
 
 	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row strong {
 		color: #0c0a09;
@@ -2310,16 +1732,16 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		color: #8f1515;
 	}
 
-		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row--total {
-			border-bottom-color: rgba(12, 10, 9, 0.82);
-			background: transparent;
-			color: #0c0a09;
-			font-weight: 700;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row--total {
+		border-color: rgba(143, 21, 21, 0.45);
+		background: #fff;
+		color: #6b1010;
+		font-weight: 700;
+	}
 
-		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row--total strong {
-			color: #0c0a09;
-		}
+	body.pmpro-checkout .aac-managed-card .aac-magazine-addons__summary-row--total strong {
+		color: #8f1515;
+	}
 
 	@media (max-width: 720px) {
 		body.pmpro-checkout .aac-managed-card .aac-magazine-addons__promo-form {
@@ -2337,10 +1759,6 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		font-weight: 600;
 	}
 
-	body.pmpro-checkout .aac-managed-card #pmpro_autorenewal_checkbox .pmpro_form_heading {
-		display: none;
-	}
-
 	body.pmpro-checkout .aac-managed-card #pmpro_autorenewal_checkbox .pmpro_form_fields {
 		display: block;
 	}
@@ -2350,12 +1768,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
-		padding: 0.9rem 0;
-		border: 0;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
+		padding: 1rem 1.05rem;
+		border: 1px solid rgba(12, 10, 9, 0.1);
 		border-radius: 0;
-		background: transparent;
+		background: #fff;
 		color: #1c1917;
 	}
 
@@ -2385,43 +1801,36 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-picker {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(8.25rem, 1fr));
-		gap: 0.75rem;
-	}
-
-	body.pmpro-checkout .aac-managed-card .aac-donation-custom-row {
-		display: grid;
-		grid-template-columns: minmax(8.25rem, 1fr) minmax(10rem, 12rem);
-		gap: 0.75rem;
-		grid-column: 1 / -1;
-		align-items: center;
+		grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+		gap: 0.6rem;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-option {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-height: 3.15rem;
-		border: 1px solid rgba(12, 10, 9, 0.14);
+		min-height: 3rem;
+		border: 1px solid rgba(143, 21, 21, 0.78);
 		border-radius: 0;
-		background: transparent;
-		color: #0c0a09;
-		font-size: 0.88rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
+		background: #b71c1c;
+		color: #fff;
+		font-size: 0.92rem;
+		font-weight: 700;
+		letter-spacing: 0.01em;
+		text-transform: none;
 		padding: 0 0.95rem;
 		transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-option:hover {
 		transform: translateY(-1px);
-		border-color: #0c0a09;
+		background: #8f1515;
+		border-color: #8f1515;
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-option[data-selected="true"] {
-		border-color: #0c0a09;
-		background: #0c0a09;
+		border-color: #6f1010;
+		background: #6f1010;
 		color: #fff;
 	}
 
@@ -2430,10 +1839,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		align-items: center;
 		gap: 0.55rem;
 		margin-top: 0;
-		padding: 0;
-		border: 0;
-		border-radius: 0;
-		background: transparent;
+		padding: 0.85rem 0.95rem;
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.84);
 	}
 
 	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-donation[data-aac-donation-mode="custom"] #pmprodon_donation_input {
@@ -2442,14 +1851,8 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	body.pmpro-checkout .aac-managed-card #pmpro_form_fieldset-donation #pmprodon_donation_input input {
 		width: 100%;
-		max-width: none;
+		max-width: 11rem;
 		margin-top: 0;
-	}
-
-	@media (max-width: 720px) {
-		body.pmpro-checkout .aac-managed-card .aac-donation-custom-row {
-			grid-template-columns: 1fr;
-		}
 	}
 
 	body.pmpro-checkout .aac-managed-card .aac-donation-helper {
@@ -2459,12 +1862,10 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 	.aac-managed-card .aac-order-summary {
 		margin: 0 0 1.25rem;
-		padding: 1rem 0;
-		border: 0;
-		border-top: 1px solid rgba(12, 10, 9, 0.12);
-		border-bottom: 1px solid rgba(12, 10, 9, 0.12);
+		padding: 1.1rem 1.2rem;
+		border: 1px solid rgba(12, 10, 9, 0.1);
 		border-radius: 0;
-		background: transparent;
+		background: #fff;
 	}
 
 	.aac-managed-card .aac-order-summary__header {
@@ -2490,18 +1891,17 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 		gap: 0.5rem;
 	}
 
-		.aac-managed-card .aac-order-summary__row {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 1rem;
-			padding: 0.75rem 0;
-			border: 0;
-			border-bottom: 1px solid rgba(12, 10, 9, 0.1);
-			border-radius: 0;
-			background: transparent;
-			color: #1c1917;
-		}
+	.aac-managed-card .aac-order-summary__row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.75rem 0.9rem;
+		border: 1px solid rgba(12, 10, 9, 0.1);
+		border-radius: 0;
+		background: #fff;
+		color: #1c1917;
+	}
 
 	.aac-managed-card .aac-order-summary__row strong {
 		color: #0c0a09;
@@ -2509,14 +1909,14 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	}
 
 	.aac-managed-card .aac-order-summary__row--total {
-		border-color: rgba(12, 10, 9, 0.82);
-		background: transparent;
-		color: #0c0a09;
+		border-color: rgba(183, 28, 28, 0.82);
+		background: #fff;
+		color: #8f1515;
 		font-weight: 700;
 	}
 
 	.aac-managed-card .aac-order-summary__row--total strong {
-		color: #0c0a09;
+		color: #ef4444;
 	}
 
 	.aac-managed-card .aac-order-summary__meta {
@@ -2545,6 +1945,26 @@ $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 
 		body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	@media (max-width: 760px) {
+		body.pmpro-checkout .aac-managed-card .aac-member-preferences__grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-member-preferences__choices {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.5rem;
+			justify-items: stretch;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-member-preferences__choice {
+			min-height: 2.45rem;
+			min-width: 0;
+			padding: 0.7rem 0.85rem;
+			font-size: 0.88rem;
+			line-height: 1.15;
 		}
 	}
 
@@ -3154,19 +2574,7 @@ const defaultPublicationCardImages = {
 		}
 	};
 
-	const getCurrentCheckoutLevelId = () => {
-		const hiddenLevelId = Number.parseInt(document.getElementById('pmpro_level')?.value || '0', 10) || 0;
-		if (hiddenLevelId > 0) {
-			return hiddenLevelId;
-		}
-
-		const pmproLevelId = Number.parseInt(window.pmpro?.current_level?.id || window.pmpropbc?.level?.id || '0', 10) || 0;
-		if (pmproLevelId > 0) {
-			return pmproLevelId;
-		}
-
-		return Number.parseInt(new URLSearchParams(window.location.search).get('level') || '0', 10) || 0;
-	};
+	const getCurrentCheckoutLevelId = () => Number.parseInt(document.getElementById('pmpro_level')?.value || '0', 10) || 0;
 
 	const getCurrentCheckoutLevelName = () => {
 		const levelId = getCurrentCheckoutLevelId();
@@ -3701,490 +3109,19 @@ const defaultPublicationCardImages = {
 
 		};
 
-		const ensureCheckoutWizardShell = () => {
-			const checkoutForm = document.getElementById('pmpro_form');
-			if (!checkoutForm) {
-				return;
-			}
-
-			const userFieldsFieldset = document.getElementById('pmpro_user_fields');
-			const discountFieldset = document.getElementById('pmpro_form_fieldset-membership-discounts');
-			const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
-			const billingFieldset = document.getElementById('pmpro_billing_address_fields');
-			const memberPreferencesFieldset =
-				document.getElementById('pmpro_form_fieldset-publication-preferences')
-				|| document.getElementById('pmpro_form_fieldset-member-preferences')
-				|| document.getElementById('pmpro_form_fieldset-more-information');
-			const donationFieldset = document.getElementById('pmpro_form_fieldset-donation');
-			const autoRenewFieldset = document.getElementById('pmpro_autorenewal_checkbox');
-			const paymentInformationFieldset = document.getElementById('pmpro_payment_information_fields');
-			const checkoutSummary = document.querySelector('[data-aac-magazine-summary]');
-			const submitSection = checkoutForm.querySelector('.pmpro_form_submit');
-			const checkoutHiddenControls = Array.from(checkoutForm.children).filter((node) => {
-				if (node.matches?.('input[type="hidden"][name="pmpro_checkout_nonce"], input[type="hidden"][name="_wp_http_referer"], #pmpro_message_bottom')) {
-					return true;
-				}
-
-				return false;
-			});
-			const stepDefinitions = [
-				{
-					slug: 'account',
-					label: 'Create Account & Discounts',
-					nodes: [discountFieldset, familyFieldset, userFieldsFieldset],
-				},
-				{
-					slug: 'profile',
-					label: 'Profile Information',
-					nodes: [billingFieldset],
-				},
-				{
-					slug: 'publications',
-					label: 'Publication Preferences',
-					nodes: [memberPreferencesFieldset],
-				},
-				{
-					slug: 'payment',
-					label: 'Make a Gift, Automatic Renewal & Payment',
-					nodes: [donationFieldset, autoRenewFieldset, checkoutSummary, paymentInformationFieldset, ...checkoutHiddenControls, submitSection],
-				},
-			].map((step) => ({
-				...step,
-				nodes: step.nodes.filter(Boolean),
-			})).filter((step) => step.nodes.length);
-
-			if (!stepDefinitions.length) {
-				return;
-			}
-
-			const insertionAnchor = stepDefinitions
-				.flatMap((step) => step.nodes)
-				.find((node) => node && node.parentNode);
-			if (!insertionAnchor || !insertionAnchor.parentNode) {
-				return;
-			}
-
-			let wizardShell = checkoutForm.querySelector('.aac-checkout-wizard');
-			let railSteps;
-			let contentColumn;
-			let mobileProgress;
-			if (!wizardShell) {
-				wizardShell = document.createElement('div');
-				wizardShell.className = 'aac-checkout-wizard';
-
-				const rail = document.createElement('aside');
-				rail.className = 'aac-checkout-wizard__rail';
-				rail.innerHTML = `
-					<p class="aac-checkout-wizard__rail-kicker">Membership Signup</p>
-					<h2 class="aac-checkout-wizard__rail-title">Complete each step</h2>
-					<div class="aac-checkout-wizard__rail-status">
-						<span class="aac-checkout-wizard__rail-count"></span>
-						<div class="aac-checkout-wizard__rail-meter" aria-hidden="true">
-							<div class="aac-checkout-wizard__rail-meter-bar"></div>
-						</div>
-					</div>
-				`;
-
-				railSteps = document.createElement('ol');
-				railSteps.className = 'aac-checkout-wizard__steps';
-				rail.appendChild(railSteps);
-
-				contentColumn = document.createElement('div');
-				contentColumn.className = 'aac-checkout-wizard__content';
-					contentColumn.innerHTML = `
-						<div class="aac-checkout-wizard__mobile-progress">
-							<p class="aac-checkout-wizard__mobile-kicker">Membership Signup</p>
-							<div class="aac-checkout-wizard__mobile-title-row">
-								<h2 class="aac-checkout-wizard__mobile-title"></h2>
-								<span class="aac-checkout-wizard__mobile-count"></span>
-							</div>
-							<div class="aac-checkout-wizard__mobile-meter" aria-hidden="true">
-								<div class="aac-checkout-wizard__mobile-meter-bar"></div>
-							</div>
-					</div>
-				`;
-
-				wizardShell.append(rail, contentColumn);
-				insertionAnchor.parentNode.insertBefore(wizardShell, insertionAnchor);
-			} else {
-				railSteps = wizardShell.querySelector('.aac-checkout-wizard__steps');
-				contentColumn = wizardShell.querySelector('.aac-checkout-wizard__content');
-			}
-
-			if (!railSteps || !contentColumn) {
-				return;
-			}
-
-			mobileProgress = contentColumn.querySelector('.aac-checkout-wizard__mobile-progress');
-
-			railSteps.innerHTML = '';
-
-			const wizardStateKey = `aacCheckoutWizardStep:${document.getElementById('pmpro_level')?.value || 'default'}`;
-			const requestedStartSlug = String(new URLSearchParams(window.location.search).get('aac_wizard_step') || '').trim().toLowerCase();
-
-			const persistActiveIndex = (index) => {
-				try {
-					window.sessionStorage.setItem(wizardStateKey, String(index));
-				} catch (error) {
-					// Ignore storage access issues and keep the current in-memory state.
-				}
-			};
-
-			const readPersistedIndex = () => {
-				if (requestedStartSlug) {
-					const requestedIndex = stepDefinitions.findIndex((step) => step.slug === requestedStartSlug);
-					if (requestedIndex > -1) {
-						return requestedIndex;
-					}
-				}
-				try {
-					const stored = Number.parseInt(window.sessionStorage.getItem(wizardStateKey) || '', 10);
-					return Number.isFinite(stored) ? stored : 0;
-				} catch (error) {
-					return 0;
-				}
-			};
-
-			let currentActiveIndex = 0;
-
-			stepDefinitions.forEach((step, index) => {
-				let section = contentColumn.querySelector(`[data-aac-step-slug="${step.slug}"]`);
-				if (!section) {
-					section = document.createElement('section');
-					section.className = 'aac-checkout-step';
-					section.dataset.aacStepSlug = step.slug;
-					section.id = `aac-checkout-step-${step.slug}`;
-						section.innerHTML = `
-							<div class="aac-checkout-step__header">
-								<p class="aac-checkout-step__eyebrow">Step</p>
-								<h3 class="aac-checkout-step__title"></h3>
-							</div>
-							<div class="aac-checkout-step__body"></div>
-							<div class="aac-checkout-step__footer"><div class="aac-checkout-step__error" aria-live="polite"></div></div>
-						`;
-					contentColumn.appendChild(section);
-				}
-
-					const body = section.querySelector('.aac-checkout-step__body');
-					const footer = section.querySelector('.aac-checkout-step__footer');
-					const titleNode = section.querySelector('.aac-checkout-step__title');
-					const eyebrowNode = section.querySelector('.aac-checkout-step__eyebrow');
-					if (!body || !footer || !titleNode || !eyebrowNode) {
-						return;
-					}
-
-					titleNode.textContent = step.label;
-					eyebrowNode.textContent = `Step ${String(index + 1).padStart(2, '0')}`;
-
-				step.nodes.forEach((node) => {
-					if (node.parentNode !== body) {
-						body.appendChild(node);
-					}
-				});
-
-				const errorNode = footer.querySelector('.aac-checkout-step__error');
-				const clearStepError = () => {
-					if (!errorNode) {
-						return;
-					}
-
-					errorNode.textContent = '';
-					errorNode.classList.remove('is-visible');
-				};
-
-				const setStepError = (message) => {
-					if (!errorNode) {
-						return;
-					}
-
-					errorNode.textContent = message;
-					errorNode.classList.add('is-visible');
-				};
-
-				const getStepControls = () => Array.from(section.querySelectorAll('input, select, textarea')).filter((field) => {
-					if (!field || field.disabled) {
-						return false;
-					}
-
-					if (field.type === 'hidden') {
-						return false;
-					}
-
-					const style = window.getComputedStyle(field);
-					if (style.display === 'none' || style.visibility === 'hidden') {
-						return false;
-					}
-
-					return !!field.offsetParent || field.getClientRects().length > 0;
-				});
-
-				const clearFieldInvalidState = (field) => {
-					field.removeAttribute('data-aac-step-invalid');
-					const select2Container = field.parentElement?.querySelector?.('.select2-container');
-					select2Container?.removeAttribute('data-aac-step-invalid');
-				};
-
-				const markFieldInvalid = (field) => {
-					field.setAttribute('data-aac-step-invalid', 'true');
-					const select2Container = field.parentElement?.querySelector?.('.select2-container');
-					select2Container?.setAttribute('data-aac-step-invalid', 'true');
-				};
-
-					const validateStep = () => {
-						clearStepError();
-						const controls = getStepControls();
-						controls.forEach(clearFieldInvalidState);
-						const optionalFieldKeys = new Set(['baddress2']);
-						const requiredControls = controls.filter((field) => {
-							const fieldKey = String(field.name || field.id || '').toLowerCase();
-							if (!fieldKey || optionalFieldKeys.has(fieldKey)) {
-								return false;
-							}
-							if (field.type === 'button' || field.type === 'submit' || field.type === 'reset') {
-								return false;
-							}
-							if (field.type === 'checkbox') {
-								return field.required;
-							}
-							if (field.type === 'radio') {
-								return true;
-							}
-							return true;
-						});
-
-						const validatedRadioNames = new Set();
-
-						for (const field of requiredControls) {
-							if (field.type === 'radio') {
-								if (validatedRadioNames.has(field.name)) {
-									continue;
-								}
-
-								validatedRadioNames.add(field.name);
-								const radioGroup = requiredControls.filter((candidate) => candidate.type === 'radio' && candidate.name === field.name);
-								const isChecked = radioGroup.some((candidate) => candidate.checked);
-								if (!isChecked) {
-									radioGroup.forEach(markFieldInvalid);
-									setStepError('Complete all fields in this step before continuing.');
-									field.focus();
-									return false;
-								}
-								continue;
-							}
-
-							if (field.tagName === 'SELECT' && !String(field.value || '').trim()) {
-								markFieldInvalid(field);
-								setStepError('Complete all fields in this step before continuing.');
-								field.focus();
-								return false;
-							}
-
-							if ((field.type === 'text' || field.type === 'email' || field.type === 'tel' || field.type === 'password' || field.type === 'number' || field.tagName === 'TEXTAREA') && !String(field.value || '').trim()) {
-								markFieldInvalid(field);
-								setStepError('Complete all fields in this step before continuing.');
-								field.focus();
-								return false;
-							}
-
-							if (!field.checkValidity()) {
-								markFieldInvalid(field);
-								setStepError('Complete all fields in this step before continuing.');
-								field.reportValidity();
-								field.focus();
-								return false;
-						}
-					}
-
-					return true;
-				};
-
-				const isFirstStep = index === 0;
-				const isLastStep = index === stepDefinitions.length - 1;
-				footer.classList.toggle('aac-checkout-step__footer--final', isLastStep);
-				Array.from(footer.querySelectorAll('.aac-checkout-step__nav-button, .aac-checkout-step__spacer')).forEach((node) => node.remove());
-				clearStepError();
-
-				const backButton = document.createElement('button');
-				backButton.type = 'button';
-				backButton.className = 'aac-checkout-step__nav-button';
-				backButton.textContent = 'Back';
-				backButton.addEventListener('click', () => {
-					clearStepError();
-					if (isFirstStep) {
-						if (window.parent && window.parent !== window) {
-							window.parent.postMessage({ type: 'aac-pmpro-checkout-back' }, window.location.origin);
-						}
-						return;
-					}
-					setActiveStepByIndex(index - 1, { scroll: true });
-				});
-				footer.appendChild(backButton);
-
-				if (!isLastStep) {
-					const spacer = document.createElement('span');
-					spacer.className = 'aac-checkout-step__spacer';
-					footer.appendChild(spacer);
-
-					const nextButton = document.createElement('button');
-					nextButton.type = 'button';
-					nextButton.className = 'aac-checkout-step__nav-button aac-checkout-step__nav-button--primary';
-					nextButton.textContent = isLastStep ? 'Review & Pay' : `Continue to ${stepDefinitions[index + 1]?.label || 'Next Step'}`;
-					nextButton.addEventListener('click', () => {
-						if (!validateStep()) {
-							return;
-						}
-						setActiveStepByIndex(index + 1, { scroll: true });
-					});
-					footer.appendChild(nextButton);
-				}
-
-				getStepControls().forEach((field) => {
-					if (field.dataset.aacStepValidationBound === 'true') {
-						return;
-					}
-
-					const clearState = () => {
-						clearFieldInvalidState(field);
-						clearStepError();
-					};
-
-					field.addEventListener('input', clearState);
-					field.addEventListener('change', clearState);
-					field.dataset.aacStepValidationBound = 'true';
-				});
-
-				const stepItem = document.createElement('li');
-				stepItem.className = 'aac-checkout-wizard__step';
-				stepItem.dataset.aacStepSlug = step.slug;
-					stepItem.innerHTML = `
-						<button type="button" class="aac-checkout-wizard__step-button">
-							<span class="aac-checkout-wizard__step-index">${String(index + 1).padStart(2, '0')}</span>
-							<span>
-								<span class="aac-checkout-wizard__step-label">${escapeHtml(step.label)}</span>
-							</span>
-						</button>
-					`;
-				stepItem.querySelector('button')?.addEventListener('click', () => {
-					if (index > currentActiveIndex) {
-						const currentSection = stepSections[currentActiveIndex];
-						const currentNextButton = currentSection?.querySelector('.aac-checkout-step__nav-button--primary');
-						if (currentNextButton) {
-							currentNextButton.click();
-						}
-						return;
-					}
-					setActiveStepByIndex(index, { scroll: true });
-				});
-				railSteps.appendChild(stepItem);
-			});
-
-			const stepSections = Array.from(contentColumn.querySelectorAll('.aac-checkout-step'));
-			const stepItems = Array.from(railSteps.querySelectorAll('.aac-checkout-wizard__step'));
-			if (!stepSections.length || !stepItems.length) {
-				return;
-			}
-
-			const setRailState = (activeIndex) => {
-				stepItems.forEach((item, index) => {
-					item.classList.toggle('is-active', index === activeIndex);
-					item.classList.toggle('is-done', activeIndex > -1 && index < activeIndex);
-				});
-			};
-
-			const setDesktopProgressState = (activeIndex) => {
-				const countNode = wizardShell.querySelector('.aac-checkout-wizard__rail-count');
-				const meterBarNode = wizardShell.querySelector('.aac-checkout-wizard__rail-meter-bar');
-				const totalSteps = stepDefinitions.length;
-				const percentComplete = totalSteps > 1 ? ((activeIndex + 1) / totalSteps) * 100 : 100;
-
-				if (countNode) {
-					countNode.textContent = `Step ${activeIndex + 1} of ${totalSteps}`;
-				}
-
-				if (meterBarNode) {
-					meterBarNode.style.width = `${percentComplete}%`;
-				}
-			};
-
-			const setMobileProgressState = (activeIndex) => {
-				if (!mobileProgress) {
-					return;
-				}
-
-				const activeStep = stepDefinitions[activeIndex];
-				if (!activeStep) {
-					return;
-				}
-
-					const titleNode = mobileProgress.querySelector('.aac-checkout-wizard__mobile-title');
-					const countNode = mobileProgress.querySelector('.aac-checkout-wizard__mobile-count');
-					const meterBarNode = mobileProgress.querySelector('.aac-checkout-wizard__mobile-meter-bar');
-				const totalSteps = stepDefinitions.length;
-				const percentComplete = totalSteps > 1 ? ((activeIndex + 1) / totalSteps) * 100 : 100;
-
-				if (titleNode) {
-					titleNode.textContent = activeStep.label;
-				}
-
-					if (countNode) {
-						countNode.textContent = `Step ${activeIndex + 1} of ${totalSteps}`;
-					}
-
-					if (meterBarNode) {
-						meterBarNode.style.width = `${percentComplete}%`;
-				}
-			};
-
-			const scrollWizardToTop = () => {
-				const target = wizardShell || checkoutForm;
-				if (!target) {
-					return;
-				}
-
-				const targetTop = window.scrollY + target.getBoundingClientRect().top - 16;
-				window.scrollTo({
-					top: Math.max(0, targetTop),
-					behavior: 'smooth',
-				});
-			};
-
-			const setActiveStepByIndex = (requestedIndex, options = {}) => {
-				const safeIndex = Math.max(0, Math.min(stepSections.length - 1, requestedIndex));
-				currentActiveIndex = safeIndex;
-				stepSections.forEach((section, index) => {
-					section.classList.toggle('is-active', index === safeIndex);
-				});
-				setRailState(safeIndex);
-				setDesktopProgressState(safeIndex);
-				setMobileProgressState(safeIndex);
-				wizardShell.dataset.aacWizardActiveIndex = String(safeIndex);
-				persistActiveIndex(safeIndex);
-
-				if (options.scroll) {
-					if (window.parent && window.parent !== window) {
-						window.parent.postMessage({ type: 'aac-pmpro-checkout-scroll-top' }, window.location.origin);
-					}
-					window.requestAnimationFrame(scrollWizardToTop);
-				}
-
-				window.setTimeout(() => {
-					if (typeof syncMagazineAddonSummary === 'function') {
-						syncMagazineAddonSummary();
-					}
-				}, 0);
-			};
-
-			setActiveStepByIndex(readPersistedIndex(), { scroll: false });
-		};
-
-		const syncMagazineAddonSummary = () => {
+	const syncMagazineAddonSummary = () => {
 			const fieldset = document.getElementById('pmpro_form_fieldset-magazine-addons');
-			const checkboxInputs = fieldset
-				? Array.from(fieldset.querySelectorAll('input[name="aac_magazine_addons[]"]'))
-				: [];
+			if (!fieldset) {
+				return;
+			}
+
+			const checkboxInputs = Array.from(fieldset.querySelectorAll('input[name="aac_magazine_addons[]"]'));
+			if (!checkboxInputs.length) {
+				return;
+			}
 
 		const basePrice = getCurrentCheckoutBasePrice()
-			?? (Number.parseFloat(fieldset?.dataset?.aacMagazineBasePrice || '0') || 0);
+			?? (Number.parseFloat(fieldset.dataset.aacMagazineBasePrice || '0') || 0);
 			const addonTotal = checkboxInputs.reduce((total, input) => {
 				if (!input.checked) {
 					return total;
@@ -4220,20 +3157,7 @@ const defaultPublicationCardImages = {
 			const fallbackValue = (document.querySelector(fallbackSelector)?.value || '').trim();
 			return fallbackValue === 'Print' ? 'Print' : 'Digital';
 		};
-		const getCheckoutCountryValue = () => {
-			const countryField = document.getElementById('bcountry');
-			if (countryField && typeof countryField.value === 'string' && countryField.value.trim() !== '') {
-				return countryField.value;
-			}
-
-			const namedCountryField = document.querySelector('select[name="bcountry"], input[name="bcountry"]');
-			if (namedCountryField && typeof namedCountryField.value === 'string' && namedCountryField.value.trim() !== '') {
-				return namedCountryField.value;
-			}
-
-			return 'US';
-		};
-		const countryValue = String(getCheckoutCountryValue()).trim().toUpperCase();
+		const countryValue = String(document.getElementById('bcountry')?.value || 'US').trim().toUpperCase();
 		const isInternationalCountry = !['', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(countryValue);
 		const hasPrintPublicationSelection = [
 			readPublicationPreferenceValue('#aaj_preference_div select'),
@@ -4329,14 +3253,11 @@ const defaultPublicationCardImages = {
 			familyDependentsInput.dataset.aacPartnerFamilyBound = 'true';
 		}
 
-			const countryField = document.getElementById('bcountry');
-			if (countryField && countryField.dataset.aacOrderSummaryBound !== 'true') {
-				countryField.addEventListener('change', syncMagazineAddonSummary);
-				countryField.addEventListener('input', syncMagazineAddonSummary);
-				countryField.addEventListener('blur', syncMagazineAddonSummary);
-				countryField.addEventListener('select2:select', syncMagazineAddonSummary);
-				countryField.dataset.aacOrderSummaryBound = 'true';
-			}
+		const countryField = document.getElementById('bcountry');
+		if (countryField && countryField.dataset.aacOrderSummaryBound !== 'true') {
+			countryField.addEventListener('change', syncMagazineAddonSummary);
+			countryField.dataset.aacOrderSummaryBound = 'true';
+		}
 
 		document.querySelectorAll('#publications_preference_div select, #aaj_preference_div select, #anac_preference_div select, #american_climbing_journal_preference_div select, #guidebook_preferences_div select').forEach((select) => {
 			if (select.dataset.aacOrderSummaryBound === 'true') {
@@ -4846,11 +3767,7 @@ const defaultPublicationCardImages = {
 						dropdown.dispatchEvent(new Event('change', { bubbles: true }));
 						window.requestAnimationFrame(() => amountInput.focus());
 					});
-					const customRow = document.createElement('div');
-					customRow.className = 'aac-donation-custom-row';
-					customRow.appendChild(customButton);
-					customRow.appendChild(amountWrapper);
-					picker.appendChild(customRow);
+					picker.appendChild(customButton);
 
 					inlineWrapper.insertBefore(picker, inlineWrapper.firstChild);
 				}
@@ -5194,10 +4111,7 @@ const defaultPublicationCardImages = {
 				bindFamilySelectionShortcut();
 				syncStandaloneFamilyVisibility();
 				relabelTShirtSizeOptions();
-				ensureCheckoutWizardShell();
 				syncMagazineAddonSummary();
-				window.setTimeout(syncMagazineAddonSummary, 50);
-				window.setTimeout(syncMagazineAddonSummary, 250);
 				syncPmproStateDropdown();
 				replacePmproLoggedInAccountUsername();
 				bindManagedAutoRenewToggle();
@@ -5214,10 +4128,7 @@ const defaultPublicationCardImages = {
 			bindFamilySelectionShortcut();
 			syncStandaloneFamilyVisibility();
 			relabelTShirtSizeOptions();
-			ensureCheckoutWizardShell();
 			syncMagazineAddonSummary();
-			window.setTimeout(syncMagazineAddonSummary, 50);
-			window.setTimeout(syncMagazineAddonSummary, 250);
 			syncPmproStateDropdown();
 			replacePmproLoggedInAccountUsername();
 			bindManagedAutoRenewToggle();
@@ -5235,7 +4146,6 @@ const defaultPublicationCardImages = {
 		window.addEventListener('load', syncStandaloneFamilyVisibility);
 		window.addEventListener('load', relabelTShirtSizeOptions);
 		window.addEventListener('load', syncMagazineAddonSummary);
-		window.addEventListener('load', ensureCheckoutWizardShell);
 		window.addEventListener('load', syncPmproStateDropdown);
 		window.addEventListener('load', replacePmproLoggedInAccountUsername);
 		window.addEventListener('load', bindManagedAutoRenewToggle);

@@ -294,15 +294,6 @@ class AAC_Member_Portal_Redpoint_API {
 			return;
 		}
 
-		if (!is_user_logged_in()) {
-			wp_safe_redirect(wp_login_url(home_url('/redpoint/')));
-			exit;
-		}
-
-		if (!current_user_can('manage_options')) {
-			wp_die('You do not have permission to access the Redpoint directory.', 'Forbidden', ['response' => 403]);
-		}
-
 		$args = $this->get_directory_query_args();
 		$results = $this->query_exact_profiles($args);
 		$members = array_map([$this, 'format_redpoint_member'], $results['rows']);
