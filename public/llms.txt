@@ -1,5 +1,6 @@
 ## Pages
-- [- Our Store](/productdetail): No description available
-- [AAC Meetups - American Alpine Club](/meetups): Find and join American Alpine Club events and meetups near you.
+- [- American Alpine Club](/linkedaccounts): Redeem a family invite code and connect a linked AAC household account.
 - [Contact Us - American Alpine Club](/contact): Get in touch with the American Alpine Club membership team.
-- [Payment Successful! - American Alpine Club](/success): Your payment was successful. Thank you for your order!
+- [Login - American Alpine Club](/login): No description available
+- [Manage Membership - American Alpine Club](/membershipmanagement): Manage AAC account details, billing, membership changes, cancellation, and confirmation records.
+- [Rescue Benefits - American Alpine Club](/rescue): Review AAC Redpoint rescue, medical expense, and mortal remains transport benefits.

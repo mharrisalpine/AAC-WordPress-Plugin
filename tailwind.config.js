@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
 	darkMode: ['class'],
+	important: ':is(#root, #aac-member-portal-root)',
 	content: [
 		'./pages/**/*.{js,jsx}',
 		'./components/**/*.{js,jsx}',

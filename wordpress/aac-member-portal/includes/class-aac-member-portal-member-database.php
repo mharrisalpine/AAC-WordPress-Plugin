@@ -6,20 +6,56 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_Member_Database {
 	const PAGE_SLUG = 'aac-member-portal-member-database';
-	const SCHEMA_VERSION = '1.0.3';
+	const EXPORT_PAGE_SLUG = 'aac-member-portal-member-database-export';
+	const SCHEMA_VERSION = '1.0.4';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
+	const EXPORT_FIELDS_OPTION = 'aac_member_portal_member_database_export_fields';
 
 	public function __construct() {
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('init', [$this, 'maybe_install_schema']);
+		add_action('admin_post_aac_member_portal_export_member_database', [$this, 'handle_export_member_database']);
+		add_action('admin_post_aac_member_portal_save_member_export_fields', [$this, 'handle_save_member_export_fields']);
 		add_action('profile_update', [$this, 'sync_member_by_user_id'], 30, 1);
 		add_action('personal_options_update', [$this, 'sync_member_by_user_id'], 100, 1);
 		add_action('edit_user_profile_update', [$this, 'sync_member_by_user_id'], 100, 1);
 		add_action('aac_member_portal_member_registered', [$this, 'sync_member_by_user_id'], 30, 1);
 		add_action('aac_member_portal_profile_updated', [$this, 'sync_member_by_user_id'], 30, 1);
-		add_action('aac_member_portal_grant_application_submitted', [$this, 'sync_member_after_grant_submission'], 30, 1);
 		add_action('pmpro_after_checkout', [$this, 'sync_member_after_checkout'], 40, 2);
 		add_action('pmpro_after_change_membership_level', [$this, 'sync_member_after_level_change'], 40, 2);
+		add_action('deleted_user', [$this, 'delete_member_by_user_id'], 30, 1);
+		add_action('admin_init', [$this, 'prune_orphaned_members']);
+	}
+
+	public function delete_member_by_user_id($user_id) {
+		global $wpdb;
+
+		$user_id = absint($user_id);
+		if (!$wpdb || !$user_id) {
+			return;
+		}
+
+		foreach ([self::history_table(), self::subscriptions_table(), self::transactions_table(), self::profiles_table()] as $table) {
+			$wpdb->delete($table, ['user_id' => $user_id], ['%d']);
+		}
+	}
+
+	public function prune_orphaned_members() {
+		global $wpdb;
+
+		if (!$wpdb || !is_admin() || !current_user_can('manage_options')) {
+			return;
+		}
+
+		$profiles = self::profiles_table();
+		$users = $wpdb->users;
+		$orphaned_user_ids = $wpdb->get_col(
+			"SELECT profiles.user_id FROM {$profiles} profiles LEFT JOIN {$users} users ON users.ID = profiles.user_id WHERE users.ID IS NULL"
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- plugin-owned table names.
+
+		foreach ((array) $orphaned_user_ids as $user_id) {
+			$this->delete_member_by_user_id($user_id);
+		}
 	}
 
 	public static function activate() {
@@ -47,7 +83,6 @@ class AAC_Member_Portal_Member_Database {
 		$history = self::history_table();
 		$subscriptions = self::subscriptions_table();
 		$transactions = self::transactions_table();
-		$podcast_listens = self::podcast_listens_table();
 
 		// Profiles keeps one flattened "what does this member look like right now?"
 		// snapshot. The other tables keep mirrored PMPro rows for the moments when
@@ -119,116 +154,7 @@ class AAC_Member_Portal_Member_Database {
 			) {$charset_collate};
 		");
 
-		dbDelta("
-			CREATE TABLE {$podcast_listens} (
-				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-				user_id bigint(20) unsigned NOT NULL,
-				episode_id varchar(120) NOT NULL DEFAULT '',
-				episode_title varchar(255) NOT NULL DEFAULT '',
-				source_url varchar(255) NOT NULL DEFAULT '',
-				source_page_url varchar(255) NOT NULL DEFAULT '',
-				embed_url varchar(255) NOT NULL DEFAULT '',
-				status varchar(20) NOT NULL DEFAULT 'started',
-				completion_percent decimal(5,2) NOT NULL DEFAULT 0,
-				duration_ms bigint(20) unsigned NOT NULL DEFAULT 0,
-				last_position_ms bigint(20) unsigned NOT NULL DEFAULT 0,
-				listener_ip varchar(100) NOT NULL DEFAULT '',
-				started_at datetime NULL,
-				completed_at datetime NULL,
-				last_event_at datetime NOT NULL,
-				completion_count bigint(20) unsigned NOT NULL DEFAULT 0,
-				raw_payload longtext NULL,
-				PRIMARY KEY  (id),
-				UNIQUE KEY user_episode (user_id, episode_id),
-				KEY status (status),
-				KEY completed_at (completed_at)
-			) {$charset_collate};
-		");
-
 		update_option(self::SCHEMA_OPTION, self::SCHEMA_VERSION);
-	}
-
-	public static function record_podcast_listen($user_id, $payload = []) {
-		global $wpdb;
-
-		$user_id = absint($user_id);
-		if ($user_id <= 0 || !$wpdb) {
-			return new WP_Error('invalid_user', 'A valid user is required to record a podcast listen.', ['status' => 400]);
-		}
-
-		$episode_id = sanitize_text_field((string) ($payload['episode_id'] ?? ''));
-		if ($episode_id === '') {
-			return new WP_Error('invalid_episode', 'A Spotify episode ID is required.', ['status' => 400]);
-		}
-
-		$table = self::podcast_listens_table();
-		$existing = $wpdb->get_row(
-			$wpdb->prepare("SELECT * FROM {$table} WHERE user_id = %d AND episode_id = %s LIMIT 1", $user_id, $episode_id),
-			ARRAY_A
-		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
-
-		$requested_status = strtolower(sanitize_text_field((string) ($payload['status'] ?? 'started')));
-		$status = $requested_status === 'completed' ? 'completed' : 'started';
-		$completion_percent = isset($payload['completion_percent']) ? (float) $payload['completion_percent'] : 0;
-		$completion_percent = max(0, min(100, $completion_percent));
-		$duration_ms = isset($payload['duration_ms']) ? max(0, (int) $payload['duration_ms']) : 0;
-		$last_position_ms = isset($payload['last_position_ms']) ? max(0, (int) $payload['last_position_ms']) : 0;
-		$existing_completion_percent = isset($existing['completion_percent']) ? (float) $existing['completion_percent'] : 0;
-		$existing_duration_ms = isset($existing['duration_ms']) ? (int) $existing['duration_ms'] : 0;
-		$existing_last_position_ms = isset($existing['last_position_ms']) ? (int) $existing['last_position_ms'] : 0;
-		$resolved_duration_ms = max($duration_ms, $existing_duration_ms);
-		$resolved_last_position_ms = max($last_position_ms, $existing_last_position_ms);
-		$resolved_completion_percent = max($completion_percent, $existing_completion_percent);
-		if ($status === 'completed') {
-			$resolved_completion_percent = max($resolved_completion_percent, 100);
-			if ($resolved_duration_ms > 0) {
-				$resolved_last_position_ms = max($resolved_last_position_ms, $resolved_duration_ms);
-			}
-		}
-		$now = current_time('mysql');
-
-		$row = [
-			'user_id' => $user_id,
-			'episode_id' => $episode_id,
-			'episode_title' => sanitize_text_field((string) ($payload['episode_title'] ?? ($existing['episode_title'] ?? ''))),
-			'source_url' => esc_url_raw((string) ($payload['source_url'] ?? ($existing['source_url'] ?? ''))),
-			'source_page_url' => esc_url_raw((string) ($payload['source_page_url'] ?? ($existing['source_page_url'] ?? ''))),
-			'embed_url' => esc_url_raw((string) ($payload['embed_url'] ?? ($existing['embed_url'] ?? ''))),
-			'status' => ($status === 'completed' || (($existing['status'] ?? '') === 'completed')) ? 'completed' : 'started',
-			'completion_percent' => $resolved_completion_percent,
-			'duration_ms' => $resolved_duration_ms,
-			'last_position_ms' => $resolved_last_position_ms,
-			'listener_ip' => sanitize_text_field((string) ($payload['listener_ip'] ?? ($existing['listener_ip'] ?? ''))),
-			'started_at' => !empty($existing['started_at']) ? $existing['started_at'] : $now,
-			'completed_at' => $status === 'completed'
-				? $now
-				: (!empty($existing['completed_at']) ? $existing['completed_at'] : ''),
-			'last_event_at' => $now,
-			'completion_count' => ($status === 'completed')
-				? ((int) ($existing['completion_count'] ?? 0) + 1)
-				: (int) ($existing['completion_count'] ?? 0),
-			'raw_payload' => wp_json_encode($payload),
-		];
-
-		if ($existing) {
-			$wpdb->update(
-				$table,
-				$row,
-				['id' => (int) $existing['id']],
-				['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s'],
-				['%d']
-			);
-			$row['id'] = (int) $existing['id'];
-		} else {
-			$wpdb->insert(
-				$table,
-				$row,
-				['%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s']
-			);
-			$row['id'] = (int) $wpdb->insert_id;
-		}
-
-		return $row;
 	}
 
 	public function register_admin_page() {
@@ -240,6 +166,51 @@ class AAC_Member_Portal_Member_Database {
 			self::PAGE_SLUG,
 			[$this, 'render_admin_page']
 		);
+
+		add_submenu_page(
+			null,
+			'Member Database Export',
+			'Member Database Export',
+			'manage_options',
+			self::EXPORT_PAGE_SLUG,
+			[$this, 'render_export_page']
+		);
+	}
+
+	public static function render_database_tools_nav($active_slug = self::PAGE_SLUG) {
+		$tools = [
+			self::PAGE_SLUG => [
+				'label' => 'Member Database',
+				'url' => admin_url('admin.php?page=' . self::PAGE_SLUG),
+			],
+			self::EXPORT_PAGE_SLUG => [
+				'label' => 'Member Database Export',
+				'url' => admin_url('admin.php?page=' . self::EXPORT_PAGE_SLUG),
+			],
+		];
+
+		if (class_exists('AAC_Member_Portal_Daily_Member_Export')) {
+			$tools[AAC_Member_Portal_Daily_Member_Export::MENU_SLUG] = [
+				'label' => 'Daily Member Export',
+				'url' => admin_url('admin.php?page=' . AAC_Member_Portal_Daily_Member_Export::MENU_SLUG),
+			];
+		}
+
+		if (class_exists('AAC_Member_Portal_Import_Manager')) {
+			$tools[AAC_Member_Portal_Import_Manager::PAGE_SLUG] = [
+				'label' => 'Member Import Manager',
+				'url' => admin_url('admin.php?page=' . AAC_Member_Portal_Import_Manager::PAGE_SLUG),
+			];
+		}
+		?>
+		<nav class="nav-tab-wrapper" style="margin:16px 0 22px;">
+			<?php foreach ($tools as $slug => $tool) : ?>
+				<a class="nav-tab <?php echo $active_slug === $slug ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url($tool['url']); ?>">
+					<?php echo esc_html($tool['label']); ?>
+				</a>
+			<?php endforeach; ?>
+		</nav>
+		<?php
 	}
 
 	public function sync_member_by_user_id($user_id) {
@@ -251,10 +222,6 @@ class AAC_Member_Portal_Member_Database {
 	}
 
 	public function sync_member_after_level_change($level_id, $user_id = 0) {
-		$this->sync_member((int) $user_id);
-	}
-
-	public function sync_member_after_grant_submission($user_id) {
 		$this->sync_member((int) $user_id);
 	}
 
@@ -385,6 +352,790 @@ class AAC_Member_Portal_Member_Database {
 		}
 	}
 
+	public function handle_export_member_database() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('You do not have permission to export the member database.', 'aac-member-portal'));
+		}
+
+		check_admin_referer('aac_member_portal_export_member_database');
+
+		$user_ids = $this->get_member_export_user_ids();
+		foreach ($user_ids as $user_id) {
+			$this->sync_member((int) $user_id);
+		}
+
+		$filename = 'aac-member-database-export-' . gmdate('Y-m-d-His') . '.csv';
+		nocache_headers();
+		header('Content-Type: text/csv; charset=utf-8');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+		$output = fopen('php://output', 'w');
+		if (!$output) {
+			exit;
+		}
+
+		$headers = $this->get_selected_member_export_headers();
+		fputcsv($output, $headers);
+		foreach ($user_ids as $user_id) {
+			$row = $this->build_member_export_row((int) $user_id);
+			fputcsv($output, array_map(function ($header) use ($row) {
+				return $row[$header] ?? '';
+			}, $headers));
+		}
+
+		fclose($output);
+		exit;
+	}
+
+	public function handle_save_member_export_fields() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('You do not have permission to change member export fields.', 'aac-member-portal'));
+		}
+
+		check_admin_referer('aac_member_portal_save_member_export_fields');
+
+		$all_headers = $this->get_member_export_headers();
+		$posted_fields = isset($_POST['aac_member_export_fields']) ? (array) wp_unslash($_POST['aac_member_export_fields']) : [];
+		$posted_fields = array_map('sanitize_text_field', $posted_fields);
+		$selected_fields = array_values(array_intersect($all_headers, $posted_fields));
+
+		if (empty($selected_fields)) {
+			delete_option(self::EXPORT_FIELDS_OPTION);
+			$redirect_status = 'all';
+		} else {
+			update_option(self::EXPORT_FIELDS_OPTION, $selected_fields, false);
+			$redirect_status = 'saved';
+		}
+
+		wp_safe_redirect(add_query_arg('aac_export_fields_saved', $redirect_status, $this->build_export_admin_url()));
+		exit;
+	}
+
+	public function render_export_page() {
+		if (!current_user_can('manage_options')) {
+			return;
+		}
+
+		$export_url = wp_nonce_url(
+			add_query_arg(['action' => 'aac_member_portal_export_member_database'], admin_url('admin-post.php')),
+			'aac_member_portal_export_member_database'
+		);
+		$all_headers = $this->get_member_export_headers();
+		$selected_headers = $this->get_selected_member_export_headers();
+		$field_groups = $this->get_member_export_field_groups();
+		$field_labels = $this->get_member_export_field_labels();
+		$selected_lookup = array_fill_keys($selected_headers, true);
+		$selected_count = count($selected_headers);
+		$total_count = count($all_headers);
+		$save_status = isset($_GET['aac_export_fields_saved']) ? sanitize_key(wp_unslash($_GET['aac_export_fields_saved'])) : '';
+		?>
+		<div class="wrap">
+			<h1>Member Database Export</h1>
+			<?php self::render_database_tools_nav(self::EXPORT_PAGE_SLUG); ?>
+			<?php if ('saved' === $save_status) : ?>
+				<div class="notice notice-success is-dismissible">
+					<p><?php esc_html_e('Member export field selection saved.', 'aac-member-portal'); ?></p>
+				</div>
+			<?php elseif ('all' === $save_status) : ?>
+				<div class="notice notice-info is-dismissible">
+					<p><?php esc_html_e('No fields were selected, so the export was reset to include all fields.', 'aac-member-portal'); ?></p>
+				</div>
+			<?php endif; ?>
+			<p>
+				Choose which member fields should be included in the CSV. Your saved selection controls the export button on this page
+				and the quick export button on the Member Database page.
+			</p>
+			<div style="background:#fff;border:1px solid #dcdcde;border-radius:12px;padding:20px;max-width:920px;margin-top:18px;">
+				<h2 style="margin-top:0;">Selected Member CSV</h2>
+				<p>
+					The next export will include <strong><?php echo esc_html((string) $selected_count); ?></strong> of
+					<strong><?php echo esc_html((string) $total_count); ?></strong> available fields. The export syncs the member
+					database mirror before download and streams the CSV directly to your browser. It includes PII, so store and share
+					the file carefully.
+				</p>
+				<p style="margin-top:18px;">
+					<a class="button button-primary button-hero" href="<?php echo esc_url($export_url); ?>">
+						Export Selected Fields CSV
+					</a>
+					<a class="button button-secondary button-hero" href="<?php echo esc_url($this->build_admin_url()); ?>" style="margin-left:8px;">
+						Open Member Database
+					</a>
+				</p>
+			</div>
+
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:1180px;margin-top:18px;">
+				<?php wp_nonce_field('aac_member_portal_save_member_export_fields'); ?>
+				<input type="hidden" name="action" value="aac_member_portal_save_member_export_fields" />
+				<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px;">
+					<button type="submit" class="button button-primary">Save Field Selection</button>
+					<button type="button" class="button" data-aac-export-fields="all">Select All</button>
+					<button type="button" class="button" data-aac-export-fields="none">Clear All</button>
+				</div>
+				<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+					<?php foreach ($field_groups as $group_label => $group_fields) : ?>
+						<div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:14px;">
+							<h2 style="font-size:16px;margin:0 0 10px;"><?php echo esc_html($group_label); ?></h2>
+							<?php foreach ($group_fields as $field_key) : ?>
+								<?php if (!in_array($field_key, $all_headers, true)) : ?>
+									<?php continue; ?>
+								<?php endif; ?>
+								<label style="display:block;margin:8px 0;line-height:1.35;">
+									<input
+										type="checkbox"
+										name="aac_member_export_fields[]"
+										value="<?php echo esc_attr($field_key); ?>"
+										<?php checked(isset($selected_lookup[$field_key])); ?>
+									/>
+									<span><?php echo esc_html($field_labels[$field_key] ?? $this->format_member_export_field_label($field_key)); ?></span>
+									<code style="display:block;margin:2px 0 0 24px;color:#646970;"><?php echo esc_html($field_key); ?></code>
+								</label>
+							<?php endforeach; ?>
+						</div>
+					<?php endforeach; ?>
+				</div>
+				<p style="margin-top:16px;">
+					<button type="submit" class="button button-primary">Save Field Selection</button>
+				</p>
+			</form>
+			<script>
+				document.addEventListener('click', function(event) {
+					var action = event.target && event.target.getAttribute('data-aac-export-fields');
+					if (!action) {
+						return;
+					}
+					document.querySelectorAll('input[name="aac_member_export_fields[]"]').forEach(function(input) {
+						input.checked = action === 'all';
+					});
+				});
+			</script>
+		</div>
+		<?php
+	}
+
+	private function get_selected_member_export_headers() {
+		$all_headers = $this->get_member_export_headers();
+		$stored_headers = get_option(self::EXPORT_FIELDS_OPTION, []);
+
+		if (!is_array($stored_headers) || empty($stored_headers)) {
+			return $all_headers;
+		}
+
+		$stored_headers = array_map('sanitize_text_field', $stored_headers);
+		$selected_headers = array_values(array_intersect($all_headers, $stored_headers));
+
+		return !empty($selected_headers) ? $selected_headers : $all_headers;
+	}
+
+	private function get_member_export_field_groups() {
+		$groups = [
+			'WordPress Account' => [
+				'wp_user_id',
+				'user_login',
+				'user_email',
+				'user_registered',
+				'display_name',
+				'roles',
+			],
+			'AAC Profile' => [
+				'aac_member_id',
+				'first_name',
+				'last_name',
+				'phone',
+				'birthdate',
+				'billing_address_1',
+				'billing_address_2',
+				'billing_city',
+				'billing_state',
+				'billing_zip',
+				'billing_country',
+				't_shirt_size',
+				'aaj_preference',
+				'accidents_preference',
+				'acj_preference',
+				'guidebook_preference',
+				'membership_discount_type',
+				'student_university',
+				'student_graduation_date',
+				'military_service_component',
+				'emergency_contact_first_name',
+				'emergency_contact_last_name',
+				'emergency_contact_phone',
+				'emergency_contact_email',
+				'emergency_contact_relationship',
+			],
+			'Current Membership' => [
+				'current_membership_id',
+				'current_membership_level',
+				'current_membership_status',
+				'membership_startdate',
+				'membership_enddate',
+				'membership_modified',
+				'member_since',
+				'renewal_date',
+				'expiration_date',
+				'valid_through_date',
+				'auto_renew',
+			],
+			'Subscription / Stripe' => [
+				'current_subscription_id',
+				'current_subscription_gateway',
+				'current_subscription_environment',
+				'current_subscription_transaction_id',
+				'current_subscription_status',
+				'current_subscription_startdate',
+				'current_subscription_enddate',
+				'current_subscription_next_payment_date',
+				'current_subscription_billing_amount',
+				'current_subscription_cycle_number',
+				'current_subscription_cycle_period',
+				'stripe_customer_id',
+			],
+			'Latest Order / Payment' => [
+				'latest_order_id',
+				'latest_order_code',
+				'latest_order_membership_id',
+				'latest_order_status',
+				'latest_order_gateway',
+				'latest_order_environment',
+				'latest_order_payment_transaction_id',
+				'latest_order_subscription_transaction_id',
+				'latest_order_subtotal',
+				'latest_order_tax',
+				'latest_order_total',
+				'latest_order_timestamp',
+				'latest_order_discount_code',
+			],
+			'Family / Group Accounts' => [
+				'account_role',
+				'parent_user_id',
+				'parent_member_id',
+				'parent_email',
+				'linked_account_slot_id',
+				'family_membership_mode',
+				'family_additional_adult',
+				'family_dependent_count',
+				'aac_group_account_group_id',
+				'aac_group_account_checkout_code',
+				'aac_group_account_child_level_id',
+				'aac_group_account_synced_at',
+				'pmpro_group_account_id',
+				'pmpro_group_account_checkout_code',
+				'pmpro_group_account_total_seats',
+				'pmpro_group_account_active_members',
+			],
+			'Raw JSON / Audit' => [
+				'connected_accounts_json',
+				'linked_parent_account_json',
+				'family_membership_json',
+				'pmpro_membership_history_json',
+				'pmpro_subscriptions_json',
+				'pmpro_orders_json',
+				'pmpro_group_accounts_json',
+				'all_user_meta_json',
+				'portal_profile_json',
+				'mirrored_at',
+			],
+		];
+		$grouped_fields = [];
+		foreach ($groups as $fields) {
+			$grouped_fields = array_merge($grouped_fields, $fields);
+		}
+		$ungrouped_fields = array_values(array_diff($this->get_member_export_headers(), $grouped_fields));
+		if (!empty($ungrouped_fields)) {
+			$groups['Other Fields'] = $ungrouped_fields;
+		}
+
+		return $groups;
+	}
+
+	private function get_member_export_field_labels() {
+		return [
+			'wp_user_id' => 'WordPress user ID',
+			'user_login' => 'Username',
+			'user_email' => 'Email address',
+			'user_registered' => 'WordPress registration date',
+			'display_name' => 'Display name',
+			'roles' => 'WordPress roles',
+			'aac_member_id' => 'AAC member ID',
+			'first_name' => 'First name',
+			'last_name' => 'Last name',
+			'phone' => 'Phone',
+			'birthdate' => 'Birthdate',
+			'billing_address_1' => 'Billing address 1',
+			'billing_address_2' => 'Billing address 2',
+			'billing_city' => 'Billing city',
+			'billing_state' => 'Billing state',
+			'billing_zip' => 'Billing ZIP',
+			'billing_country' => 'Billing country',
+			't_shirt_size' => 'T-shirt size',
+			'aaj_preference' => 'AAJ preference',
+			'accidents_preference' => 'Accidents preference',
+			'acj_preference' => 'ACJ preference',
+			'guidebook_preference' => 'Guidebook preference',
+			'membership_discount_type' => 'Membership discount type',
+			'student_university' => 'Student university/school',
+			'student_graduation_date' => 'Student graduation date',
+			'military_service_component' => 'Military service component',
+			'emergency_contact_first_name' => 'Emergency contact first name',
+			'emergency_contact_last_name' => 'Emergency contact last name',
+			'emergency_contact_phone' => 'Emergency contact phone',
+			'emergency_contact_email' => 'Emergency contact email',
+			'emergency_contact_relationship' => 'Emergency contact relationship',
+			'current_membership_id' => 'Current membership level ID',
+			'current_membership_level' => 'Current membership level',
+			'current_membership_status' => 'Current membership status',
+			'membership_startdate' => 'Membership start date',
+			'membership_enddate' => 'Membership end date',
+			'membership_modified' => 'Membership modified date',
+			'member_since' => 'Member since',
+			'renewal_date' => 'Renewal date',
+			'expiration_date' => 'Expiration date',
+			'valid_through_date' => 'Valid through date',
+			'auto_renew' => 'Auto renewal enabled',
+			'current_subscription_id' => 'Current subscription ID',
+			'current_subscription_gateway' => 'Current subscription gateway',
+			'current_subscription_environment' => 'Current subscription environment',
+			'current_subscription_transaction_id' => 'Current subscription transaction ID',
+			'current_subscription_status' => 'Current subscription status',
+			'current_subscription_startdate' => 'Current subscription start date',
+			'current_subscription_enddate' => 'Current subscription end date',
+			'current_subscription_next_payment_date' => 'Next payment date',
+			'current_subscription_billing_amount' => 'Subscription billing amount',
+			'current_subscription_cycle_number' => 'Subscription cycle number',
+			'current_subscription_cycle_period' => 'Subscription cycle period',
+			'latest_order_id' => 'Latest order ID',
+			'latest_order_code' => 'Latest order code',
+			'latest_order_membership_id' => 'Latest order membership level ID',
+			'latest_order_status' => 'Latest order status',
+			'latest_order_gateway' => 'Latest order gateway',
+			'latest_order_environment' => 'Latest order environment',
+			'latest_order_payment_transaction_id' => 'Latest payment transaction ID',
+			'latest_order_subscription_transaction_id' => 'Latest order subscription transaction ID',
+			'latest_order_subtotal' => 'Latest order subtotal',
+			'latest_order_tax' => 'Latest order tax',
+			'latest_order_total' => 'Latest order total',
+			'latest_order_timestamp' => 'Latest order date',
+			'latest_order_discount_code' => 'Latest order discount code',
+			'stripe_customer_id' => 'Stripe customer ID',
+			'account_role' => 'Family account role',
+			'parent_user_id' => 'Parent WordPress user ID',
+			'parent_member_id' => 'Parent AAC member ID',
+			'parent_email' => 'Parent email',
+			'linked_account_slot_id' => 'Linked account slot ID',
+			'family_membership_mode' => 'Family membership mode',
+			'family_additional_adult' => 'Family additional adult',
+			'family_dependent_count' => 'Family dependent count',
+			'aac_group_account_group_id' => 'AAC group account group ID',
+			'aac_group_account_checkout_code' => 'AAC group checkout code',
+			'aac_group_account_child_level_id' => 'AAC group child level ID',
+			'aac_group_account_synced_at' => 'AAC group synced at',
+			'pmpro_group_account_id' => 'PMPro group account ID',
+			'pmpro_group_account_checkout_code' => 'PMPro group checkout code',
+			'pmpro_group_account_total_seats' => 'PMPro group total seats',
+			'pmpro_group_account_active_members' => 'PMPro group active members',
+			'connected_accounts_json' => 'Connected accounts JSON',
+			'linked_parent_account_json' => 'Linked parent account JSON',
+			'family_membership_json' => 'Family membership JSON',
+			'pmpro_membership_history_json' => 'PMPro membership history JSON',
+			'pmpro_subscriptions_json' => 'PMPro subscriptions JSON',
+			'pmpro_orders_json' => 'PMPro orders JSON',
+			'pmpro_group_accounts_json' => 'PMPro group accounts JSON',
+			'all_user_meta_json' => 'All user meta JSON',
+			'portal_profile_json' => 'Portal profile JSON',
+			'mirrored_at' => 'Mirror updated at',
+		];
+	}
+
+	private function format_member_export_field_label($field_key) {
+		return ucwords(str_replace('_', ' ', (string) $field_key));
+	}
+
+	private function get_member_export_headers() {
+		return [
+			'wp_user_id',
+			'user_login',
+			'user_email',
+			'user_registered',
+			'display_name',
+			'roles',
+			'aac_member_id',
+			'first_name',
+			'last_name',
+			'phone',
+			'birthdate',
+			'billing_address_1',
+			'billing_address_2',
+			'billing_city',
+			'billing_state',
+			'billing_zip',
+			'billing_country',
+			't_shirt_size',
+			'aaj_preference',
+			'accidents_preference',
+			'acj_preference',
+			'guidebook_preference',
+			'membership_discount_type',
+			'student_university',
+			'student_graduation_date',
+			'military_service_component',
+			'emergency_contact_first_name',
+			'emergency_contact_last_name',
+			'emergency_contact_phone',
+			'emergency_contact_email',
+			'emergency_contact_relationship',
+			'current_membership_id',
+			'current_membership_level',
+			'current_membership_status',
+			'membership_startdate',
+			'membership_enddate',
+			'membership_modified',
+			'member_since',
+			'renewal_date',
+			'expiration_date',
+			'valid_through_date',
+			'auto_renew',
+			'current_subscription_id',
+			'current_subscription_gateway',
+			'current_subscription_environment',
+			'current_subscription_transaction_id',
+			'current_subscription_status',
+			'current_subscription_startdate',
+			'current_subscription_enddate',
+			'current_subscription_next_payment_date',
+			'current_subscription_billing_amount',
+			'current_subscription_cycle_number',
+			'current_subscription_cycle_period',
+			'latest_order_id',
+			'latest_order_code',
+			'latest_order_membership_id',
+			'latest_order_status',
+			'latest_order_gateway',
+			'latest_order_environment',
+			'latest_order_payment_transaction_id',
+			'latest_order_subscription_transaction_id',
+			'latest_order_subtotal',
+			'latest_order_tax',
+			'latest_order_total',
+			'latest_order_timestamp',
+			'latest_order_discount_code',
+			'stripe_customer_id',
+			'account_role',
+			'parent_user_id',
+			'parent_member_id',
+			'parent_email',
+			'linked_account_slot_id',
+			'family_membership_mode',
+			'family_additional_adult',
+			'family_dependent_count',
+			'aac_group_account_group_id',
+			'aac_group_account_checkout_code',
+			'aac_group_account_child_level_id',
+			'aac_group_account_synced_at',
+			'pmpro_group_account_id',
+			'pmpro_group_account_checkout_code',
+			'pmpro_group_account_total_seats',
+			'pmpro_group_account_active_members',
+			'connected_accounts_json',
+			'linked_parent_account_json',
+			'family_membership_json',
+			'pmpro_membership_history_json',
+			'pmpro_subscriptions_json',
+			'pmpro_orders_json',
+			'pmpro_group_accounts_json',
+			'all_user_meta_json',
+			'portal_profile_json',
+			'mirrored_at',
+		];
+	}
+
+	private function get_member_export_user_ids() {
+		global $wpdb;
+
+		$user_ids = [];
+		if ($wpdb && !empty($wpdb->pmpro_memberships_users)) {
+			$pmpro_user_ids = $wpdb->get_col("SELECT DISTINCT user_id FROM {$wpdb->pmpro_memberships_users} WHERE user_id > 0"); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static PMPro table name.
+			$user_ids = array_merge($user_ids, array_map('intval', (array) $pmpro_user_ids));
+		}
+
+		if ($wpdb) {
+			$profile_user_ids = $wpdb->get_col('SELECT DISTINCT user_id FROM ' . self::profiles_table() . ' WHERE user_id > 0'); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- plugin table name.
+			$user_ids = array_merge($user_ids, array_map('intval', (array) $profile_user_ids));
+		}
+
+		$member_id_users = get_users([
+			'meta_key' => 'aac_member_id',
+			'number' => -1,
+			'fields' => 'ids',
+		]);
+		$user_ids = array_merge($user_ids, array_map('intval', (array) $member_id_users));
+		$user_ids = array_values(array_unique(array_filter($user_ids)));
+		sort($user_ids);
+
+		return $user_ids;
+	}
+
+	private function build_member_export_row($user_id) {
+		$user = get_user_by('id', $user_id);
+		if (!$user instanceof WP_User) {
+			return [];
+		}
+
+		$profile_row = $this->get_profile_row($user_id);
+		$profile = is_array($profile_row) ? $this->decode_profile_row($profile_row) : [
+			'account_info' => [],
+			'profile_info' => [],
+			'benefits_info' => [],
+			'family_membership' => [],
+			'connected_accounts' => [],
+			'linked_parent_account' => [],
+			'raw' => [],
+		];
+		$account_info = $profile['account_info'];
+		$profile_info = $profile['profile_info'];
+		$family_membership = $profile['family_membership'];
+		$connected_accounts = $profile['connected_accounts'];
+		$linked_parent_account = $profile['linked_parent_account'];
+		$latest_membership = $this->get_latest_pmpro_row($user_id, 'pmpro_memberships_users');
+		$latest_subscription = $this->get_latest_pmpro_row($user_id, 'pmpro_subscriptions');
+		$latest_order = $this->get_latest_pmpro_row($user_id, 'pmpro_membership_orders');
+		$user_meta = $this->get_user_meta_export_values($user_id);
+		$group_summary = AAC_Member_Portal_Group_Accounts::is_available()
+			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_parent($user_id)
+			: null;
+		$pmpro_group_rows = $this->get_pmpro_group_account_rows($user_id);
+		$parent_user_id = absint($user_meta['aac_linked_parent_user_id'] ?? ($profile_row['parent_user_id'] ?? 0));
+		$parent_user = $parent_user_id > 0 ? get_user_by('id', $parent_user_id) : null;
+		$membership_level_id = (int) ($latest_membership['membership_id'] ?? ($profile_info['level_id'] ?? 0));
+		$latest_order_discount_code = $this->get_discount_code_for_order($latest_order);
+
+		return [
+			'wp_user_id' => (string) $user_id,
+			'user_login' => $user->user_login,
+			'user_email' => $user->user_email,
+			'user_registered' => $user->user_registered,
+			'display_name' => $user->display_name,
+			'roles' => implode('|', (array) $user->roles),
+			'aac_member_id' => $this->first_present_value([
+				$user_meta['aac_member_id'] ?? '',
+				$profile_info['member_id'] ?? '',
+				$profile_row['member_id'] ?? '',
+			]),
+			'first_name' => $this->first_present_value([$account_info['first_name'] ?? '', $user_meta['first_name'] ?? '']),
+			'last_name' => $this->first_present_value([$account_info['last_name'] ?? '', $user_meta['last_name'] ?? '']),
+				'phone' => $this->first_present_value([$account_info['phone'] ?? '', $user_meta['pmpro_sphone'] ?? '', $user_meta['bphone'] ?? '']),
+				'birthdate' => $this->first_present_value([$account_info['birthdate'] ?? '', $user_meta['birthdate'] ?? '']),
+				'billing_address_1' => $this->first_present_value([$account_info['street'] ?? '', $user_meta['pmpro_saddress1'] ?? '', $user_meta['baddress1'] ?? '']),
+				'billing_address_2' => $this->first_present_value([$account_info['address2'] ?? '', $user_meta['pmpro_saddress2'] ?? '', $user_meta['baddress2'] ?? '']),
+				'billing_city' => $this->first_present_value([$account_info['city'] ?? '', $user_meta['pmpro_scity'] ?? '', $user_meta['bcity'] ?? '']),
+				'billing_state' => $this->first_present_value([$account_info['state'] ?? '', $user_meta['pmpro_sstate'] ?? '', $user_meta['bstate'] ?? '']),
+				'billing_zip' => $this->first_present_value([$account_info['zip'] ?? '', $user_meta['pmpro_szipcode'] ?? '', $user_meta['bzipcode'] ?? '']),
+				'billing_country' => $this->first_present_value([$account_info['country'] ?? '', $user_meta['pmpro_scountry'] ?? '', $user_meta['bcountry'] ?? '']),
+			't_shirt_size' => $this->first_present_value([$account_info['size'] ?? '', $user_meta['t_shirt'] ?? '']),
+			'aaj_preference' => $this->first_present_value([$account_info['aaj_pref'] ?? '', $user_meta['aaj_preference'] ?? '']),
+			'accidents_preference' => $this->first_present_value([$account_info['anac_pref'] ?? '', $user_meta['anac_preference'] ?? '']),
+			'acj_preference' => $this->first_present_value([$account_info['acj_pref'] ?? '', $user_meta['american_climbing_journal_preference'] ?? '']),
+			'guidebook_preference' => $this->first_present_value([$account_info['guidebook_pref'] ?? '', $user_meta['guidebook_preferences'] ?? '']),
+			'membership_discount_type' => $this->first_present_value([$account_info['membership_discount_type'] ?? '', $user_meta['aac_membership_discount_type'] ?? '']),
+			'student_university' => $this->first_present_value([$user_meta['university_school'] ?? '', $user_meta['student_university'] ?? '', $user_meta['aac_student_university'] ?? '']),
+			'student_graduation_date' => $this->first_present_value([$user_meta['graduation_date'] ?? '', $user_meta['student_graduation_date'] ?? '', $user_meta['aac_graduation_date'] ?? '']),
+			'military_service_component' => $this->first_present_value([$user_meta['service_component'] ?? '', $user_meta['military_service_component'] ?? '', $user_meta['aac_service_component'] ?? '']),
+			'emergency_contact_first_name' => $account_info['emergency_contact_first_name'] ?? '',
+			'emergency_contact_last_name' => $account_info['emergency_contact_last_name'] ?? '',
+			'emergency_contact_phone' => $account_info['emergency_contact_phone'] ?? '',
+			'emergency_contact_email' => $account_info['emergency_contact_email'] ?? '',
+			'emergency_contact_relationship' => $account_info['emergency_contact_relationship'] ?? '',
+			'current_membership_id' => (string) $membership_level_id,
+			'current_membership_level' => $this->first_present_value([$profile_row['membership_level'] ?? '', $profile_info['tier'] ?? '', $this->get_pmpro_level_name($membership_level_id)]),
+			'current_membership_status' => $this->first_present_value([$profile_row['membership_status'] ?? '', $profile_info['status'] ?? '', $latest_membership['status'] ?? '']),
+			'membership_startdate' => (string) ($latest_membership['startdate'] ?? ''),
+			'membership_enddate' => (string) ($latest_membership['enddate'] ?? ''),
+			'membership_modified' => (string) ($latest_membership['modified'] ?? ''),
+			'member_since' => (string) ($profile_info['joined_date'] ?? ''),
+			'renewal_date' => $this->first_present_value([$profile_row['renewal_date'] ?? '', $profile_info['renewal_date'] ?? '']),
+			'expiration_date' => $this->first_present_value([$profile_row['expiration_date'] ?? '', $profile_info['expiration_date'] ?? '']),
+			'valid_through_date' => (string) ($profile_info['valid_through_date'] ?? ''),
+			'auto_renew' => !empty($account_info['auto_renew']) ? 'true' : 'false',
+			'current_subscription_id' => (string) ($latest_subscription['id'] ?? ''),
+			'current_subscription_gateway' => (string) ($latest_subscription['gateway'] ?? ''),
+			'current_subscription_environment' => (string) ($latest_subscription['gateway_environment'] ?? ''),
+			'current_subscription_transaction_id' => (string) ($latest_subscription['subscription_transaction_id'] ?? ''),
+			'current_subscription_status' => (string) ($latest_subscription['status'] ?? ''),
+			'current_subscription_startdate' => (string) ($latest_subscription['startdate'] ?? ''),
+			'current_subscription_enddate' => (string) ($latest_subscription['enddate'] ?? ''),
+			'current_subscription_next_payment_date' => (string) ($latest_subscription['next_payment_date'] ?? ''),
+			'current_subscription_billing_amount' => (string) ($latest_subscription['billing_amount'] ?? ''),
+			'current_subscription_cycle_number' => (string) ($latest_subscription['cycle_number'] ?? ''),
+			'current_subscription_cycle_period' => (string) ($latest_subscription['cycle_period'] ?? ''),
+			'latest_order_id' => (string) ($latest_order['id'] ?? ''),
+			'latest_order_code' => (string) ($latest_order['code'] ?? ''),
+			'latest_order_membership_id' => (string) ($latest_order['membership_id'] ?? ''),
+			'latest_order_status' => (string) ($latest_order['status'] ?? ''),
+			'latest_order_gateway' => (string) ($latest_order['gateway'] ?? ''),
+			'latest_order_environment' => (string) ($latest_order['gateway_environment'] ?? ''),
+			'latest_order_payment_transaction_id' => (string) ($latest_order['payment_transaction_id'] ?? ''),
+			'latest_order_subscription_transaction_id' => (string) ($latest_order['subscription_transaction_id'] ?? ''),
+			'latest_order_subtotal' => (string) ($latest_order['subtotal'] ?? ''),
+			'latest_order_tax' => (string) ($latest_order['tax'] ?? ''),
+			'latest_order_total' => (string) ($latest_order['total'] ?? ''),
+			'latest_order_timestamp' => (string) ($latest_order['timestamp'] ?? ''),
+			'latest_order_discount_code' => $latest_order_discount_code,
+			'stripe_customer_id' => $this->first_present_value([$user_meta['pmpro_stripe_customerid'] ?? '', $user_meta['stripe_customer_id'] ?? '']),
+			'account_role' => $this->first_present_value([$profile_row['account_role'] ?? '', $user_meta['aac_family_account_role'] ?? '']),
+			'parent_user_id' => $parent_user_id > 0 ? (string) $parent_user_id : '',
+			'parent_member_id' => $parent_user_id > 0 ? (string) get_user_meta($parent_user_id, 'aac_member_id', true) : '',
+			'parent_email' => $parent_user instanceof WP_User ? $parent_user->user_email : '',
+			'linked_account_slot_id' => (string) ($user_meta['aac_linked_account_slot_id'] ?? ''),
+			'family_membership_mode' => (string) ($family_membership['mode'] ?? ''),
+			'family_additional_adult' => !empty($family_membership['additional_adult']) ? 'true' : 'false',
+			'family_dependent_count' => isset($family_membership['dependent_count']) ? (string) $family_membership['dependent_count'] : '',
+			'aac_group_account_group_id' => (string) ($user_meta['aac_group_account_group_id'] ?? ''),
+			'aac_group_account_checkout_code' => (string) ($user_meta['aac_group_account_checkout_code'] ?? ''),
+			'aac_group_account_child_level_id' => (string) ($user_meta['aac_group_account_child_level_id'] ?? ''),
+			'aac_group_account_synced_at' => (string) ($user_meta['aac_group_account_synced_at'] ?? ''),
+			'pmpro_group_account_id' => $group_summary ? (string) ($group_summary['id'] ?? '') : '',
+			'pmpro_group_account_checkout_code' => $group_summary ? (string) ($group_summary['checkout_code'] ?? '') : '',
+			'pmpro_group_account_total_seats' => $group_summary ? (string) ($group_summary['total_seats'] ?? '') : '',
+			'pmpro_group_account_active_members' => $group_summary ? (string) ($group_summary['active_members'] ?? '') : '',
+			'connected_accounts_json' => $this->encode_export_json($connected_accounts),
+			'linked_parent_account_json' => $this->encode_export_json($linked_parent_account),
+			'family_membership_json' => $this->encode_export_json($family_membership),
+			'pmpro_membership_history_json' => $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_memberships_users')),
+			'pmpro_subscriptions_json' => $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_subscriptions')),
+			'pmpro_orders_json' => $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_membership_orders')),
+			'pmpro_group_accounts_json' => $this->encode_export_json($pmpro_group_rows),
+			'all_user_meta_json' => $this->encode_export_json($user_meta),
+			'portal_profile_json' => $this->encode_export_json($profile['raw']),
+			'mirrored_at' => (string) ($profile_row['mirrored_at'] ?? ''),
+		];
+	}
+
+	private function get_user_meta_export_values($user_id) {
+		$raw_meta = get_user_meta($user_id);
+		$meta = [];
+		foreach ((array) $raw_meta as $key => $values) {
+			$value = is_array($values) && count($values) === 1 ? $values[0] : $values;
+			$meta[$key] = maybe_unserialize($value);
+		}
+
+		ksort($meta);
+		return $meta;
+	}
+
+	private function get_all_pmpro_rows($user_id, $wpdb_property) {
+		global $wpdb;
+
+		if (!$wpdb || empty($wpdb->{$wpdb_property})) {
+			return [];
+		}
+
+		$table = $wpdb->{$wpdb_property};
+		$rows = $wpdb->get_results(
+			$wpdb->prepare("SELECT * FROM {$table} WHERE user_id = %d ORDER BY id DESC", $user_id),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+
+		return is_array($rows) ? $rows : [];
+	}
+
+	private function get_pmpro_group_account_rows($user_id) {
+		global $wpdb;
+
+		if (!$wpdb) {
+			return [];
+		}
+
+		$like = $wpdb->esc_like($wpdb->prefix . 'pmprogroupacct') . '%';
+		$tables = $wpdb->get_col($wpdb->prepare('SHOW TABLES LIKE %s', $like));
+		$rows = [];
+		foreach ((array) $tables as $table) {
+			$table = preg_replace('/[^A-Za-z0-9_]/', '', (string) $table);
+			if ($table === '') {
+				continue;
+			}
+
+			$columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table names discovered from DB and sanitized above.
+			$columns = is_array($columns) ? $columns : [];
+			$user_columns = array_values(array_intersect($columns, [
+				'user_id',
+				'parent_user_id',
+				'child_user_id',
+				'group_parent_user_id',
+				'group_child_user_id',
+			]));
+			if (!$user_columns) {
+				continue;
+			}
+
+			$where_parts = array_map(function ($column) {
+				return $column . ' = %d';
+			}, $user_columns);
+			$query = $wpdb->prepare(
+				"SELECT * FROM {$table} WHERE " . implode(' OR ', $where_parts) . ' ORDER BY 1 DESC',
+				array_fill(0, count($where_parts), $user_id)
+			);
+			$table_rows = $wpdb->get_results($query, ARRAY_A); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+			foreach ((array) $table_rows as $row) {
+				$rows[] = [
+					'table' => $table,
+					'row' => $row,
+				];
+			}
+		}
+
+		return $rows;
+	}
+
+	private function get_pmpro_level_name($level_id) {
+		$level_id = absint($level_id);
+		if ($level_id <= 0 || !function_exists('pmpro_getLevel')) {
+			return '';
+		}
+
+		$level = pmpro_getLevel($level_id);
+		return is_object($level) && !empty($level->name) ? (string) $level->name : '';
+	}
+
+	private function get_discount_code_for_order($order) {
+		global $wpdb;
+
+		if (!is_array($order) || empty($order['id']) || !$wpdb || empty($wpdb->pmpro_discount_codes_uses) || empty($wpdb->pmpro_discount_codes)) {
+			return '';
+		}
+
+		$code = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT dc.code
+				FROM {$wpdb->pmpro_discount_codes_uses} dcu
+				INNER JOIN {$wpdb->pmpro_discount_codes} dc ON dc.id = dcu.code_id
+				WHERE dcu.order_id = %d
+				ORDER BY dcu.id DESC
+				LIMIT 1",
+				(int) $order['id']
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+
+		return is_string($code) ? $code : '';
+	}
+
+	private function first_present_value($values) {
+		foreach ((array) $values as $value) {
+			if (is_scalar($value) && trim((string) $value) !== '') {
+				return (string) $value;
+			}
+		}
+
+		return '';
+	}
+
+	private function encode_export_json($value) {
+		if ($value === null || $value === '') {
+			return '';
+		}
+
+		$json = wp_json_encode($value, JSON_UNESCAPED_SLASHES);
+		return is_string($json) ? $json : '';
+	}
+
 	public function render_admin_page() {
 		if (!current_user_can('manage_options')) {
 			return;
@@ -411,11 +1162,10 @@ class AAC_Member_Portal_Member_Database {
 		$history_rows = $member_id > 0 ? $this->get_mirror_rows(self::history_table(), $member_id) : [];
 		$subscription_rows = $member_id > 0 ? $this->get_mirror_rows(self::subscriptions_table(), $member_id) : [];
 		$transaction_rows = $member_id > 0 ? $this->get_mirror_rows(self::transactions_table(), $member_id) : [];
-		$podcast_listen_rows = $member_id > 0 ? $this->get_podcast_listen_rows($member_id) : [];
-		$grant_application_rows = $member_id > 0 ? $this->get_grant_application_rows($member_id, $profile_row) : [];
 		?>
 		<div class="wrap">
 			<h1>Member Database</h1>
+			<?php self::render_database_tools_nav(self::PAGE_SLUG); ?>
 			<p>This AAC-owned backend mirror stores a portal copy of member profile data plus mirrored PMPro membership history, subscriptions, and transactions.</p>
 
 			<form method="get" style="margin:16px 0 24px;">
@@ -434,6 +1184,13 @@ class AAC_Member_Portal_Member_Database {
 					href="<?php echo esc_url(wp_nonce_url($this->build_admin_url(['member_id' => $member_id, 'tab' => $tab, 's' => $search, 'paged' => $paged, 'aac_sync_all' => 1]), 'aac_member_db_sync_all')); ?>"
 				>
 					Sync All Members
+				</a>
+				<a
+					class="button button-primary"
+					style="margin-left:8px;"
+					href="<?php echo esc_url(wp_nonce_url(add_query_arg(['action' => 'aac_member_portal_export_member_database'], admin_url('admin-post.php')), 'aac_member_portal_export_member_database')); ?>"
+				>
+					Export Selected Fields CSV
 				</a>
 			</form>
 
@@ -482,11 +1239,23 @@ class AAC_Member_Portal_Member_Database {
 							</thead>
 							<tbody>
 								<?php foreach ($member_list['rows'] as $row) : ?>
-									<tr>
+									<?php $is_selected_member_row = $member_id > 0 && (int) $row['user_id'] === (int) $member_id && $profile_row; ?>
+									<tr<?php echo $is_selected_member_row ? ' style="background:#f6f7f7;"' : ''; ?>>
 										<td>
-											<a class="button button-secondary" href="<?php echo esc_url($this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'profile', 's' => $search, 'paged' => $paged])); ?>">
-												Open Member
-											</a>
+											<div style="display:grid;gap:6px;">
+												<a class="button <?php echo $is_selected_member_row ? 'button-primary' : 'button-secondary'; ?>" href="<?php echo esc_url($is_selected_member_row ? $this->build_admin_url(['s' => $search, 'paged' => $paged]) : $this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'profile', 's' => $search, 'paged' => $paged])); ?>">
+													<?php echo esc_html($is_selected_member_row ? 'Close Member' : 'Open Member'); ?>
+												</a>
+												<?php
+												$list_member_user = get_user_by('id', (int) $row['user_id']);
+												$list_member_return_url = $this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'profile', 's' => $search, 'paged' => $paged]);
+												if ($list_member_user instanceof WP_User && !user_can($list_member_user, 'manage_options')) :
+													?>
+													<a class="button button-primary" href="<?php echo esc_url(AAC_Member_Portal_Impersonation::get_switch_url($row['user_id'], $list_member_return_url)); ?>">
+														View as Member
+													</a>
+												<?php endif; ?>
+											</div>
 										</td>
 										<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['display_name'] ?: 'Unknown member'); ?></td>
 										<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['email']); ?></td>
@@ -503,6 +1272,27 @@ class AAC_Member_Portal_Member_Database {
 										<td><?php echo esc_html($row['expiration_date']); ?></td>
 										<td><?php echo esc_html($row['mirrored_at']); ?></td>
 									</tr>
+									<?php if ($is_selected_member_row) : ?>
+										<tr>
+											<td colspan="15" style="padding:0;background:#fff;">
+												<div style="padding:20px;border-left:4px solid #2271b1;border-bottom:1px solid #dcdcde;">
+													<?php
+													$this->render_member_detail_panel(
+														$member_id,
+														$profile_row,
+														$tab,
+														$search,
+														$paged,
+														$did_sync,
+														$history_rows,
+														$subscription_rows,
+														$transaction_rows
+													);
+													?>
+												</div>
+											</td>
+										</tr>
+									<?php endif; ?>
 								<?php endforeach; ?>
 							</tbody>
 						</table>
@@ -512,70 +1302,72 @@ class AAC_Member_Portal_Member_Database {
 				<?php endif; ?>
 			</section>
 
-			<?php if ($member_id > 0 && $profile_row) : ?>
-				<?php
-				$tabs = [
-					'profile' => 'Profile',
-					'preferences' => 'Preferences',
-					'grant-applications' => 'Grant Applications',
-					'membership-history' => 'Membership History',
-					'subscriptions' => 'Subscriptions',
-					'transactions' => 'Transactions',
-					'podcast-listens' => 'Podcast Listens',
-				];
-				?>
-				<section style="background:#fff;border:1px solid #dcdcde;border-radius:12px;padding:20px;">
-					<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-						<div>
-							<h2 style="margin:0;"><?php echo esc_html($profile_row['display_name'] ?: $profile_row['email']); ?></h2>
-							<p style="margin:8px 0 0;color:#50575e;">
-								<?php echo esc_html($profile_row['email']); ?> · User ID <?php echo esc_html($member_id); ?>
-							</p>
-						</div>
-						<div>
-							<a class="button button-secondary" href="<?php echo esc_url($this->build_admin_url(['member_id' => $member_id, 'tab' => $tab, 's' => $search])); ?>">
-								Sync This Member
-							</a>
-						</div>
-					</div>
-
-					<?php if ($did_sync) : ?>
-						<div class="notice notice-success inline" style="margin:16px 0 0;">
-							<p>Member mirror refreshed.</p>
-						</div>
-					<?php endif; ?>
-
-					<nav class="nav-tab-wrapper" style="margin-top:20px;">
-						<?php foreach ($tabs as $tab_key => $tab_label) : ?>
-							<a class="nav-tab <?php echo $tab === $tab_key ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url($this->build_admin_url(['member_id' => $member_id, 'tab' => $tab_key, 's' => $search])); ?>">
-								<?php echo esc_html($tab_label); ?>
-							</a>
-						<?php endforeach; ?>
-					</nav>
-
-					<div style="margin-top:20px;">
-						<?php
-						if ($tab === 'preferences') {
-							$this->render_preferences_tab($profile_row);
-						} elseif ($tab === 'grant-applications') {
-							$this->render_grant_applications_tab($grant_application_rows);
-						} elseif ($tab === 'membership-history') {
-							$this->render_json_tab_table($history_rows, 'No mirrored membership history found.', 'membership');
-						} elseif ($tab === 'subscriptions') {
-							$this->render_json_tab_table($subscription_rows, 'No mirrored subscriptions found.', 'subscription');
-						} elseif ($tab === 'transactions') {
-							$this->render_json_tab_table($transaction_rows, 'No mirrored transactions found.', 'transaction');
-						} elseif ($tab === 'podcast-listens') {
-							$this->render_podcast_listens_tab($podcast_listen_rows);
-						} else {
-							$this->render_profile_tab($profile_row);
-						}
-						?>
-					</div>
-				</section>
-			<?php elseif ($member_id > 0) : ?>
+			<?php if ($member_id > 0 && !$profile_row) : ?>
 				<div class="notice notice-warning"><p>This member could not be mirrored yet.</p></div>
 			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	private function render_member_detail_panel($member_id, $profile_row, $tab, $search, $paged, $did_sync, $history_rows, $subscription_rows, $transaction_rows) {
+		$tabs = [
+			'profile' => 'Profile',
+			'preferences' => 'Preferences',
+			'membership-history' => 'Membership History',
+			'subscriptions' => 'Subscriptions',
+			'transactions' => 'Transactions',
+		];
+		?>
+		<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+			<div>
+				<h2 style="margin:0;"><?php echo esc_html($profile_row['display_name'] ?: $profile_row['email']); ?></h2>
+				<p style="margin:8px 0 0;color:#50575e;">
+					<?php echo esc_html($profile_row['email']); ?> · User ID <?php echo esc_html($member_id); ?>
+				</p>
+			</div>
+			<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+				<a class="button button-secondary" href="<?php echo esc_url($this->build_admin_url(['member_id' => $member_id, 'tab' => $tab, 's' => $search, 'paged' => $paged])); ?>">
+					Sync This Member
+				</a>
+				<?php
+				$detail_member_user = get_user_by('id', $member_id);
+				if ($detail_member_user instanceof WP_User && !user_can($detail_member_user, 'manage_options')) :
+					?>
+					<a class="button button-primary" href="<?php echo esc_url(AAC_Member_Portal_Impersonation::get_switch_url($member_id, $this->build_admin_url(['member_id' => $member_id, 'tab' => $tab, 's' => $search, 'paged' => $paged]))); ?>">
+						View as Member
+					</a>
+				<?php endif; ?>
+			</div>
+		</div>
+
+		<?php if ($did_sync) : ?>
+			<div class="notice notice-success inline" style="margin:16px 0 0;">
+				<p>Member mirror refreshed.</p>
+			</div>
+		<?php endif; ?>
+
+		<nav class="nav-tab-wrapper" style="margin-top:20px;">
+			<?php foreach ($tabs as $tab_key => $tab_label) : ?>
+				<a class="nav-tab <?php echo $tab === $tab_key ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url($this->build_admin_url(['member_id' => $member_id, 'tab' => $tab_key, 's' => $search, 'paged' => $paged])); ?>">
+					<?php echo esc_html($tab_label); ?>
+				</a>
+			<?php endforeach; ?>
+		</nav>
+
+		<div style="margin-top:20px;">
+			<?php
+			if ($tab === 'preferences') {
+				$this->render_preferences_tab($profile_row);
+			} elseif ($tab === 'membership-history') {
+				$this->render_json_tab_table($history_rows, 'No mirrored membership history found.', 'membership');
+			} elseif ($tab === 'subscriptions') {
+				$this->render_json_tab_table($subscription_rows, 'No mirrored subscriptions found.', 'subscription');
+			} elseif ($tab === 'transactions') {
+				$this->render_json_tab_table($transaction_rows, 'No mirrored transactions found.', 'transaction');
+			} else {
+				$this->render_profile_tab($profile_row);
+			}
+			?>
 		</div>
 		<?php
 	}
@@ -627,9 +1419,6 @@ class AAC_Member_Portal_Member_Database {
 		$linked_parent_account = is_array($profile['linked_parent_account']) ? $profile['linked_parent_account'] : [];
 		$preference_fields = [
 			'T-Shirt Size' => $account_info['size'] ?? '',
-			'Email Opt Out' => !empty($account_info['email_opt_out']) ? 'true' : 'false',
-			'Do Not Call' => !empty($account_info['do_not_call']) ? 'true' : 'false',
-			'Do Not Contact' => !empty($account_info['do_not_contact']) ? 'true' : 'false',
 			'AAJ Preference' => $account_info['aaj_pref'] ?? '',
 			'ANAC Preference' => $account_info['anac_pref'] ?? '',
 			'American Climbing Journal Preference' => $account_info['acj_pref'] ?? '',
@@ -659,84 +1448,6 @@ class AAC_Member_Portal_Member_Database {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
-		<?php
-	}
-
-	private function render_grant_applications_tab($rows) {
-		if (!$rows) {
-			echo '<p>No grant applications have been recorded for this member yet.</p>';
-			return;
-		}
-		?>
-		<div style="display:grid;gap:20px;">
-			<?php foreach ($rows as $application) : ?>
-				<?php
-				$fields = is_array($application['fields'] ?? null) ? $application['fields'] : [];
-				?>
-				<section style="border:1px solid #dcdcde;border-radius:14px;padding:18px;background:#fff;">
-					<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-						<div>
-							<h3 style="margin:0;"><?php echo esc_html($application['grant_name'] ?: 'Grant Application'); ?></h3>
-							<p style="margin:8px 0 0;color:#50575e;">
-								Submitted <?php echo esc_html($application['application_date'] ?? ''); ?>
-								<?php if (!empty($application['review_application_id'])) : ?>
-									· Review ID <?php echo esc_html((string) $application['review_application_id']); ?>
-								<?php endif; ?>
-							</p>
-						</div>
-						<div style="display:flex;gap:8px;flex-wrap:wrap;">
-							<span class="button button-secondary" style="pointer-events:none;"><?php echo esc_html($application['status'] ?? 'Submitted'); ?></span>
-							<?php if (!empty($application['category'])) : ?>
-								<span class="button button-secondary" style="pointer-events:none;"><?php echo esc_html($application['category']); ?></span>
-							<?php endif; ?>
-						</div>
-					</div>
-
-					<table class="widefat striped" style="margin-top:18px;">
-						<tbody>
-							<tr><th style="width:240px;">AAC Member ID</th><td><?php echo esc_html($application['aac_member_id'] ?? ''); ?></td></tr>
-							<tr><th style="width:240px;">Project Title</th><td><?php echo esc_html($application['project_title'] ?? ''); ?></td></tr>
-							<tr><th>Requested Amount</th><td><?php echo esc_html($application['requested_amount'] ?? ''); ?></td></tr>
-							<tr><th>Objective / Location</th><td><?php echo esc_html($application['objective_location'] ?? ''); ?></td></tr>
-							<tr><th>Discipline</th><td><?php echo esc_html($application['discipline'] ?? ''); ?></td></tr>
-							<tr><th>Team / Partners</th><td><?php echo esc_html($application['team_name'] ?? ''); ?></td></tr>
-							<tr><th>Summary</th><td style="white-space:pre-wrap;"><?php echo esc_html($application['summary'] ?? ''); ?></td></tr>
-							<tr><th>Grant Slug</th><td><?php echo esc_html($application['grant_slug'] ?? ''); ?></td></tr>
-							<tr><th>Last Note</th><td style="white-space:pre-wrap;"><?php echo esc_html($application['last_note'] ?? ''); ?></td></tr>
-							<tr><th>Reviewed At</th><td><?php echo esc_html($application['reviewed_at'] ?? ''); ?></td></tr>
-						</tbody>
-					</table>
-
-					<h4 style="margin:20px 0 10px;">All Submitted Fields</h4>
-					<?php if (!$fields) : ?>
-						<p style="margin:0;color:#50575e;">No normalized field rows were stored for this application.</p>
-					<?php else : ?>
-						<div style="overflow:auto;">
-							<table class="widefat striped">
-								<thead>
-									<tr>
-										<th style="min-width:220px;">Label</th>
-										<th style="min-width:180px;">Field Key</th>
-										<th style="min-width:120px;">Type</th>
-										<th>Value</th>
-									</tr>
-								</thead>
-								<tbody>
-									<?php foreach ($fields as $field) : ?>
-										<tr>
-											<td><?php echo esc_html($field['label'] ?? ''); ?></td>
-											<td><code><?php echo esc_html($field['field_id'] ?? $field['field_key'] ?? ''); ?></code></td>
-											<td><?php echo esc_html($field['type'] ?? ''); ?></td>
-											<td style="white-space:pre-wrap;"><?php echo esc_html($field['value'] ?? ''); ?></td>
-										</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						</div>
-					<?php endif; ?>
-				</section>
-			<?php endforeach; ?>
-		</div>
 		<?php
 	}
 
@@ -843,55 +1554,6 @@ class AAC_Member_Portal_Member_Database {
 							<?php foreach ($all_keys as $key) : ?>
 								<td><?php echo esc_html($row['record'][$key] ?? ''); ?></td>
 							<?php endforeach; ?>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-		</div>
-		<?php
-	}
-
-	private function render_podcast_listens_tab($rows) {
-		if (!$rows) {
-			echo '<p>No podcast listens have been recorded for this member yet.</p>';
-			return;
-		}
-		?>
-		<div style="overflow:auto;">
-			<table class="widefat striped">
-				<thead>
-					<tr>
-						<th style="min-width:220px;">Episode</th>
-						<th>Status</th>
-						<th>Completion %</th>
-						<th>Last Position</th>
-						<th>Duration</th>
-						<th>Listener IP</th>
-						<th>Started At</th>
-						<th>Completed At</th>
-						<th>Last Event</th>
-						<th>Completions</th>
-						<th>Source</th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php foreach ($rows as $row) : ?>
-						<tr>
-							<td style="white-space:normal;word-break:break-word;"><?php echo esc_html($row['episode_title'] ?: $row['episode_id']); ?></td>
-							<td><?php echo esc_html($row['status']); ?></td>
-							<td><?php echo esc_html(number_format((float) $row['completion_percent'], 2)); ?></td>
-							<td><?php echo esc_html($this->format_milliseconds_for_display((int) $row['last_position_ms'])); ?></td>
-							<td><?php echo esc_html($this->format_milliseconds_for_display((int) $row['duration_ms'])); ?></td>
-							<td><?php echo esc_html((string) ($row['listener_ip'] ?? '')); ?></td>
-							<td><?php echo esc_html($row['started_at']); ?></td>
-							<td><?php echo esc_html($row['completed_at']); ?></td>
-							<td><?php echo esc_html($row['last_event_at']); ?></td>
-							<td><?php echo esc_html((string) $row['completion_count']); ?></td>
-							<td>
-								<?php if (!empty($row['source_url'])) : ?>
-									<a href="<?php echo esc_url($row['source_url']); ?>" target="_blank" rel="noreferrer">Spotify Episode</a>
-								<?php endif; ?>
-							</td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -1031,59 +1693,6 @@ class AAC_Member_Portal_Member_Database {
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
 	}
 
-	private function get_podcast_listen_rows($user_id) {
-		global $wpdb;
-
-		return $wpdb->get_results(
-			$wpdb->prepare("SELECT * FROM " . self::podcast_listens_table() . ' WHERE user_id = %d ORDER BY last_event_at DESC, id DESC', $user_id),
-			ARRAY_A
-		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
-	}
-
-	private function get_grant_application_rows($user_id, $profile_row = null) {
-		$repository = $this->get_grants_review_repository();
-		$email = '';
-
-		if (is_array($profile_row)) {
-			$email = sanitize_email((string) ($profile_row['email'] ?? ''));
-			if ($email === '') {
-				$profile = $this->decode_profile_row($profile_row);
-				$email = sanitize_email((string) ($profile['account_info']['email'] ?? ''));
-			}
-		}
-
-		if ($repository && method_exists($repository, 'get_member_applications')) {
-			$applications = $repository->get_member_applications((int) $user_id, $email);
-			if (is_array($applications)) {
-				return $applications;
-			}
-		}
-
-		$user_meta_applications = get_user_meta((int) $user_id, 'aac_grant_applications', true);
-		return is_array($user_meta_applications) ? $user_meta_applications : [];
-	}
-
-	private function get_grants_review_repository() {
-		static $repository = null;
-		static $initialized = false;
-
-		if ($initialized) {
-			return $repository;
-		}
-
-		$initialized = true;
-		$repository = null;
-
-		if (!class_exists('AAC_Grants_Review_Settings') || !class_exists('AAC_Grants_Review_Repository')) {
-			return null;
-		}
-
-		$settings = new AAC_Grants_Review_Settings();
-		$repository = new AAC_Grants_Review_Repository($settings);
-
-		return $repository;
-	}
-
 	private function flatten_assoc($value, $prefix = '') {
 		$rows = [];
 
@@ -1125,19 +1734,6 @@ class AAC_Member_Portal_Member_Database {
 		return wp_json_encode($value);
 	}
 
-	private function format_milliseconds_for_display($milliseconds) {
-		$total_seconds = max(0, (int) floor(((int) $milliseconds) / 1000));
-		$hours = (int) floor($total_seconds / 3600);
-		$minutes = (int) floor(($total_seconds % 3600) / 60);
-		$seconds = $total_seconds % 60;
-
-		if ($hours > 0) {
-			return sprintf('%d:%02d:%02d', $hours, $minutes, $seconds);
-		}
-
-		return sprintf('%d:%02d', $minutes, $seconds);
-	}
-
 	private function is_assoc(array $array) {
 		return array_keys($array) !== range(0, count($array) - 1);
 	}
@@ -1166,8 +1762,4 @@ class AAC_Member_Portal_Member_Database {
 		return $wpdb->prefix . 'aac_member_db_transactions';
 	}
 
-	private static function podcast_listens_table() {
-		global $wpdb;
-		return $wpdb->prefix . 'aac_member_db_podcast_listens';
-	}
 }

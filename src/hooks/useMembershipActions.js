@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
+import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { useFakePayment } from '@/hooks/useFakePayment';
-import { createMembershipPaymentIntent } from '@/lib/fakePaymentFlows';
 import { openExternalUrl } from '@/lib/mobileNavigation';
 
 const isNativeShell = () =>
@@ -10,7 +9,6 @@ const isNativeShell = () =>
 
 export const useMembershipActions = () => {
   const { profile } = useAuth();
-  const { startPaymentFlow } = useFakePayment();
 
   const getMembershipActionUrl = useCallback((type, overrides = {}) => {
     const actions = profile?.membership_actions || {};
@@ -28,8 +26,13 @@ export const useMembershipActions = () => {
       return actions.cancel_url || '';
     }
 
-    if (targetTier && actions.levels?.[targetTier]?.checkout_url) {
-      return actions.levels[targetTier].checkout_url;
+    if (type === 'add_dependent') {
+      return actions.add_dependent_checkout_url || '';
+    }
+
+    const targetAction = targetTier ? actions.levels?.[targetTier] : null;
+    if (targetAction?.checkout_url) {
+      return targetAction.checkout_url;
     }
 
     if (actions.current_level_checkout_url && (type === 'renew' || type === 'join')) {
@@ -54,29 +57,42 @@ export const useMembershipActions = () => {
   }, []);
 
   const openMembershipAction = useCallback(async (type, overrides = {}) => {
+    if (type === 'downgrade') {
+      const targetTier = overrides.targetTier;
+      if (!targetTier) {
+        toast({
+          variant: 'destructive',
+          title: 'Choose a membership level',
+          description: 'Select the lower membership level to schedule for renewal.',
+        });
+        return false;
+      }
+
+      const targetAction = profile?.membership_actions?.levels?.[targetTier];
+      if (targetAction?.action_type === 'downgrade_unavailable') {
+        toast({
+          variant: 'destructive',
+          title: 'Downgrade unavailable',
+          description: 'Downgrades are only available for auto-renew members within 30 days of renewal.',
+        });
+        return false;
+      }
+    }
+
     const url = getMembershipActionUrl(type, overrides);
 
     if (url) {
       return navigateToMembershipUrl(url);
     }
 
-    const intent = createMembershipPaymentIntent({
-      type,
-      currentTier: profile?.profile_info?.tier,
-      targetTier: overrides.targetTier,
-    });
-
-    startPaymentFlow({
-      ...intent,
-      ...overrides,
-      metadata: {
-        ...intent.metadata,
-        ...(overrides.metadata || {}),
-      },
+    toast({
+      variant: 'destructive',
+      title: 'Membership checkout unavailable',
+      description: 'This account is missing the PMPro checkout URL for that action. Please refresh or contact AAC membership support.',
     });
 
     return false;
-  }, [getMembershipActionUrl, navigateToMembershipUrl, profile?.profile_info?.tier, startPaymentFlow]);
+  }, [getMembershipActionUrl, navigateToMembershipUrl]);
 
   return {
     getMembershipActionUrl,

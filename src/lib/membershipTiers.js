@@ -16,7 +16,7 @@ export const MEMBERSHIP_TIER_OPTIONS = [
       'Preview your profile and account settings',
       'Receive AAC promotional emails and promo codes',
       'Upgrade anytime to unlock paid member benefits',
-      'No discounts, rescue coverage, or member store access',
+      'No partner discounts or rescue coverage',
     ],
   },
   {
@@ -29,10 +29,10 @@ export const MEMBERSHIP_TIER_OPTIONS = [
     priceCents: 4500,
     benefits: [
       'Digital member communications and club updates',
-      'Access to partner discounts and store offers',
-      'AAC community events and member network access',
+      'Access to partner discounts',
+      'AAC community and member network access',
       'AAC email newsletter and climbing news',
-      'Discounts on select AAC events and programs',
+      'Member benefit updates and club news',
       'Support for climbing conservation and access advocacy',
     ],
   },
@@ -50,7 +50,7 @@ export const MEMBERSHIP_TIER_OPTIONS = [
       '$15,000 in mortal remains transport',
       'Redpoint rescue reimbursement process included',
       'Everything included in Supporter',
-      'Eligible for AAC grants and awards (where applicable)',
+      'Additional Partner-level member benefits',
     ],
   },
   {

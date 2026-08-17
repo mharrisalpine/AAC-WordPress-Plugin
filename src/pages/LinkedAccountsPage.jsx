@@ -114,16 +114,16 @@ const LinkedAccountsPage = () => {
         <title>{portalContent.linked_accounts_page_title} - American Alpine Club</title>
         <meta name="description" content="Redeem a family invite code and connect a linked AAC household account." />
       </Helmet>
-      <div className="py-6">
+      <div className="bg-white py-6">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="mx-auto max-w-4xl space-y-6"
+          className="mx-auto max-w-4xl space-y-6 bg-white"
         >
-          <section className="card-gradient rounded-[28px] border border-stone-200/80 p-6 md:p-8">
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl bg-[#c8a43a]/18 p-3 text-[#6b5310]">
+          <section className="bg-white py-6">
+            <div className="flex items-start gap-3 border-b-2 border-[#b71c1c] pb-4">
+              <div className="pt-1 text-[#b71c1c]">
                 <Users className="h-5 w-5" />
               </div>
               <div>
@@ -134,7 +134,7 @@ const LinkedAccountsPage = () => {
               </div>
             </div>
 
-            <form onSubmit={handleLookupSubmit} className="mt-6 rounded-[24px] border border-stone-200 bg-white p-5">
+            <form onSubmit={handleLookupSubmit} className="mt-6 border-b-2 border-[#b71c1c] pb-6">
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),auto] md:items-end">
                 <div>
                   <Label htmlFor="linked-account-invite-code" className="text-stone-900">Invite Code</Label>
@@ -156,7 +156,7 @@ const LinkedAccountsPage = () => {
                 <Button
                   type="submit"
                   disabled={busy}
-                  className="h-11 rounded-full"
+                  className="h-11 rounded-none"
                   style={{
                     backgroundColor: portalDesign.primaryActionBackground,
                     color: portalDesign.primaryActionText,
@@ -168,13 +168,13 @@ const LinkedAccountsPage = () => {
             </form>
 
             {errorMessage ? (
-              <div className="mt-5 rounded-2xl border border-[#fca5a5]/40 bg-[#8f1515] px-4 py-3 text-sm font-medium text-white" role="alert">
+              <div className="mt-5 border-l-4 border-[#8f1515] bg-red-50 px-4 py-3 text-sm font-medium text-[#8f1515]" role="alert">
                 {errorMessage}
               </div>
             ) : null}
 
             {successMessage ? (
-              <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+              <div className="mt-5 flex items-start gap-3 border-l-4 border-emerald-500 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{successMessage}</span>
               </div>
@@ -182,31 +182,33 @@ const LinkedAccountsPage = () => {
 
             {inviteData ? (
               <div className="mt-6 grid gap-6 xl:grid-cols-[0.88fr,1.12fr]">
-                <div className="rounded-[24px] border border-stone-200 bg-[#fffaf0] p-5">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Invite Details</p>
+                <section className="bg-white py-5">
+                  <div className="border-b-2 border-[#b71c1c] pb-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#b71c1c]">Invite Details</p>
+                  </div>
                   <div className="mt-4 space-y-3 text-sm text-stone-700">
-                    <div>
+                    <div className="border-t border-stone-200 pt-3">
                       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Connected To</p>
                       <p className="mt-1 font-semibold text-stone-900">{inviteData.parent_name}</p>
                     </div>
-                    <div>
+                    <div className="border-t border-stone-200 pt-3">
                       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Linked Role</p>
                       <p className="mt-1 text-stone-900">{inviteData.label}</p>
                     </div>
-                    <div>
+                    <div className="border-t border-stone-200 pt-3">
                       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
                       <p className="mt-1 text-stone-900">{inviteData.status}</p>
                     </div>
-                    <div>
+                    <div className="border-t border-stone-200 pt-3">
                       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Invite Code</p>
                       <p className="mt-1 font-mono text-stone-900">{inviteData.code}</p>
                     </div>
                   </div>
-                </div>
+                </section>
 
-                <form onSubmit={handleRedeem} className="rounded-[24px] border border-stone-200 bg-white p-5">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-2xl bg-[#8f1515]/10 p-3 text-[#8f1515]">
+                <form onSubmit={handleRedeem} className="bg-white py-5">
+                  <div className="flex items-start gap-3 border-b-2 border-[#b71c1c] pb-4">
+                    <div className="pt-1 text-[#8f1515]">
                       <Link2 className="h-5 w-5" />
                     </div>
                     <div>
@@ -222,7 +224,7 @@ const LinkedAccountsPage = () => {
                   </div>
 
                   {user ? (
-                    <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-700">
+                    <div className="mt-5 border-t border-stone-200 py-4 text-sm text-stone-700">
                       <p className="font-semibold text-stone-900">{currentMemberName || 'Current member account'}</p>
                       <p className="mt-1">{email || user.email}</p>
                     </div>
@@ -279,7 +281,7 @@ const LinkedAccountsPage = () => {
                     <p className="text-sm text-stone-600">
                     Need a new AAC account first? You can also <Link to="/join" className="font-medium text-[#8f1515] hover:text-[#6f1010]">join here</Link>.
                     </p>
-                    <Button type="submit" disabled={busy} className="rounded-full bg-[#f8c235] text-black hover:bg-[#dda914]">
+                    <Button type="submit" disabled={busy} className="rounded-none bg-[#f8c235] text-black hover:bg-[#dda914]">
                       {submitting ? 'Linking Account…' : portalContent.linked_accounts_redeem_button_label}
                     </Button>
                   </div>

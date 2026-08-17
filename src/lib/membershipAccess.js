@@ -14,8 +14,6 @@ export const isFreeMembershipTier = (profileInfo = {}) => getMembershipTier(prof
 export const canAccessDiscounts = (profileInfo = {}) =>
   getMembershipStatus(profileInfo) === 'Active' && !isFreeMembershipTier(profileInfo);
 
-export const canAccessStore = (profileInfo = {}) => !isFreeMembershipTier(profileInfo);
-
 export const canAccessRescue = (profileInfo = {}, benefitsInfo = {}) =>
   getMembershipStatus(profileInfo) === 'Active' &&
   !isFreeMembershipTier(profileInfo) &&

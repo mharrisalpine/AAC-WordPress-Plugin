@@ -7,657 +7,86 @@ if (!defined('ABSPATH')) {
 class AAC_Member_Portal_Admin {
 	const OPTION_KEY = 'aac_member_portal_settings';
 	const MENU_SLUG = 'aac-member-portal-settings';
-	const DISCOUNT_CARD_IMPORT_VERSION = '2026-04-09-discounts-table-v2';
+	const DISCOUNT_CARD_IMPORT_VERSION = '2026-06-25-benefit-sections-v4';
+	const WONDROUS_VISUAL_SETTINGS_VERSION = '2026-08-13-billing-navigation-v1';
+	const SIGNUP_COPY_SETTINGS_VERSION = '2026-07-27-signup-copy-cleanup-v1';
 
 	public function __construct() {
+		add_action('init', [$this, 'maybe_apply_wondrous_visual_settings'], 12);
+		add_action('init', [$this, 'maybe_apply_signup_copy_settings'], 13);
 		add_action('init', [$this, 'maybe_seed_discount_cards'], 20);
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('admin_init', [$this, 'register_settings']);
 		add_action('admin_post_aac_member_portal_backfill_pmpro_fields', [$this, 'handle_backfill_pmpro_fields']);
+		add_action('admin_post_aac_member_portal_link_family_invite', [$this, 'handle_link_family_invite']);
+		add_action('admin_post_aac_member_portal_add_family_member', [$this, 'handle_add_family_member']);
+		add_action('admin_post_aac_member_portal_export_error_log', [$this, 'handle_export_error_log']);
+		add_action('admin_post_aac_member_portal_clear_error_log', [$this, 'handle_clear_error_log']);
 		add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
 	}
 
 	public static function get_defaults() {
-		// This settings tree is grand central station for admin-controlled portal
-		// content. The admin UI edits it, and the React app reads the cleaned version.
-		return [
-			'content' => [
-				'home_hero_kicker' => 'Home',
-				'home_hero_title' => "United\nWe Climb.",
-				'home_hero_description' => 'Explore AAC membership, rescue coverage, publications, grants, and community resources through the same member-focused experience that powers the portal.',
-				'home_primary_cta_label' => 'Join',
-				'home_primary_cta_url' => '/join',
-				'home_secondary_cta_label' => 'Renew',
-				'home_secondary_cta_url' => 'https://membership.americanalpineclub.org/renew',
-				'home_tertiary_cta_label' => 'Learn More About Membership',
-				'home_tertiary_cta_url' => 'https://americanalpine.wpenginepowered.com/learn-more/',
-				'home_membership_chip_kicker' => 'Membership',
-				'home_membership_chip_description' => 'Climbing advocacy, rescue coverage, publications, events, and member resources all live here.',
-				'home_intro_kicker' => 'Since 1902',
-				'home_intro_title' => 'Built for climbers.',
-				'home_intro_description' => 'Founded in 1902, the American Alpine Club is a nonprofit that champions climbing knowledge, inspiration, advocacy, and community support for people who care deeply about the mountains.',
-				'home_intro_secondary_description' => 'From rescue benefits and member publications to grants, events, and lodging, the Club keeps building practical resources that help climbers stay connected and better supported.',
-				'home_intro_button_label' => 'Learn More About The AAC',
-				'home_intro_button_url' => 'https://americanalpine.wpenginepowered.com/learn-more/',
-				'home_involvement_kicker' => 'Explore',
-				'home_involvement_title' => 'How To Get Involved',
-				'home_involvement_button_label' => 'Join the Club',
-				'home_involvement_button_url' => '/join',
-				'home_publications_kicker' => 'Library',
-				'home_publications_title' => 'Our Publications',
-				'home_publications_button_label' => 'All Publications',
-				'home_publications_button_url' => 'https://americanalpine.wpenginepowered.com/publications/',
-				'home_store_kicker' => 'Store',
-				'home_store_title' => 'Shop AAC Store',
-				'home_store_description' => 'Browse featured AAC apparel, gear, and member merchandise from the Club store.',
-				'home_store_button_label' => 'AAC Store',
-				'home_store_button_url' => 'https://americanalpineclub.myshopify.com/',
-				'home_partners_kicker' => 'Network',
-				'home_partners_title' => 'Our Partners',
-				'home_partners_description' => 'Partner brands and community collaborators help AAC extend member value across climbing gear, publications, events, and advocacy work.',
-				'photographers_page_kicker' => 'Featured Photographers',
-				'photographers_page_title' => 'The people behind the mountain images.',
-				'photographers_page_description' => 'Highlight AAC photographers, their work, and the landscapes they keep bringing back to the community.',
-				'grants_page_kicker' => 'AAC Grants',
-				'grants_page_title' => 'Support ambitious climbing, research, and community projects.',
-				'grants_page_description' => 'Review current AAC grant opportunities, choose the best fit, and submit your application from inside the member portal.',
-				'home_involvement_cards' => self::get_default_home_involvement_cards(),
-				'home_publication_cards' => self::get_default_home_publication_cards(),
-				'home_partner_logos' => self::get_default_home_partner_logos(),
-				'featured_photographers' => self::get_default_featured_photographers(),
-				'grant_opportunities' => self::get_default_grant_opportunities(),
-				'grant_form_fields' => self::get_default_grant_form_fields(),
-				'account_settings_title' => 'Account Settings',
-				'contact_recipient_email' => 'mharris@americanalpineclub.org',
-				'profile_information_title' => 'Profile Information',
-				'profile_information_description' => 'Primary contact and profile information used across the AAC portal. You may update your details and preferences in Account Settings.',
-				'membership_snapshot_title' => 'Membership Snapshot',
-				'membership_snapshot_description' => 'Live membership and benefit details coming from WordPress and Paid Memberships Pro.',
-				'linked_accounts_title' => 'Linked Accounts',
-				'linked_accounts_description' => 'Manage household members connected to this AAC membership and redeem invite codes for child accounts.',
-				'update_profile_button_label' => 'Update Profile Information',
-				'member_profile_card_sections' => self::get_default_member_profile_card_sections(),
-				'member_profile_blocks' => [],
-				'publications_title' => 'Publications',
-				'publications_description' => 'Access the current AAC publication library and open each issue directly from the member portal.',
-				'publications_locked_title' => 'Publications Unlock at Partner',
-				'publications_locked_description' => 'The AAC publication library is available to Partner members and above. Upgrade your membership to open digital issues and manage your publication preferences.',
-				'publications_upgrade_button_label' => 'Upgrade Membership',
-				'publication_view_url_aaj' => 'https://aac-publications.s3.us-east-1.amazonaws.com/aaj/AAJ+2025.pdf',
-				'publication_view_url_anac' => 'https://aac-publications.s3.us-east-1.amazonaws.com/ANAC+2025+Book_Digital_reduced.pdf',
-				'publication_view_url_acj' => 'https://americanalpineclub.org/publications/',
-				'publication_view_url_guidebook' => 'https://www.flipsnack.com/americanalpineclub/guidebook-xv/full-view.html',
-				'join_hero_kicker' => 'Membership',
-				'join_hero_title' => "United\nWe Climb.",
-				'join_hero_description' => 'Join the American Alpine Club to support climbing advocacy, rescue coverage, community grants, publications, events, and a member experience built for the people who keep showing up for the mountains.',
-				'join_primary_cta_label' => 'Join Now',
-				'join_benefits_cta_label' => 'Member Benefits',
-				'join_rescue_cta_label' => 'Rescue Benefits',
-				'join_application_kicker' => 'Application',
-				'join_application_title' => 'Choose your membership and complete checkout.',
-				'join_application_description' => 'Select a membership level above, then complete the real AAC checkout form below.',
-				'join_redeem_code_button_label' => 'Redeem Membership Code',
-				'login_hero_kicker' => 'Member access',
-				'login_hero_title' => "United\nWe Climb.",
-				'login_hero_description' => 'Access your membership details, rescue information, discounts, store purchases, and account settings in one place.',
-				'login_form_kicker' => 'Login',
-				'login_form_title' => 'Welcome back.',
-				'login_submit_label' => 'Sign in',
-				'login_forgot_password_label' => 'Forgot your password?',
-				'login_join_link_label' => 'Need to join?',
-				'login_purchase_success_message' => 'Purchase successful. Please sign in to access your member profile.',
-				'rescue_title' => 'Rescue Insurance',
-				'rescue_coverage_title' => 'RedPoint Rescue Coverage',
-				'rescue_emergency_title' => 'Emergency Contact',
-				'rescue_claim_forms_title' => 'Claim Forms',
-				'rescue_inactive_title' => 'Membership Inactive',
-				'rescue_inactive_description' => 'Redpoint rescue and medical benefits are only available to active members.',
-				'rescue_upgrade_title' => 'Unlock Rescue Benefits',
-				'rescue_upgrade_description' => 'Upgrade your membership to unlock crucial rescue and medical coverage.',
-				'rescue_manage_button_label' => 'Manage Membership',
-				'rescue_levels' => self::get_default_rescue_levels(),
-				'linked_accounts_page_title' => 'Linked Accounts',
-				'linked_accounts_page_description' => 'Enter a family invite code to create or claim a connected household account. If the email already has an AAC account, we will link that existing account after verifying the password.',
-				'linked_accounts_lookup_button_label' => 'Check Code',
-				'linked_accounts_redeem_button_label' => 'Redeem Invite Code',
-				'linked_accounts_success_message' => 'Invite redeemed successfully. Redirecting to your member profile...',
-				'discounts_title' => 'Partner Discounts',
-				'discounts_locked_title' => 'Discounts Locked',
-				'discounts_locked_description' => 'Discounts are available to active members only. Renew or rejoin your membership to unlock partner offers.',
-				'discounts_free_locked_description' => 'Free memberships include portal preview access and promo emails, but partner discounts unlock with a paid membership.',
-				'discounts_upgrade_hint' => 'Upgrade from Free to Supporter or above whenever you are ready.',
-				'discounts_button_label' => 'Visit Website',
-				'discount_cards' => self::get_default_discount_cards(),
-				'portal_preferences_title' => 'Portal Preferences',
-				'portal_preferences_description' => 'Settings the portal is currently storing for your member record.',
-				'quick_actions_title' => 'Quick Actions',
-				'quick_actions_description' => 'Jump straight into the next member task.',
-				'grant_applications_description' => 'Recent AAC grant submissions tied to your member record.',
-			],
-			'design' => [
-				'sidebar_background_url' => '',
-				'sidebar_overlay_start' => '0.18',
-				'sidebar_overlay_end' => '0.30',
-				'sidebar_button_background' => '#000000',
-				'sidebar_button_hover_background' => '#111111',
-				'sidebar_button_active_background' => '#000000',
-				'sidebar_accent_color' => '#f8c235',
-				'primary_action_background' => '#8f1515',
-				'primary_action_text' => '#ffffff',
-				'secondary_action_background' => '#f8c235',
-				'secondary_action_text' => '#000000',
-				'page_background' => '#f7f1e3',
-				'panel_background' => '#ffffff',
-				'panel_border_color' => '#d6d3d1',
-				'hero_panel_background' => 'rgba(0,0,0,0.34)',
-				'hero_panel_border_color' => 'rgba(255,255,255,0.14)',
-				'hero_chip_background' => 'rgba(0,0,0,0.38)',
-				'hero_chip_border_color' => 'rgba(255,255,255,0.18)',
-				'login_form_background' => 'rgba(247,241,232,0.94)',
-				'login_overlay' => 'linear-gradient(180deg,rgba(3,0,0,0.24),rgba(3,0,0,0.72)),radial-gradient(circle_at_top,rgba(248,194,53,0.12),transparent 24%)',
-				'home_hero_overlay' => 'linear-gradient(90deg,rgba(3,0,0,0.88) 0%,rgba(3,0,0,0.72) 38%,rgba(3,0,0,0.4) 62%,rgba(3,0,0,0.58) 100%)',
-				'home_hero_tint_overlay' => 'linear-gradient(to top, rgba(3,0,0,0.5), transparent, rgba(3,0,0,0.16))',
-				'join_hero_overlay' => 'linear-gradient(90deg,rgba(3,0,0,0.88) 0%,rgba(3,0,0,0.72) 38%,rgba(3,0,0,0.4) 62%,rgba(3,0,0,0.58) 100%)',
-				'join_hero_tint_overlay' => 'linear-gradient(to top, rgba(3,0,0,0.56), transparent, rgba(3,0,0,0.18))',
-				'nav_background' => '#030000',
-				'nav_text_color' => '#ffffff',
-				'nav_hover_text_color' => '#f8c235',
-				'nav_icon_color' => '#f8c235',
-				'nav_dropdown_background' => 'rgba(11,9,8,0.95)',
-				'nav_dropdown_text_color' => '#f4efe7',
-				'join_hero_image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Fillers.jpg',
-				'home_hero_video_url' => 'https://player.vimeo.com/video/1166009381?h=c4c3248b38&background=1&autoplay=1&muted=1&loop=1&autopause=0&controls=0&title=0&byline=0&portrait=0',
-				'join_hero_video_url' => 'https://player.vimeo.com/video/1166009381?h=c4c3248b38&background=1&autoplay=1&muted=1&loop=1&autopause=0&controls=0&title=0&byline=0&portrait=0',
-				'login_background_image_url' => '',
-				'home_intro_image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-2.jpg',
-				'home_intro_accent_image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-3.jpg',
-				'home_store_image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/AAC-Navy-Hat.jpg',
-				'publication_tile_image_aaj' => '',
-				'publication_tile_image_anac' => '',
-				'publication_tile_image_acj' => '',
-				'publication_tile_image_guidebook' => '',
-			],
-			'components' => [
-				'section_titles' => [
-					'your_portal' => 'Your portal',
-					'explore' => 'Explore',
-				],
-				'home_sections' => self::get_default_home_sections(),
-				'top_nav_items' => self::get_default_top_nav_items(),
-				'sidebar_items' => self::get_default_sidebar_items(),
-			],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_defaults();
 	}
 
 	public static function get_default_home_sections() {
-		return [
-			'hero' => ['label' => 'Hero', 'order' => 10, 'visible' => 1],
-			'intro' => ['label' => 'Intro', 'order' => 20, 'visible' => 1],
-			'involvement' => ['label' => 'Get Involved', 'order' => 30, 'visible' => 1],
-			'publications' => ['label' => 'Publications', 'order' => 40, 'visible' => 1],
-			'store' => ['label' => 'Store', 'order' => 50, 'visible' => 1],
-			'partners' => ['label' => 'Partners', 'order' => 60, 'visible' => 1],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_home_sections();
+	}
+
+	public static function get_signup_level_benefit_catalog() {
+		return AAC_Member_Portal_Settings_Schema::get_signup_level_benefit_catalog();
+	}
+
+	public static function get_signup_level_labels() {
+		return AAC_Member_Portal_Settings_Schema::get_signup_level_labels();
+	}
+
+	public static function get_default_signup_level_benefits() {
+		return AAC_Member_Portal_Settings_Schema::get_default_signup_level_benefits();
 	}
 
 	public static function get_default_home_involvement_cards() {
-		return [
-			[
-				'title' => 'Join the Club',
-				'description' => 'Membership supports AAC advocacy, rescue benefits, climbing knowledge, grants, and the wider climbing community.',
-				'button_label' => 'Join Now',
-				'button_url' => '/join',
-				'image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-4.jpg',
-				'accent_style' => 'gold',
-			],
-			[
-				'title' => 'Attend an Event',
-				'description' => 'Connect with the AAC community through upcoming events, member gatherings, and shared learning in climbing spaces.',
-				'button_label' => 'See Events',
-				'button_url' => 'https://americanalpine.wpenginepowered.com/events/',
-				'image_url' => '',
-				'accent_style' => 'light',
-			],
-			[
-				'title' => 'Stay at AAC Lodging',
-				'description' => 'Explore climber lodging destinations and plan your next trip through AAC campgrounds and ranch properties.',
-				'button_label' => 'Explore Lodging',
-				'button_url' => 'https://americanalpine.wpenginepowered.com/lodging/',
-				'image_url' => '',
-				'accent_style' => 'sand',
-			],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_home_involvement_cards();
 	}
 
 	public static function get_default_home_publication_cards() {
-		return [
-			[
-				'title' => 'American Alpine Journal',
-				'description' => 'Long-form reporting on major climbs around the world, presented in AAC’s flagship publication.',
-				'button_label' => 'View Publication',
-				'button_url' => 'https://americanalpine.wpenginepowered.com/publications/aaj/',
-				'image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-95.jpeg',
-				'accent_color' => '#f8c235',
-			],
-			[
-				'title' => 'Accidents in North American Climbing',
-				'description' => 'Annual accident analysis and takeaways that help climbers learn from the year’s most important incidents.',
-				'button_label' => 'View Publication',
-				'button_url' => 'https://americanalpine.wpenginepowered.com/publications/accidents/',
-				'image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/08/image-asset-28.jpeg',
-				'accent_color' => '#b20710',
-			],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_home_publication_cards();
 	}
 
 	public static function get_default_home_partner_logos() {
-		return [
-			[
-				'name' => 'American Alpine Club',
-				'image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/dark-header-logo.svg',
-				'link_url' => 'https://americanalpine.wpenginepowered.com/',
-			],
-			[
-				'name' => 'Backcountry',
-				'image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Filler-Logo-2.png',
-				'link_url' => '',
-			],
-			[
-				'name' => 'Black Diamond',
-				'image_url' => 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Filler-Logo-1.png',
-				'link_url' => '',
-			],
-		];
-	}
-
-	public static function get_default_featured_photographers() {
-		return [
-			[
-				'name' => 'Avery Ridge',
-				'short_bio' => 'Avery chases storm light, ridgelines, and the quiet moments that happen after a long approach. Their work leans into alpine scale without losing the human story inside it.',
-				'website_url' => 'https://example.com/avery-ridge',
-				'instagram_url' => 'https://instagram.com/averyridgephoto',
-				'facebook_url' => '',
-				'x_url' => '',
-				'profile_image_url' => 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
-				'gallery_items' => [
-					['image_url' => 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Alpenglow over a granite ridge'],
-					['image_url' => 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Dawn clouds spilling over the pass'],
-					['image_url' => 'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Snow blowing across a summit plateau'],
-					['image_url' => 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Blue hour in the cirque'],
-					['image_url' => 'https://images.unsplash.com/photo-1464820453369-31d2c0b651af?auto=format&fit=crop&w=1200&q=80', 'caption' => 'A high basin after fresh snow'],
-					['image_url' => 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Treeline giving way to rock'],
-				],
-			],
-			[
-				'name' => 'Morgan Vale',
-				'short_bio' => 'Morgan focuses on climbing culture, big terrain, and the texture of expedition life. The frame is usually full of weather, movement, and one very committed pair of boots.',
-				'website_url' => 'https://example.com/morgan-vale',
-				'instagram_url' => 'https://instagram.com/morganvale.photo',
-				'facebook_url' => '',
-				'x_url' => '',
-				'profile_image_url' => 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=900&q=80',
-				'gallery_items' => [
-					['image_url' => 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=80', 'caption' => 'A valley opening into the range'],
-					['image_url' => 'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Switchbacks below dark granite walls'],
-					['image_url' => 'https://images.unsplash.com/photo-1508261305436-4f659d0743eb?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Cold light on a glacier edge'],
-					['image_url' => 'https://images.unsplash.com/photo-1464823063530-08f10ed1a2dd?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Jagged skyline at first light'],
-					['image_url' => 'https://images.unsplash.com/photo-1458668383970-8ddd3927deed?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Storm shadows racing across the basin'],
-					['image_url' => 'https://images.unsplash.com/photo-1463694775559-eea25626346b?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Camp below layered peaks'],
-				],
-			],
-			[
-				'name' => 'Sierra Ash',
-				'short_bio' => 'Sierra works in cold morning color, long shadows, and the kind of trailhead starts that feel half-asleep until the range suddenly lights up. Their galleries tend to hold equal parts weather and wonder.',
-				'website_url' => 'https://example.com/sierra-ash',
-				'instagram_url' => 'https://instagram.com/sierraash.studio',
-				'facebook_url' => '',
-				'x_url' => '',
-				'profile_image_url' => 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=900&q=80',
-				'gallery_items' => [
-					['image_url' => 'https://images.unsplash.com/photo-1464820453369-31d2c0b651af?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Sunbreak on a high alpine shelf'],
-					['image_url' => 'https://images.unsplash.com/photo-1426604966848-d7adac402bff?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Cloud bands lifting off the ridge'],
-					['image_url' => 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Evening light over dark evergreens'],
-					['image_url' => 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Still water below a sharp skyline'],
-					['image_url' => 'https://images.unsplash.com/photo-1464823063530-08f10ed1a2dd?auto=format&fit=crop&w=1200&q=80', 'caption' => 'A serrated horizon at first light'],
-					['image_url' => 'https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Wildflowers leading into the mountain wall'],
-				],
-			],
-			[
-				'name' => 'Parker Stone',
-				'short_bio' => 'Parker leans toward bold terrain and small human scale, with a style that makes cliffs, glaciers, and camp life all feel part of the same larger story. There is usually one tiny person somewhere in the frame doing something ambitious.',
-				'website_url' => 'https://example.com/parker-stone',
-				'instagram_url' => 'https://instagram.com/parkerstone.images',
-				'facebook_url' => '',
-				'x_url' => '',
-				'profile_image_url' => 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=80',
-				'gallery_items' => [
-					['image_url' => 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=80', 'caption' => 'A broad valley pulling toward the peaks'],
-					['image_url' => 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Tent light under an early alpine dusk'],
-					['image_url' => 'https://images.unsplash.com/photo-1443890923422-7819ed4101c0?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Cloud shadows over broken granite'],
-					['image_url' => 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Steep walls rising above the basin'],
-					['image_url' => 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Blue shadows on glacier ice'],
-					['image_url' => 'https://images.unsplash.com/photo-1504203700686-0f64f89a1f2d?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Wind crossing a snowy ridgeline'],
-				],
-			],
-			[
-				'name' => 'Juniper North',
-				'short_bio' => 'Juniper photographs mountain travel with a documentary eye, favoring clean compositions, quiet trail moments, and weather that looks one decision away from becoming a whole new plan.',
-				'website_url' => 'https://example.com/juniper-north',
-				'instagram_url' => 'https://instagram.com/junipernorth.photo',
-				'facebook_url' => '',
-				'x_url' => '',
-				'profile_image_url' => 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=900&q=80',
-				'gallery_items' => [
-					['image_url' => 'https://images.unsplash.com/photo-1464820453369-31d2c0b651af?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Morning haze over a glacial cirque'],
-					['image_url' => 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Rock bands glowing under soft light'],
-					['image_url' => 'https://images.unsplash.com/photo-1463694775559-eea25626346b?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Base camp beneath layered summits'],
-					['image_url' => 'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Spindrift crossing a broad face'],
-					['image_url' => 'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1200&q=80', 'caption' => 'An approach trail under huge stone walls'],
-					['image_url' => 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80', 'caption' => 'Blue twilight settling into the range'],
-				],
-			],
-		];
-	}
-
-	private static function merge_featured_photographers_with_defaults($photographers) {
-		$photographers = is_array($photographers) ? array_values($photographers) : [];
-		$defaults = self::get_default_featured_photographers();
-		$existing_names = [];
-
-		foreach ($photographers as $photographer) {
-			$name = sanitize_text_field($photographer['name'] ?? '');
-			if ($name !== '') {
-				$existing_names[$name] = true;
-			}
-		}
-
-		foreach ($defaults as $default_photographer) {
-			$name = sanitize_text_field($default_photographer['name'] ?? '');
-			if ($name === '' || isset($existing_names[$name])) {
-				continue;
-			}
-			$photographers[] = $default_photographer;
-			$existing_names[$name] = true;
-		}
-
-		return array_values($photographers);
+		return AAC_Member_Portal_Settings_Schema::get_default_home_partner_logos();
 	}
 
 	public static function get_default_discount_cards() {
-		$seed_path = __DIR__ . '/data/discount-cards-seed.json';
-		if (!file_exists($seed_path)) {
-			return [];
-		}
+		return AAC_Member_Portal_Settings_Schema::get_default_discount_cards();
+	}
 
-		$seed_cards = json_decode((string) file_get_contents($seed_path), true);
-		return is_array($seed_cards) ? $seed_cards : [];
+	public static function get_default_benefits_gallery_items() {
+		return AAC_Member_Portal_Settings_Schema::get_default_benefits_gallery_items();
+	}
+
+	public static function get_default_contact_issue_types() {
+		return AAC_Member_Portal_Settings_Schema::get_default_contact_issue_types();
 	}
 
 	public static function get_default_rescue_levels() {
-		// Rescue benefits are editable in admin, but these defaults make sure a fresh
-		// install still has a sane matrix instead of a blank screen and some panic.
-		return [
-			[
-				'level_name' => 'Free',
-				'rescue_amount' => 0,
-				'medical_amount' => 0,
-				'mortal_remains_amount' => 0,
-				'rescue_reimbursement_process' => false,
-			],
-			[
-				'level_name' => 'Supporter',
-				'rescue_amount' => 0,
-				'medical_amount' => 0,
-				'mortal_remains_amount' => 0,
-				'rescue_reimbursement_process' => false,
-			],
-			[
-				'level_name' => 'Partner',
-				'rescue_amount' => 7500,
-				'medical_amount' => 5000,
-				'mortal_remains_amount' => 15000,
-				'rescue_reimbursement_process' => true,
-			],
-			[
-				'level_name' => 'Leader',
-				'rescue_amount' => 300000,
-				'medical_amount' => 5000,
-				'mortal_remains_amount' => 15000,
-				'rescue_reimbursement_process' => true,
-			],
-			[
-				'level_name' => 'Advocate',
-				'rescue_amount' => 300000,
-				'medical_amount' => 5000,
-				'mortal_remains_amount' => 15000,
-				'rescue_reimbursement_process' => true,
-			],
-			[
-				'level_name' => 'GRF',
-				'rescue_amount' => 300000,
-				'medical_amount' => 5000,
-				'mortal_remains_amount' => 15000,
-				'rescue_reimbursement_process' => true,
-			],
-			[
-				'level_name' => 'Lifetime',
-				'rescue_amount' => 300000,
-				'medical_amount' => 5000,
-				'mortal_remains_amount' => 15000,
-				'rescue_reimbursement_process' => true,
-			],
-		];
-	}
-
-	public static function get_default_grant_opportunities() {
-		return [
-			[
-				'slug' => 'climbing-grief-grant',
-				'name' => 'Climbing Grief Grant',
-				'category' => 'Wellbeing',
-				'award' => 'Up to $600',
-				'fit' => 'Therapeutic support for members directly impacted by climbing, alpinism, or ski mountaineering grief and trauma.',
-				'summary' => 'Support for therapy or professional programs that help members work through grief, loss, or trauma related to mountain sports.',
-				'highlights' => [
-					'Focused on grief, loss, and trauma recovery',
-					'Designed for U.S. applicants with demonstrated need',
-					'Best for applicants with a clear care plan and provider',
-				],
-				'source_url' => 'https://theamericanalpineclub.submittable.com/submit',
-			],
-			[
-				'slug' => 'catalyst-adventure-grants-for-change',
-				'name' => 'CATALYST: Adventure Grants for Change',
-				'category' => 'Access',
-				'award' => 'AAC grant support',
-				'fit' => 'Applicants or teams facing barriers to climbing access who are advancing a specific, attainable U.S. objective.',
-				'summary' => 'A grant aimed at expanding access to climbing by supporting underrepresented communities and closing opportunity gaps across climbing disciplines.',
-				'highlights' => [
-					'AAC members only',
-					'Supports individuals or teams of 2 to 4',
-					'Objective must be in the United States',
-				],
-				'source_url' => 'https://theamericanalpineclub.submittable.com/submit',
-			],
-			[
-				'slug' => 'momentum-grant',
-				'name' => 'Momentum Grant',
-				'category' => 'Alpine Progression',
-				'award' => 'AAC grant support',
-				'fit' => 'Intermediate to advanced alpine climbers or ski-alpinists pursuing a meaningful step up in North America.',
-				'summary' => 'Created to back climbers who are growing their mountain craft through ambitious alpine objectives, new lines, or significant repeats.',
-				'highlights' => [
-					'North America projects only',
-					'Strong fit for ice, mixed, rock, and ski-alpinist objectives',
-					'Best for applicants showing a clear progression in skill and ambition',
-				],
-				'source_url' => 'https://theamericanalpineclub.submittable.com/submit',
-			],
-			[
-				'slug' => 'live-your-dream-2026',
-				'name' => 'Live Your Dream',
-				'category' => 'Exploration',
-				'award' => 'AAC grant support',
-				'fit' => 'Climbers with personally ambitious goals who want to grow their abilities and share exploration with their communities.',
-				'summary' => 'A broad-based grant for climbers across ages, experience levels, and disciplines who are pursuing meaningful next-step adventures.',
-				'highlights' => [
-					'Open across climbing disciplines',
-					'Encourages ambitious but personally relevant goals',
-					'Community impact and storytelling matter',
-				],
-				'source_url' => 'https://theamericanalpineclub.submittable.com/submit',
-			],
-			[
-				'slug' => 'research-grants',
-				'name' => 'Research Grants',
-				'category' => 'Science & Stewardship',
-				'award' => 'AAC research funding',
-				'fit' => 'Researchers studying climbing landscapes, ecosystems, land management, or community health connected to climbing.',
-				'summary' => 'Supports scientific work that improves understanding of climbing environments and helps protect the landscapes and communities climbers depend on.',
-				'highlights' => [
-					'Strong fit for climbing-landscape research',
-					'Projects should address timely issues affecting climbers or crags',
-					'Useful for academic and field-based work',
-				],
-				'source_url' => 'https://theamericanalpineclub.submittable.com/submit',
-			],
-		];
-	}
-
-	public static function get_default_grant_form_fields() {
-		return [
-			[
-				'field_key' => 'project_title',
-				'label' => 'Project Title',
-				'type' => 'text',
-				'required' => 1,
-				'placeholder' => 'Example: Wind River Granite Objectives',
-				'help_text' => '',
-				'options' => '',
-			],
-			[
-				'field_key' => 'requested_amount',
-				'label' => 'Amount Requested',
-				'type' => 'number',
-				'required' => 1,
-				'placeholder' => '$2,500',
-				'help_text' => '',
-				'options' => '',
-			],
-			[
-				'field_key' => 'objective_location',
-				'label' => 'Objective / Project Location',
-				'type' => 'text',
-				'required' => 0,
-				'placeholder' => 'Wind River Range, Wyoming',
-				'help_text' => '',
-				'options' => '',
-			],
-			[
-				'field_key' => 'discipline',
-				'label' => 'Discipline',
-				'type' => 'text',
-				'required' => 0,
-				'placeholder' => 'Alpine, Ice, Research, Community program…',
-				'help_text' => '',
-				'options' => '',
-			],
-			[
-				'field_key' => 'team_name',
-				'label' => 'Team / Partners',
-				'type' => 'text',
-				'required' => 0,
-				'placeholder' => 'List the climbers, researchers, or collaborators involved',
-				'help_text' => '',
-				'options' => '',
-			],
-			[
-				'field_key' => 'summary',
-				'label' => 'Project Summary',
-				'type' => 'textarea',
-				'required' => 1,
-				'placeholder' => 'Describe the objective, why this grant fits, what the funding unlocks, and how the project serves the AAC community.',
-				'help_text' => '',
-				'options' => '',
-			],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_rescue_levels();
 	}
 
 	public static function get_default_top_nav_items() {
-		return [
-			'membership' => ['label' => 'Membership', 'order' => 20, 'visible' => 1, 'children' => []],
-			'stories_news' => ['label' => 'Stories & News', 'order' => 30, 'visible' => 1, 'children' => []],
-			'lodging' => ['label' => 'Lodging', 'order' => 40, 'visible' => 1, 'children' => []],
-			'publications' => ['label' => 'Publications', 'order' => 50, 'visible' => 1, 'children' => []],
-			'our_work' => ['label' => 'Our Work', 'order' => 60, 'visible' => 1, 'children' => []],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_top_nav_items();
 	}
 
 	public static function get_default_member_profile_card_sections() {
-		return [
-			'membership_card' => ['label' => 'Membership Card', 'visible' => 1],
-			'profile_information' => ['label' => 'Profile Information', 'visible' => 1],
-			'membership_snapshot' => ['label' => 'Membership Snapshot', 'visible' => 1],
-			'redpoint_benefits' => ['label' => 'Redpoint Benefits', 'visible' => 1],
-			'linked_accounts' => ['label' => 'Linked Accounts', 'visible' => 1],
-			'my_grants' => ['label' => 'My Grants', 'visible' => 1],
-			'custom_blocks' => ['label' => 'Custom Member Profile Blocks', 'visible' => 1],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_member_profile_card_sections();
 	}
 
 	public static function get_default_sidebar_items() {
-		return [
-			'member_profile' => ['label' => 'Member Profile', 'section' => 'your_portal', 'order' => 10, 'visible' => 1],
-			'store' => ['label' => 'Store', 'section' => 'your_portal', 'order' => 20, 'visible' => 1],
-			'rescue' => ['label' => 'Rescue', 'section' => 'your_portal', 'order' => 30, 'visible' => 1],
-			'account' => ['label' => 'Profile Information', 'section' => 'your_portal', 'order' => 40, 'visible' => 1],
-			'manage' => ['label' => 'Manage', 'section' => 'your_portal', 'order' => 50, 'visible' => 1],
-			'publications' => ['label' => 'Publications', 'section' => 'your_portal', 'order' => 45, 'visible' => 1],
-			'discounts' => ['label' => 'Discounts', 'section' => 'explore', 'order' => 10, 'visible' => 1],
-			'podcasts' => ['label' => 'Podcasts', 'section' => 'explore', 'order' => 20, 'visible' => 1],
-			'events' => ['label' => 'Events', 'section' => 'explore', 'order' => 30, 'visible' => 1],
-			'lodging' => ['label' => 'Lodging', 'section' => 'explore', 'order' => 40, 'visible' => 1],
-			'grants' => ['label' => 'Grants', 'section' => 'explore', 'order' => 50, 'visible' => 1],
-			'contact' => ['label' => 'Contact Us', 'section' => 'explore', 'order' => 60, 'visible' => 1],
-		];
+		return AAC_Member_Portal_Settings_Schema::get_default_sidebar_items();
 	}
 
 	public static function get_settings() {
-		$stored = get_option(self::OPTION_KEY, []);
-		$stored = is_array($stored) ? $stored : [];
-		$settings = self::merge_with_defaults(self::get_defaults(), $stored);
-
-		if (
-			isset($settings['components']['sidebar_items']['account']['label']) &&
-			in_array($settings['components']['sidebar_items']['account']['label'], ['Account', 'Member Details'], true)
-		) {
-			$settings['components']['sidebar_items']['account']['label'] = 'Profile Information';
-		}
-
-		$settings['content']['rescue_levels'] = isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels']) && !empty($settings['content']['rescue_levels'])
-			? array_values($settings['content']['rescue_levels'])
-			: self::get_default_rescue_levels();
-		$settings['content']['home_involvement_cards'] = isset($settings['content']['home_involvement_cards']) && is_array($settings['content']['home_involvement_cards']) && !empty($settings['content']['home_involvement_cards'])
-			? array_values($settings['content']['home_involvement_cards'])
-			: self::get_default_home_involvement_cards();
-		$settings['content']['home_publication_cards'] = isset($settings['content']['home_publication_cards']) && is_array($settings['content']['home_publication_cards']) && !empty($settings['content']['home_publication_cards'])
-			? array_values($settings['content']['home_publication_cards'])
-			: self::get_default_home_publication_cards();
-		$settings['content']['home_partner_logos'] = isset($settings['content']['home_partner_logos']) && is_array($settings['content']['home_partner_logos']) && !empty($settings['content']['home_partner_logos'])
-			? array_values($settings['content']['home_partner_logos'])
-			: self::get_default_home_partner_logos();
-		$settings['content']['featured_photographers'] = isset($settings['content']['featured_photographers']) && is_array($settings['content']['featured_photographers']) && !empty($settings['content']['featured_photographers'])
-			? self::merge_featured_photographers_with_defaults($settings['content']['featured_photographers'])
-			: self::get_default_featured_photographers();
-		$settings['content']['grant_opportunities'] = isset($settings['content']['grant_opportunities']) && is_array($settings['content']['grant_opportunities']) && !empty($settings['content']['grant_opportunities'])
-			? array_values($settings['content']['grant_opportunities'])
-			: self::get_default_grant_opportunities();
-		$settings['content']['grant_form_fields'] = isset($settings['content']['grant_form_fields']) && is_array($settings['content']['grant_form_fields']) && !empty($settings['content']['grant_form_fields'])
-			? array_values($settings['content']['grant_form_fields'])
-			: self::get_default_grant_form_fields();
-
-		return $settings;
+		return AAC_Member_Portal_Settings_Schema::get_settings(self::OPTION_KEY);
 	}
 
 	public static function get_contact_recipient_email() {
@@ -669,6 +98,61 @@ class AAC_Member_Portal_Admin {
 		}
 
 		return sanitize_email(get_option('admin_email'));
+	}
+
+	public static function get_contact_issue_types() {
+		$settings = self::get_settings();
+		$issue_types = isset($settings['content']['contact_issue_types']) && is_array($settings['content']['contact_issue_types'])
+			? $settings['content']['contact_issue_types']
+			: [];
+
+		return AAC_Member_Portal_Settings_Schema::normalize_contact_issue_types($issue_types);
+	}
+
+	public function maybe_apply_wondrous_visual_settings() {
+		if (get_option('aac_member_portal_wondrous_visual_settings_version') === self::WONDROUS_VISUAL_SETTINGS_VERSION) {
+			return;
+		}
+
+		$settings = self::get_settings();
+
+		$settings['design']['sidebar_background_url'] = 'https://wallpapers.com/images/high/abstract-black-topographic-map-q34pt7luthso1030.webp';
+		$settings['design']['sidebar_overlay_start'] = '0.18';
+		$settings['design']['sidebar_overlay_end'] = '0.30';
+		$settings['design']['page_background'] = '#ffffff';
+		$settings['design']['panel_background'] = '#ffffff';
+
+		$settings['components']['section_titles'] = [
+			'your_portal' => 'Member',
+		];
+		$settings['components']['sidebar_items'] = array_merge(
+			isset($settings['components']['sidebar_items']) && is_array($settings['components']['sidebar_items'])
+				? $settings['components']['sidebar_items']
+				: [],
+			[
+				'member_profile' => ['label' => 'Member Profile', 'section' => 'your_portal', 'order' => 1, 'visible' => 1],
+				'account' => ['label' => 'Settings', 'section' => 'your_portal', 'order' => 2, 'visible' => 1],
+				'manage' => ['label' => 'Billing', 'section' => 'your_portal', 'order' => 3, 'visible' => 1],
+				'discounts' => ['label' => 'Benefits', 'section' => 'your_portal', 'order' => 4, 'visible' => 1],
+				'contact' => ['label' => 'Contact Us', 'section' => 'your_portal', 'order' => 5, 'visible' => 1],
+				'publications' => ['label' => 'Books & Media', 'section' => 'your_portal', 'order' => 6, 'visible' => 0],
+			]
+		);
+
+		update_option(self::OPTION_KEY, $settings, false);
+		update_option('aac_member_portal_wondrous_visual_settings_version', self::WONDROUS_VISUAL_SETTINGS_VERSION, false);
+	}
+
+	public function maybe_apply_signup_copy_settings() {
+		if (get_option('aac_member_portal_signup_copy_settings_version') === self::SIGNUP_COPY_SETTINGS_VERSION) {
+			return;
+		}
+
+		$settings = self::get_settings();
+		$settings['content']['join_application_kicker'] = '';
+
+		update_option(self::OPTION_KEY, $settings, false);
+		update_option('aac_member_portal_signup_copy_settings_version', self::SIGNUP_COPY_SETTINGS_VERSION, false);
 	}
 
 	public function maybe_seed_discount_cards() {
@@ -685,29 +169,49 @@ class AAC_Member_Portal_Admin {
 		$existing_cards = isset($settings['content']['discount_cards']) && is_array($settings['content']['discount_cards'])
 			? array_values($settings['content']['discount_cards'])
 			: [];
-		$existing_cards_by_brand = [];
+		$existing_cards = array_values(array_filter($existing_cards, function ($existing_card) {
+			$existing_brand = sanitize_text_field($existing_card['brand'] ?? '');
+			$existing_category = AAC_Member_Portal_Settings_Schema::normalize_discount_category($existing_card['category'] ?? '');
+			return !($existing_category === 'climbing-guides' && $existing_brand === 'Guide Discounts');
+		}));
+		$existing_cards_by_key = [];
 		foreach ($existing_cards as $existing_card) {
 			$existing_brand = sanitize_text_field($existing_card['brand'] ?? '');
 			if ($existing_brand !== '') {
-				$existing_cards_by_brand[$existing_brand] = $existing_card;
+				$existing_category = AAC_Member_Portal_Settings_Schema::normalize_discount_category($existing_card['category'] ?? '');
+				$existing_cards_by_key[$existing_category . '|' . strtolower($existing_brand)] = $existing_card;
 			}
 		}
 
+		$merged_cards = array_values($existing_cards);
+		foreach ($seed_cards as $seed_card) {
+			$brand = sanitize_text_field($seed_card['brand'] ?? '');
+			$category = AAC_Member_Portal_Settings_Schema::normalize_discount_category($seed_card['category'] ?? '');
+			$key = $category . '|' . strtolower($brand);
+			if ($brand === '' || isset($existing_cards_by_key[$key])) {
+				continue;
+			}
+
+			$merged_cards[] = $seed_card;
+		}
+
 		$settings['content']['discount_cards'] = array_map(
-			static function ($seed_card) use ($existing_cards_by_brand) {
+			function ($seed_card) use ($existing_cards_by_key) {
 				$brand = sanitize_text_field($seed_card['brand'] ?? '');
-				if ($brand === '' || !isset($existing_cards_by_brand[$brand])) {
+				$category = AAC_Member_Portal_Settings_Schema::normalize_discount_category($seed_card['category'] ?? '');
+				$key = $category . '|' . strtolower($brand);
+				if ($brand === '' || !isset($existing_cards_by_key[$key])) {
 					return $seed_card;
 				}
 
-				$existing_card = $existing_cards_by_brand[$brand];
+				$existing_card = $existing_cards_by_key[$key];
 				if (!empty($existing_card['image_url'])) {
 					$seed_card['image_url'] = esc_url_raw($existing_card['image_url']);
 				}
 
 				return $seed_card;
 			},
-			$seed_cards
+			$merged_cards
 		);
 
 		update_option(self::OPTION_KEY, $settings, false);
@@ -752,302 +256,7 @@ class AAC_Member_Portal_Admin {
 	}
 
 	public function sanitize_settings($input) {
-		$defaults = self::get_defaults();
-		$current = self::get_settings();
-		$input = is_array($input) ? $input : [];
-		$settings = self::merge_with_defaults($defaults, $current);
-
-		$content_input = isset($input['content']) && is_array($input['content']) ? $input['content'] : [];
-		$text_fields = [
-			'home_hero_kicker',
-			'home_hero_title',
-			'home_primary_cta_label',
-			'home_secondary_cta_label',
-			'home_tertiary_cta_label',
-			'home_membership_chip_kicker',
-			'home_intro_kicker',
-			'home_intro_title',
-			'home_intro_button_label',
-			'home_involvement_kicker',
-			'home_involvement_title',
-			'home_involvement_button_label',
-			'home_publications_kicker',
-			'home_publications_title',
-			'home_publications_button_label',
-			'home_store_kicker',
-			'home_store_title',
-			'home_store_button_label',
-			'home_partners_kicker',
-			'home_partners_title',
-			'photographers_page_kicker',
-			'photographers_page_title',
-			'grants_page_kicker',
-			'grants_page_title',
-			'account_settings_title',
-			'profile_information_title',
-			'membership_snapshot_title',
-			'linked_accounts_title',
-			'discounts_title',
-			'discounts_locked_title',
-			'discounts_button_label',
-			'update_profile_button_label',
-			'publications_title',
-			'publications_locked_title',
-			'publications_upgrade_button_label',
-			'join_hero_kicker',
-			'join_hero_title',
-			'join_primary_cta_label',
-			'join_benefits_cta_label',
-			'join_rescue_cta_label',
-			'join_application_kicker',
-			'join_application_title',
-			'join_redeem_code_button_label',
-			'login_hero_kicker',
-			'login_hero_title',
-			'login_form_kicker',
-			'login_form_title',
-			'login_submit_label',
-			'login_forgot_password_label',
-			'login_join_link_label',
-			'rescue_title',
-			'rescue_coverage_title',
-			'rescue_emergency_title',
-			'rescue_claim_forms_title',
-			'rescue_inactive_title',
-			'rescue_upgrade_title',
-			'rescue_manage_button_label',
-			'linked_accounts_page_title',
-			'linked_accounts_lookup_button_label',
-			'linked_accounts_redeem_button_label',
-			'portal_preferences_title',
-			'quick_actions_title',
-		];
-		foreach ($text_fields as $field) {
-			if (array_key_exists($field, $content_input)) {
-				$settings['content'][$field] = sanitize_text_field($content_input[$field]);
-			}
-		}
-
-		$textarea_fields = [
-			'home_hero_description',
-			'home_membership_chip_description',
-			'home_intro_description',
-			'home_intro_secondary_description',
-			'home_store_description',
-			'home_partners_description',
-			'photographers_page_description',
-			'grants_page_description',
-			'profile_information_description',
-			'membership_snapshot_description',
-			'linked_accounts_description',
-			'discounts_locked_description',
-			'discounts_free_locked_description',
-			'discounts_upgrade_hint',
-			'publications_description',
-			'publications_locked_description',
-			'join_hero_description',
-			'join_application_description',
-			'login_hero_description',
-			'login_purchase_success_message',
-			'rescue_inactive_description',
-			'rescue_upgrade_description',
-			'linked_accounts_page_description',
-			'linked_accounts_success_message',
-			'portal_preferences_description',
-			'quick_actions_description',
-			'grant_applications_description',
-		];
-		foreach ($textarea_fields as $field) {
-			if (array_key_exists($field, $content_input)) {
-				$settings['content'][$field] = sanitize_textarea_field($content_input[$field]);
-			}
-		}
-
-		if (array_key_exists('contact_recipient_email', $content_input)) {
-			$contact_email = sanitize_email($content_input['contact_recipient_email']);
-			$settings['content']['contact_recipient_email'] = $contact_email && is_email($contact_email)
-				? $contact_email
-				: $defaults['content']['contact_recipient_email'];
-		}
-
-		$url_fields = [
-			'home_primary_cta_url',
-			'home_secondary_cta_url',
-			'home_tertiary_cta_url',
-			'home_intro_button_url',
-			'home_involvement_button_url',
-			'home_publications_button_url',
-			'home_store_button_url',
-			'publication_view_url_aaj',
-			'publication_view_url_anac',
-			'publication_view_url_acj',
-			'publication_view_url_guidebook',
-		];
-		foreach ($url_fields as $field) {
-			if (array_key_exists($field, $content_input)) {
-				$settings['content'][$field] = esc_url_raw($content_input[$field]);
-			}
-		}
-
-		// Repeater fields are the feral cousins of simple text fields. They come in
-		// as list arrays, so we sanitize them in their own lane before saving.
-		if (isset($content_input['discount_cards']) && is_array($content_input['discount_cards'])) {
-			$settings['content']['discount_cards'] = $this->sanitize_discount_cards($content_input['discount_cards']);
-		}
-
-		if (isset($content_input['rescue_levels']) && is_array($content_input['rescue_levels'])) {
-			$settings['content']['rescue_levels'] = $this->sanitize_rescue_levels($content_input['rescue_levels']);
-		}
-		if (isset($content_input['home_involvement_cards']) && is_array($content_input['home_involvement_cards'])) {
-			$settings['content']['home_involvement_cards'] = $this->sanitize_home_involvement_cards($content_input['home_involvement_cards']);
-		}
-		if (isset($content_input['home_publication_cards']) && is_array($content_input['home_publication_cards'])) {
-			$settings['content']['home_publication_cards'] = $this->sanitize_home_publication_cards($content_input['home_publication_cards']);
-		}
-		if (isset($content_input['home_partner_logos']) && is_array($content_input['home_partner_logos'])) {
-			$settings['content']['home_partner_logos'] = $this->sanitize_home_partner_logos($content_input['home_partner_logos']);
-		}
-		if (isset($content_input['featured_photographers']) && is_array($content_input['featured_photographers'])) {
-			$settings['content']['featured_photographers'] = $this->sanitize_featured_photographers($content_input['featured_photographers']);
-		}
-		if (isset($content_input['grant_opportunities']) && is_array($content_input['grant_opportunities'])) {
-			$settings['content']['grant_opportunities'] = $this->sanitize_grant_opportunities($content_input['grant_opportunities']);
-		}
-		if (isset($content_input['grant_form_fields']) && is_array($content_input['grant_form_fields'])) {
-			$settings['content']['grant_form_fields'] = $this->sanitize_grant_form_fields($content_input['grant_form_fields']);
-		}
-		if (isset($content_input['member_profile_blocks']) && is_array($content_input['member_profile_blocks'])) {
-			$settings['content']['member_profile_blocks'] = $this->sanitize_member_profile_blocks($content_input['member_profile_blocks']);
-		}
-		if (isset($content_input['member_profile_card_sections']) && is_array($content_input['member_profile_card_sections'])) {
-			$settings['content']['member_profile_card_sections'] = $this->sanitize_member_profile_card_sections($content_input['member_profile_card_sections']);
-		}
-
-		$design_input = isset($input['design']) && is_array($input['design']) ? $input['design'] : [];
-		$design_url_fields = [
-			'sidebar_background_url',
-			'join_hero_image_url',
-			'home_hero_video_url',
-			'join_hero_video_url',
-			'login_background_image_url',
-			'home_intro_image_url',
-			'home_intro_accent_image_url',
-			'home_store_image_url',
-			'publication_tile_image_aaj',
-			'publication_tile_image_anac',
-			'publication_tile_image_acj',
-			'publication_tile_image_guidebook',
-		];
-		foreach ($design_url_fields as $field) {
-			if (array_key_exists($field, $design_input)) {
-				$settings['design'][$field] = esc_url_raw($design_input[$field]);
-			}
-		}
-
-		$color_fields = [
-			'sidebar_button_background',
-			'sidebar_button_hover_background',
-			'sidebar_button_active_background',
-			'sidebar_accent_color',
-			'primary_action_background',
-			'primary_action_text',
-			'secondary_action_background',
-			'secondary_action_text',
-		];
-		foreach ($color_fields as $field) {
-			if (array_key_exists($field, $design_input)) {
-				$settings['design'][$field] = $this->sanitize_hex_color_or_default($design_input[$field], $defaults['design'][$field]);
-			}
-		}
-
-		$token_fields = [
-			'page_background',
-			'panel_background',
-			'panel_border_color',
-			'hero_panel_background',
-			'hero_panel_border_color',
-			'hero_chip_background',
-			'hero_chip_border_color',
-			'login_form_background',
-			'login_overlay',
-			'home_hero_overlay',
-			'home_hero_tint_overlay',
-			'join_hero_overlay',
-			'join_hero_tint_overlay',
-			'nav_background',
-			'nav_text_color',
-			'nav_hover_text_color',
-			'nav_icon_color',
-			'nav_dropdown_background',
-			'nav_dropdown_text_color',
-		];
-		foreach ($token_fields as $field) {
-			if (array_key_exists($field, $design_input)) {
-				$settings['design'][$field] = sanitize_text_field($design_input[$field]);
-			}
-		}
-
-		if (array_key_exists('sidebar_overlay_start', $design_input)) {
-			$settings['design']['sidebar_overlay_start'] = $this->sanitize_opacity($design_input['sidebar_overlay_start']);
-		}
-		if (array_key_exists('sidebar_overlay_end', $design_input)) {
-			$settings['design']['sidebar_overlay_end'] = $this->sanitize_opacity($design_input['sidebar_overlay_end']);
-		}
-
-		$components_input = isset($input['components']) && is_array($input['components']) ? $input['components'] : [];
-		$section_titles = isset($components_input['section_titles']) && is_array($components_input['section_titles']) ? $components_input['section_titles'] : null;
-		if ($section_titles !== null) {
-			foreach ($defaults['components']['section_titles'] as $section_id => $default_title) {
-				if (array_key_exists($section_id, $section_titles)) {
-					$settings['components']['section_titles'][$section_id] = sanitize_text_field($section_titles[$section_id]);
-				}
-			}
-		}
-
-		$top_nav_items = isset($components_input['top_nav_items']) && is_array($components_input['top_nav_items']) ? $components_input['top_nav_items'] : null;
-		if ($top_nav_items !== null) {
-			foreach ($defaults['components']['top_nav_items'] as $item_id => $item_defaults) {
-				$item_input = isset($top_nav_items[$item_id]) && is_array($top_nav_items[$item_id]) ? $top_nav_items[$item_id] : [];
-				$settings['components']['top_nav_items'][$item_id] = [
-					'label' => sanitize_text_field($item_input['label'] ?? $settings['components']['top_nav_items'][$item_id]['label']),
-					'order' => isset($item_input['order']) ? (int) $item_input['order'] : (int) $settings['components']['top_nav_items'][$item_id]['order'],
-					'visible' => empty($item_input['visible']) ? 0 : 1,
-					'children' => $this->sanitize_top_nav_children(isset($item_input['children_text']) ? (string) $item_input['children_text'] : (isset($item_input['children']) && is_array($item_input['children']) ? $item_input['children'] : [])),
-				];
-			}
-		}
-
-		$sidebar_items = isset($components_input['sidebar_items']) && is_array($components_input['sidebar_items']) ? $components_input['sidebar_items'] : null;
-		if ($sidebar_items !== null) {
-			foreach ($defaults['components']['sidebar_items'] as $item_id => $item_defaults) {
-				$item_input = isset($sidebar_items[$item_id]) && is_array($sidebar_items[$item_id]) ? $sidebar_items[$item_id] : [];
-				$section = sanitize_key($item_input['section'] ?? $settings['components']['sidebar_items'][$item_id]['section']);
-				if (!isset($defaults['components']['section_titles'][$section])) {
-					$section = $item_defaults['section'];
-				}
-
-				$settings['components']['sidebar_items'][$item_id] = [
-					'label' => sanitize_text_field($item_input['label'] ?? $settings['components']['sidebar_items'][$item_id]['label']),
-					'section' => $section,
-					'order' => isset($item_input['order']) ? (int) $item_input['order'] : (int) $settings['components']['sidebar_items'][$item_id]['order'],
-					'visible' => empty($item_input['visible']) ? 0 : 1,
-				];
-			}
-		}
-
-		$home_sections = isset($components_input['home_sections']) && is_array($components_input['home_sections']) ? $components_input['home_sections'] : null;
-		if ($home_sections !== null) {
-			foreach ($defaults['components']['home_sections'] as $section_id => $section_defaults) {
-				$section_input = isset($home_sections[$section_id]) && is_array($home_sections[$section_id]) ? $home_sections[$section_id] : [];
-				$settings['components']['home_sections'][$section_id] = [
-					'label' => sanitize_text_field($section_input['label'] ?? $settings['components']['home_sections'][$section_id]['label']),
-					'order' => isset($section_input['order']) ? (int) $section_input['order'] : (int) $settings['components']['home_sections'][$section_id]['order'],
-					'visible' => empty($section_input['visible']) ? 0 : 1,
-				];
-			}
-		}
-
-		return self::merge_with_defaults($defaults, $settings);
+		return AAC_Member_Portal_Settings_Schema::sanitize_settings($input, self::get_settings());
 	}
 
 	public function render_admin_page() {
@@ -1059,13 +268,12 @@ class AAC_Member_Portal_Admin {
 		$tabs = [
 			'global' => 'Global',
 			'home' => 'Home',
-			'photographers' => 'Photographers',
-			'grants' => 'Grants',
 			'experience' => 'Experience',
 			'discounts' => 'Discounts',
+			'level_benefits' => 'Level Benefits',
 			'publications' => 'Publications',
-			'rescue' => 'Rescue',
 			'linked_accounts' => 'Linked Accounts',
+			'error_log' => 'Error Log',
 		];
 		$tab_aliases = [
 			'join' => 'experience',
@@ -1086,6 +294,7 @@ class AAC_Member_Portal_Admin {
 		<div class="wrap">
 			<h1>AAC Portal Settings</h1>
 			<p>Manage member portal copy, page images, colors, and navigation. Settings are organized by portal page so content updates are easier to manage over time.</p>
+			<?php $this->render_admin_notices(); ?>
 
 			<nav class="nav-tab-wrapper" style="margin-bottom:20px;">
 				<?php foreach ($tabs as $tab_key => $tab_label) : ?>
@@ -1095,45 +304,65 @@ class AAC_Member_Portal_Admin {
 				<?php endforeach; ?>
 			</nav>
 
-			<form method="post" action="options.php">
-				<?php settings_fields('aac_member_portal_settings_group'); ?>
-				<div style="display:grid;gap:24px;max-width:1100px;">
-					<?php
-					switch ($tab) {
-						case 'home':
-							$this->render_home_tab($settings);
-							break;
-						case 'photographers':
-							$this->render_photographers_tab($settings);
-							break;
-						case 'grants':
-							$this->render_grants_tab($settings);
-							break;
-						case 'discounts':
-							$this->render_discounts_tab($settings);
-							break;
-						case 'publications':
-							$this->render_publications_tab($settings);
-							break;
-						case 'rescue':
-							$this->render_rescue_tab($settings);
-							break;
-						case 'linked_accounts':
-							$this->render_linked_accounts_tab($settings);
-							break;
-						case 'experience':
-							$this->render_experience_tab($settings);
-							break;
-						case 'global':
-						default:
-							$this->render_global_tab($settings);
-							break;
-					}
-					?>
-				</div>
-				<?php submit_button('Save Portal Settings'); ?>
-			</form>
+			<?php if ($tab === 'error_log') : ?>
+				<?php $this->render_error_log_tab(); ?>
+			<?php else : ?>
+				<form method="post" action="options.php" novalidate>
+					<?php settings_fields('aac_member_portal_settings_group'); ?>
+					<div style="display:grid;gap:24px;max-width:1100px;">
+						<?php
+						switch ($tab) {
+							case 'home':
+								$this->render_home_tab($settings);
+								break;
+							case 'discounts':
+								$this->render_discounts_tab($settings);
+								break;
+							case 'level_benefits':
+								$this->render_level_benefits_tab($settings);
+								break;
+							case 'publications':
+								$this->render_publications_tab($settings);
+								break;
+							case 'linked_accounts':
+								$this->render_linked_accounts_tab($settings);
+								break;
+							case 'experience':
+								$this->render_experience_tab($settings);
+								break;
+							case 'global':
+							default:
+								$this->render_global_tab($settings);
+								break;
+						}
+						?>
+					</div>
+					<?php submit_button('Save Portal Settings'); ?>
+				</form>
+			<?php endif; ?>
+			<?php
+			if ($tab === 'linked_accounts') {
+				$this->render_family_invite_admin_panel();
+			}
+			?>
 			<?php $this->render_shared_admin_scripts(); ?>
+		</div>
+		<?php
+	}
+
+	private function render_admin_notices() {
+		$result = isset($_GET['aac_family_link_result']) ? sanitize_key(wp_unslash($_GET['aac_family_link_result'])) : '';
+		if ($result === '') {
+			return;
+		}
+
+		$is_success = $result === 'success';
+		$message = $is_success
+			? 'Family invite linked successfully.'
+			: (isset($_GET['aac_family_link_message']) ? sanitize_text_field(wp_unslash($_GET['aac_family_link_message'])) : 'Family invite could not be linked.');
+		?>
+		<div class="notice <?php echo $is_success ? 'notice-success' : 'notice-error'; ?> is-dismissible">
+			<p><?php echo esc_html($message); ?></p>
 		</div>
 		<?php
 	}
@@ -1168,11 +397,18 @@ class AAC_Member_Portal_Admin {
 		<table class="form-table" role="presentation"><tbody>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][account_settings_title]', 'Account Settings title', $settings['content']['account_settings_title']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][contact_recipient_email]', 'Contact form recipient email', $settings['content']['contact_recipient_email'], 'email', 'Messages from the member app Contact form will be sent to this address.'); ?>
+			<?php $this->render_contact_issue_types_row($settings); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][portal_preferences_title]', 'Portal Preferences title', $settings['content']['portal_preferences_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][portal_preferences_description]', 'Portal Preferences description', $settings['content']['portal_preferences_description']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][quick_actions_title]', 'Quick Actions title', $settings['content']['quick_actions_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][quick_actions_description]', 'Quick Actions description', $settings['content']['quick_actions_description']); ?>
-			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][grant_applications_description]', 'Grant Applications description', $settings['content']['grant_applications_description']); ?>
+			<?php $this->render_confirmation_letter_format_row($settings); ?>
+			<?php $this->render_long_textarea_row(
+				self::OPTION_KEY . '[content][confirmation_letter_body]',
+				'Confirmation letter text editor',
+				$settings['content']['confirmation_letter_body'],
+				'Available placeholders: {member_name}, {member_id}, {membership_level}, {membership_status}, {valid_through}, {expiration_date}, {renewal_date}, {rescue_coverage}, {medical_coverage}, {mortal_remains_transport}, {benefit_sentence}, {reimbursement_sentence}. Use **bold text** for emphasis.'
+			); ?>
 		</tbody></table>
 		<?php
 		$this->close_panel();
@@ -1205,7 +441,6 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][home_hero_video_url]', 'Hero video URL', $settings['design']['home_hero_video_url'], 'Paste a Vimeo background URL or another embeddable media URL.'); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][home_intro_image_url]', 'Intro image URL', $settings['design']['home_intro_image_url']); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][home_intro_accent_image_url]', 'Intro accent image URL', $settings['design']['home_intro_accent_image_url']); ?>
-			<?php $this->render_media_row(self::OPTION_KEY . '[design][home_store_image_url]', 'Store image URL', $settings['design']['home_store_image_url']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_intro_kicker]', 'Intro kicker', $settings['content']['home_intro_kicker']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_intro_title]', 'Intro title', $settings['content']['home_intro_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][home_intro_description]', 'Intro description', $settings['content']['home_intro_description']); ?>
@@ -1220,11 +455,6 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_publications_title]', 'Publications title', $settings['content']['home_publications_title']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_publications_button_label]', 'Publications button label', $settings['content']['home_publications_button_label']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_publications_button_url]', 'Publications button URL', $settings['content']['home_publications_button_url'], 'url'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_store_kicker]', 'Store kicker', $settings['content']['home_store_kicker']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_store_title]', 'Store title', $settings['content']['home_store_title']); ?>
-			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][home_store_description]', 'Store description', $settings['content']['home_store_description']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_store_button_label]', 'Store button label', $settings['content']['home_store_button_label']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_store_button_url]', 'Store button URL', $settings['content']['home_store_button_url'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_partners_kicker]', 'Partners kicker', $settings['content']['home_partners_kicker']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][home_partners_title]', 'Partners title', $settings['content']['home_partners_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][home_partners_description]', 'Partners description', $settings['content']['home_partners_description']); ?>
@@ -1267,7 +497,6 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][join_hero_description]', 'Hero description', $settings['content']['join_hero_description']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][join_primary_cta_label]', 'Primary CTA label', $settings['content']['join_primary_cta_label']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][join_benefits_cta_label]', 'Benefits CTA label', $settings['content']['join_benefits_cta_label']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][join_rescue_cta_label]', 'Rescue CTA label', $settings['content']['join_rescue_cta_label']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][join_application_kicker]', 'Application kicker', $settings['content']['join_application_kicker']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][join_application_title]', 'Application title', $settings['content']['join_application_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][join_application_description]', 'Application description', $settings['content']['join_application_description']); ?>
@@ -1276,68 +505,6 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][join_hero_video_url]', 'Hero video URL', $settings['design']['join_hero_video_url'], 'Use a Vimeo background URL when you want motion instead of a still image.'); ?>
 		</tbody></table>
 		<?php
-		$this->close_panel();
-	}
-
-	private function render_photographers_tab($settings) {
-		$this->open_panel('Featured Photographers', 'Manage photographer profiles, social links, and six-image galleries for the featured photographers page.');
-		$photographers = isset($settings['content']['featured_photographers']) && is_array($settings['content']['featured_photographers'])
-			? array_values($settings['content']['featured_photographers'])
-			: self::get_default_featured_photographers();
-		?>
-		<table class="form-table" role="presentation"><tbody>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][photographers_page_kicker]', 'Page kicker', $settings['content']['photographers_page_kicker']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][photographers_page_title]', 'Page title', $settings['content']['photographers_page_title']); ?>
-			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][photographers_page_description]', 'Page description', $settings['content']['photographers_page_description']); ?>
-		</tbody></table>
-
-		<h3 style="margin:24px 0 12px;">Photographer Blocks</h3>
-		<p class="description" style="margin-bottom:12px;">Each photographer includes a profile photo, short bio, website/social links, and a gallery shown in grid order. Use the arrow buttons to rearrange both photographers and gallery images.</p>
-		<div id="aac-featured-photographers" class="aac-photographer-admin__list">
-			<?php foreach ($photographers as $index => $photographer) : ?>
-				<?php $this->render_featured_photographer_editor($index, $photographer); ?>
-			<?php endforeach; ?>
-		</div>
-		<p style="margin-top:16px;"><button type="button" class="button button-secondary" id="aac-add-featured-photographer">Add Photographer</button></p>
-		<?php
-		$this->render_featured_photographer_templates();
-		$this->close_panel();
-	}
-
-	private function render_grants_tab($settings) {
-		$this->open_panel('Grants Builder', 'Control the grant opportunities and the member-facing application fields from one admin screen, then feed that same shape into the grants review workflow.');
-		$grant_opportunities = isset($settings['content']['grant_opportunities']) && is_array($settings['content']['grant_opportunities'])
-			? array_values($settings['content']['grant_opportunities'])
-			: self::get_default_grant_opportunities();
-		$grant_form_fields = isset($settings['content']['grant_form_fields']) && is_array($settings['content']['grant_form_fields'])
-			? array_values($settings['content']['grant_form_fields'])
-			: self::get_default_grant_form_fields();
-		?>
-		<table class="form-table" role="presentation"><tbody>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][grants_page_kicker]', 'Page kicker', $settings['content']['grants_page_kicker']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][grants_page_title]', 'Page title', $settings['content']['grants_page_title']); ?>
-			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][grants_page_description]', 'Page description', $settings['content']['grants_page_description']); ?>
-		</tbody></table>
-
-		<h3 style="margin:24px 0 12px;">Grant Opportunities</h3>
-		<p class="description" style="margin-bottom:12px;">These cards drive the opportunities selector on the member-facing grants page. Add or remove programs here without cracking open the frontend.</p>
-		<div id="aac-grant-opportunities" class="aac-home-repeater-list">
-			<?php foreach ($grant_opportunities as $index => $opportunity) : ?>
-				<?php $this->render_grant_opportunity_editor($index, $opportunity); ?>
-			<?php endforeach; ?>
-		</div>
-		<p style="margin-top:16px;"><button type="button" class="button button-secondary" id="aac-add-grant-opportunity">Add Grant Opportunity</button></p>
-
-		<h3 style="margin:28px 0 12px;">Application Fields</h3>
-		<p class="description" style="margin-bottom:12px;">These fields drive the member application form and are forwarded into the grants approval plugin. Use stable field keys like <code>project_title</code> and <code>requested_amount</code> for the fields that should populate reviewer summaries.</p>
-		<div id="aac-grant-form-fields" class="aac-home-repeater-list">
-			<?php foreach ($grant_form_fields as $index => $field) : ?>
-				<?php $this->render_grant_form_field_editor($index, $field); ?>
-			<?php endforeach; ?>
-		</div>
-		<p style="margin-top:16px;"><button type="button" class="button button-secondary" id="aac-add-grant-form-field">Add Grant Field</button></p>
-		<?php
-		$this->render_grants_builder_templates();
 		$this->close_panel();
 	}
 
@@ -1469,8 +636,121 @@ class AAC_Member_Portal_Admin {
 		exit;
 	}
 
+	public function handle_export_error_log() {
+		if (!current_user_can('manage_options')) {
+			wp_die('You do not have permission to export the error log.');
+		}
+
+		check_admin_referer('aac_member_portal_export_error_log');
+
+		$rows = class_exists('AAC_Member_Portal_Error_Log') ? AAC_Member_Portal_Error_Log::list_rows(5000) : [];
+		AAC_Member_Portal_Error_Log::output_csv($rows);
+	}
+
+	public function handle_clear_error_log() {
+		if (!current_user_can('manage_options')) {
+			wp_die('You do not have permission to clear the error log.');
+		}
+
+		check_admin_referer('aac_member_portal_clear_error_log');
+
+		$retention_days = isset($_POST['retention_days']) ? absint(wp_unslash($_POST['retention_days'])) : 0;
+		$deleted = class_exists('AAC_Member_Portal_Error_Log') ? AAC_Member_Portal_Error_Log::clear_rows($retention_days) : 0;
+
+		wp_safe_redirect(add_query_arg([
+			'page' => self::MENU_SLUG,
+			'tab' => 'error_log',
+			'aac_error_log_cleared' => (int) $deleted,
+		], admin_url('admin.php')));
+		exit;
+	}
+
+	private function render_error_log_tab() {
+		if (!class_exists('AAC_Member_Portal_Error_Log')) {
+			echo '<div class="notice notice-error"><p>AAC Member App error logging is unavailable.</p></div>';
+			return;
+		}
+
+		$stats = AAC_Member_Portal_Error_Log::get_stats();
+		$rows = AAC_Member_Portal_Error_Log::list_rows(250);
+		$cleared = isset($_GET['aac_error_log_cleared']) ? (int) wp_unslash($_GET['aac_error_log_cleared']) : null;
+		if ($cleared !== null) {
+			printf('<div class="notice notice-success is-dismissible"><p>Member App error log cleanup complete. Removed rows: %d.</p></div>', absint($cleared));
+		}
+		?>
+		<div style="display:grid;gap:20px;max-width:1280px;">
+			<section style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;">
+				<h2 style="margin-top:0;">Checkout & Payment Error Log</h2>
+				<p style="max-width:820px;color:#50575e;">
+					Logs AAC Member App checkout checkpoints, PMPro validation failures, payment success events, membership changes, and relevant fatal errors. Sensitive values such as passwords, card data, address fields, phone numbers, email addresses, and tokens are redacted or omitted.
+				</p>
+				<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;">
+					<span style="background:#f6f7f7;border:1px solid #dcdcde;padding:10px 12px;"><strong><?php echo esc_html((string) ($stats['total'] ?? 0)); ?></strong> total rows</span>
+					<span style="background:#f6f7f7;border:1px solid #dcdcde;padding:10px 12px;"><strong><?php echo esc_html((string) ($stats['last_24_hours'] ?? 0)); ?></strong> last 24 hours</span>
+					<span style="background:#f6f7f7;border:1px solid #dcdcde;padding:10px 12px;"><strong><?php echo esc_html((string) ($stats['critical'] ?? 0)); ?></strong> critical</span>
+				</div>
+				<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+					<a class="button button-secondary" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['action' => 'aac_member_portal_export_error_log'], admin_url('admin-post.php')), 'aac_member_portal_export_error_log')); ?>">Download CSV</a>
+					<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:flex;gap:8px;align-items:center;margin:0;">
+						<input type="hidden" name="action" value="aac_member_portal_clear_error_log" />
+						<?php wp_nonce_field('aac_member_portal_clear_error_log'); ?>
+						<label for="aac-error-log-retention-days">Clear rows older than</label>
+						<input id="aac-error-log-retention-days" type="number" name="retention_days" value="90" min="0" style="width:90px;" />
+						<span>days (0 clears all)</span>
+						<?php submit_button('Clear Log Rows', 'secondary', '', false); ?>
+					</form>
+				</div>
+			</section>
+			<section style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;overflow:auto;">
+				<h2 style="margin-top:0;">Recent Log Rows</h2>
+				<table class="widefat striped">
+					<thead>
+						<tr>
+							<th>ID</th>
+							<th>Created</th>
+							<th>Severity</th>
+							<th>Area</th>
+							<th>Event</th>
+							<th>User</th>
+							<th>Order</th>
+							<th>Level</th>
+							<th>Message</th>
+							<th>Context</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php if (!$rows) : ?>
+							<tr><td colspan="10">No Member App checkout or payment log rows have been recorded yet.</td></tr>
+						<?php else : ?>
+							<?php foreach ($rows as $row) : ?>
+								<tr>
+									<td><?php echo esc_html((string) ($row['id'] ?? '')); ?></td>
+									<td><?php echo esc_html((string) ($row['created_at'] ?? '')); ?></td>
+									<td><code><?php echo esc_html((string) ($row['severity'] ?? '')); ?></code></td>
+									<td><?php echo esc_html((string) ($row['area'] ?? '')); ?></td>
+									<td><code><?php echo esc_html((string) ($row['event_type'] ?? '')); ?></code></td>
+									<td><?php echo esc_html((string) ($row['user_id'] ?? '')); ?></td>
+									<td>
+										<?php echo esc_html((string) ($row['pmpro_order_id'] ?? '')); ?>
+										<?php if (!empty($row['pmpro_order_code'])) : ?>
+											<div><code><?php echo esc_html((string) $row['pmpro_order_code']); ?></code></div>
+										<?php endif; ?>
+									</td>
+									<td><?php echo esc_html((string) ($row['pmpro_level_id'] ?? '')); ?></td>
+									<td style="max-width:320px;"><?php echo esc_html((string) ($row['message'] ?? '')); ?></td>
+									<td style="max-width:360px;"><code style="white-space:normal;word-break:break-word;"><?php echo esc_html((string) ($row['context_json'] ?? '')); ?></code></td>
+								</tr>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</tbody>
+				</table>
+			</section>
+		</div>
+		<?php
+	}
+
 	private function render_discounts_tab($settings) {
-		$this->open_panel('Discounts Page', 'Manage the partner discount cards shown in the member portal.');
+		$this->open_panel('Member Benefits Page', 'Manage the benefit cards shown inside the member profile area. Each card can have tier-specific values and tier visibility.');
 		$discount_cards = isset($settings['content']['discount_cards']) && is_array($settings['content']['discount_cards'])
 			? array_values($settings['content']['discount_cards'])
 			: [];
@@ -1479,7 +759,7 @@ class AAC_Member_Portal_Admin {
 		}
 		?>
 		<table class="form-table" role="presentation"><tbody>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][discounts_title]', 'Page title', $settings['content']['discounts_title']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[content][discounts_title]', 'Member benefits page title', $settings['content']['discounts_title']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][discounts_locked_title]', 'Locked-state title', $settings['content']['discounts_locked_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][discounts_locked_description]', 'Locked-state description', $settings['content']['discounts_locked_description']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][discounts_free_locked_description]', 'Free-tier locked description', $settings['content']['discounts_free_locked_description']); ?>
@@ -1487,21 +767,231 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][discounts_button_label]', 'Card button label', $settings['content']['discounts_button_label']); ?>
 		</tbody></table>
 
-		<h3 style="margin:24px 0 12px;">Discount Cards</h3>
-		<p class="description" style="margin-bottom:12px;">Add, remove, and edit the member discount cards. Each card includes a brand, member-facing code text, level-specific discount percents, display text, website link, and image.</p>
+		<?php $this->render_benefits_gallery_editor($settings); ?>
+
+		<h3 style="margin:24px 0 12px;">Benefit Cards</h3>
+		<p class="description" style="margin-bottom:12px;">Add, remove, and edit member benefit cards. Discount Brands can use tier visibility and tier-specific values. ExpertVoice, Climbing Guides, and Climbing Gym Discounts are shown to all active paid members.</p>
 		<div class="aac-discount-admin">
+			<p class="aac-discount-admin__toolbar">
+				<button type="button" class="button button-secondary" id="aac-add-discount-card">Add Benefit Card</button>
+			</p>
+			<div class="aac-discount-admin__tabs" aria-label="Benefit card categories">
+				<?php foreach (AAC_Member_Portal_Settings_Schema::get_discount_categories() as $category_id => $category_label) : ?>
+					<button type="button" class="button <?php echo $category_id === 'discount-brands' ? 'button-primary' : 'button-secondary'; ?>" data-aac-discount-admin-tab="<?php echo esc_attr($category_id); ?>">
+						<?php echo esc_html($category_label); ?>
+					</button>
+				<?php endforeach; ?>
+			</div>
 			<div id="aac-discount-cards" class="aac-discount-admin__list">
 				<?php foreach ($discount_cards as $index => $card) : ?>
 					<?php $this->render_discount_card_editor($index, $card); ?>
 				<?php endforeach; ?>
 			</div>
-			<p style="margin-top:16px;">
-				<button type="button" class="button button-secondary" id="aac-add-discount-card">Add Discount Card</button>
-			</p>
 		</div>
 		<?php
 		$this->render_discount_card_template();
 		$this->close_panel();
+	}
+
+	private function render_benefits_gallery_editor($settings) {
+		$gallery_items = isset($settings['content']['benefits_gallery_items']) && is_array($settings['content']['benefits_gallery_items'])
+			? AAC_Member_Portal_Settings_Schema::normalize_benefits_gallery_items($settings['content']['benefits_gallery_items'])
+			: self::get_default_benefits_gallery_items();
+		?>
+		<h3 style="margin:28px 0 12px;">Benefits Gallery</h3>
+		<p class="description" style="margin-bottom:12px;">Edit the gallery cards shown on the Benefits landing page. The Discounts card opens the in-app discount sections; the other cards can link to WordPress pages or external URLs.</p>
+		<div class="aac-benefits-gallery-admin" data-aac-benefits-gallery-admin>
+			<div class="aac-discount-admin__tabs" aria-label="Benefits gallery sections">
+				<?php foreach ($gallery_items as $index => $item) : ?>
+					<button
+						type="button"
+						class="button <?php echo $index === 0 ? 'button-primary' : 'button-secondary'; ?>"
+						data-aac-benefits-gallery-tab="<?php echo esc_attr($item['id']); ?>"
+					>
+						<?php echo esc_html($item['title']); ?>
+					</button>
+				<?php endforeach; ?>
+			</div>
+			<?php foreach ($gallery_items as $index => $item) : ?>
+				<?php
+				$item_id = sanitize_key($item['id'] ?? '');
+				$base_name = self::OPTION_KEY . '[content][benefits_gallery_items][' . $item_id . ']';
+				$image_url = esc_url($item['image_url'] ?? '');
+				?>
+				<section
+					class="aac-benefits-gallery-admin__panel"
+					data-aac-benefits-gallery-panel="<?php echo esc_attr($item_id); ?>"
+					<?php echo $index === 0 ? '' : 'hidden'; ?>
+				>
+					<input type="hidden" name="<?php echo esc_attr($base_name . '[id]'); ?>" value="<?php echo esc_attr($item_id); ?>" />
+					<div class="aac-discount-card-editor__grid">
+						<label>
+							<strong>Title</strong>
+							<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[title]'); ?>" value="<?php echo esc_attr($item['title'] ?? ''); ?>" />
+						</label>
+						<label>
+							<strong>Action label</strong>
+							<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[action_label]'); ?>" value="<?php echo esc_attr($item['action_label'] ?? ''); ?>" />
+						</label>
+						<label class="aac-discount-card-editor__full">
+							<strong>Image URL</strong>
+							<div class="aac-benefits-gallery-admin__media-row">
+								<input type="url" class="regular-text aac-benefits-gallery-admin__image-input" name="<?php echo esc_attr($base_name . '[image_url]'); ?>" value="<?php echo esc_attr($item['image_url'] ?? ''); ?>" />
+								<button type="button" class="button button-secondary" data-aac-select-benefits-gallery-image>Select Image</button>
+							</div>
+						</label>
+						<label class="aac-discount-card-editor__full">
+							<strong>Destination URL</strong>
+							<input type="url" class="regular-text" name="<?php echo esc_attr($base_name . '[url]'); ?>" value="<?php echo esc_attr($item['url'] ?? ''); ?>" />
+							<?php if ($item_id === 'discounts') : ?>
+								<p class="description">Leave blank to open the in-app discount detail sections.</p>
+							<?php endif; ?>
+						</label>
+						<label class="aac-discount-card-editor__full">
+							<strong>Description</strong>
+							<textarea class="large-text" rows="4" name="<?php echo esc_attr($base_name . '[description]'); ?>"><?php echo esc_textarea($item['description'] ?? ''); ?></textarea>
+						</label>
+						<div class="aac-discount-card-editor__full aac-benefits-gallery-admin__preview">
+							<?php if ($image_url) : ?>
+								<img src="<?php echo $image_url; ?>" alt="" />
+							<?php endif; ?>
+						</div>
+					</div>
+				</section>
+			<?php endforeach; ?>
+		</div>
+		<?php
+	}
+
+	private function render_level_benefits_tab($settings) {
+		$this->open_panel('Signup Level Benefits', 'Choose which benefits appear on each membership level card in the signup form and set the Redpoint dollar amounts displayed for each level.');
+		$catalog = self::get_signup_level_benefit_catalog();
+		$levels = self::get_signup_level_labels();
+		$selected_benefits = isset($settings['content']['signup_level_benefits']) && is_array($settings['content']['signup_level_benefits'])
+			? AAC_Member_Portal_Settings_Schema::normalize_signup_level_benefits($settings['content']['signup_level_benefits'])
+			: self::get_default_signup_level_benefits();
+		?>
+		<h3 style="margin:0 0 8px;">Signup Benefits Matrix</h3>
+		<p class="description" style="margin-bottom:12px;">Choose the benefits comparison image displayed above the membership level buttons. Leave empty to show the placeholder grid.</p>
+		<div class="aac-benefits-gallery-admin__media-row" data-aac-signup-matrix-media>
+			<input type="url" class="regular-text" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefits_matrix_image_url]'); ?>" value="<?php echo esc_attr($settings['content']['signup_benefits_matrix_image_url'] ?? ''); ?>" />
+			<button type="button" class="button button-secondary" data-aac-select-signup-matrix-image>Select Matrix Image</button>
+		</div>
+		<div class="aac-benefits-gallery-admin__preview" data-aac-signup-matrix-preview>
+			<?php if (!empty($settings['content']['signup_benefits_matrix_image_url'])) : ?>
+				<img src="<?php echo esc_url($settings['content']['signup_benefits_matrix_image_url']); ?>" alt="" />
+			<?php endif; ?>
+		</div>
+		<input type="hidden" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_level_benefits][_configured]'); ?>" value="1" />
+		<table class="widefat striped" style="margin-top:16px;">
+			<thead>
+				<tr>
+					<th style="width:42%;">Benefit</th>
+					<?php foreach ($levels as $level_id => $level_label) : ?>
+						<th style="text-align:center;"><?php echo esc_html($level_label); ?></th>
+					<?php endforeach; ?>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ($catalog as $benefit_key => $benefit_label) : ?>
+					<tr>
+						<td><strong><?php echo esc_html($benefit_label); ?></strong></td>
+						<?php foreach ($levels as $level_id => $level_label) : ?>
+							<td style="text-align:center;">
+								<label aria-label="<?php echo esc_attr($level_label . ': ' . $benefit_label); ?>">
+									<input
+										type="checkbox"
+										name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_level_benefits][' . $level_id . '][' . $benefit_key . ']'); ?>"
+										value="1"
+										<?php checked(in_array($benefit_key, $selected_benefits[$level_id] ?? [], true)); ?>
+									/>
+								</label>
+							</td>
+						<?php endforeach; ?>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<p class="description" style="margin-top:12px;">The card display follows the order shown here. Unchecking every benefit for a level will hide the benefit checklist for that level card.</p>
+		<?php $this->render_redpoint_level_amounts_editor($settings); ?>
+		<?php
+		$this->close_panel();
+	}
+
+	private function render_redpoint_level_amounts_editor($settings) {
+		$rescue_levels = isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels'])
+			? array_values($settings['content']['rescue_levels'])
+			: self::get_default_rescue_levels();
+		?>
+		<h3 style="margin:32px 0 12px;">Redpoint Dollar Amounts</h3>
+		<p class="description" style="margin-bottom:12px;">Set the Rescue Coverage, Medical Expense Coverage, and Mortal Remains Transport amounts used across the membership card, Redpoint benefits, signup level cards, and confirmation letter.</p>
+		<table class="widefat striped">
+			<thead>
+				<tr>
+					<th>Membership Level</th>
+					<th>Rescue Coverage</th>
+					<th>Medical Expense Coverage</th>
+					<th>Mortal Remains Transport</th>
+					<th>Reimbursement Process</th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ($rescue_levels as $index => $level) : ?>
+					<tr>
+						<td>
+							<input
+								type="text"
+								class="regular-text"
+								name="<?php echo esc_attr(self::OPTION_KEY . '[content][rescue_levels][' . $index . '][level_name]'); ?>"
+								value="<?php echo esc_attr($level['level_name'] ?? ''); ?>"
+							/>
+						</td>
+						<td>
+							<input
+								type="number"
+								min="0"
+								step="1"
+								name="<?php echo esc_attr(self::OPTION_KEY . '[content][rescue_levels][' . $index . '][rescue_amount]'); ?>"
+								value="<?php echo esc_attr((int) ($level['rescue_amount'] ?? 0)); ?>"
+								style="width:140px;"
+							/>
+						</td>
+						<td>
+							<input
+								type="number"
+								min="0"
+								step="1"
+								name="<?php echo esc_attr(self::OPTION_KEY . '[content][rescue_levels][' . $index . '][medical_amount]'); ?>"
+								value="<?php echo esc_attr((int) ($level['medical_amount'] ?? 0)); ?>"
+								style="width:140px;"
+							/>
+						</td>
+						<td>
+							<input
+								type="number"
+								min="0"
+								step="1"
+								name="<?php echo esc_attr(self::OPTION_KEY . '[content][rescue_levels][' . $index . '][mortal_remains_amount]'); ?>"
+								value="<?php echo esc_attr((int) ($level['mortal_remains_amount'] ?? 0)); ?>"
+								style="width:140px;"
+							/>
+						</td>
+						<td>
+							<label>
+								<input
+									type="checkbox"
+									name="<?php echo esc_attr(self::OPTION_KEY . '[content][rescue_levels][' . $index . '][rescue_reimbursement_process]'); ?>"
+									value="1"
+									<?php checked(!empty($level['rescue_reimbursement_process'])); ?>
+								/>
+								Included
+							</label>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
 	}
 
 	private function render_publications_tab($settings) {
@@ -1526,41 +1016,6 @@ class AAC_Member_Portal_Admin {
 		$this->close_panel();
 	}
 
-	private function render_rescue_tab($settings) {
-		$this->open_panel('Rescue Page', 'Control rescue page titles, locked/inactive messaging, and rescue benefit values by membership level.');
-		$rescue_levels = isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels'])
-			? array_values($settings['content']['rescue_levels'])
-			: self::get_default_rescue_levels();
-		?>
-		<table class="form-table" role="presentation"><tbody>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_title]', 'Page title', $settings['content']['rescue_title']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_coverage_title]', 'Coverage card title', $settings['content']['rescue_coverage_title']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_emergency_title]', 'Emergency card title', $settings['content']['rescue_emergency_title']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_claim_forms_title]', 'Claim forms title', $settings['content']['rescue_claim_forms_title']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_inactive_title]', 'Inactive title', $settings['content']['rescue_inactive_title']); ?>
-			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][rescue_inactive_description]', 'Inactive description', $settings['content']['rescue_inactive_description']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_upgrade_title]', 'Upgrade title', $settings['content']['rescue_upgrade_title']); ?>
-			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][rescue_upgrade_description]', 'Upgrade description', $settings['content']['rescue_upgrade_description']); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[content][rescue_manage_button_label]', 'Manage/upgrade button label', $settings['content']['rescue_manage_button_label']); ?>
-		</tbody></table>
-
-		<h3 style="margin:24px 0 12px;">Rescue Benefit Values By Membership Level</h3>
-		<p class="description" style="margin-bottom:12px;">Add one row per membership level. These values feed the member-profile Rescue page and the membership benefits data shown in the portal.</p>
-		<div class="aac-rescue-level-admin">
-			<div id="aac-rescue-levels" class="aac-rescue-level-admin__list">
-				<?php foreach ($rescue_levels as $index => $level) : ?>
-					<?php $this->render_rescue_level_editor($index, $level); ?>
-				<?php endforeach; ?>
-			</div>
-			<p style="margin-top:16px;">
-				<button type="button" class="button button-secondary" id="aac-add-rescue-level">Add Membership Level</button>
-			</p>
-		</div>
-		<?php
-		$this->render_rescue_level_template();
-		$this->close_panel();
-	}
-
 	private function render_linked_accounts_tab($settings) {
 		$this->open_panel('Linked Accounts Page', 'Update family invite redemption labels and success messaging.');
 		?>
@@ -1575,8 +1030,573 @@ class AAC_Member_Portal_Admin {
 		$this->close_panel();
 	}
 
+	private function render_family_invite_admin_panel() {
+		$rows = $this->get_family_invite_rows();
+		?>
+		<section style="background:#fff;border:1px solid #dcdcde;border-radius:12px;margin-top:24px;padding:24px;">
+			<h2 style="margin-top:0;">Family Invite Codes</h2>
+			<p>View pending and redeemed household invite codes. To redeem an invite on behalf of a dependent, create or locate the dependent's WordPress user first, then link that user to the pending invite below.</p>
+			<p class="description">Manual linking connects the user account to the family slot and, when PMPro Group Accounts is active, assigns the matching Partner Adult or Partner Dependent child level. It does not update Stripe billing or create a paid child subscription.</p>
+			<?php if (isset($_GET['aac_group_accounts_migrated'])) : ?>
+				<?php $migration_success = sanitize_key(wp_unslash($_GET['aac_group_accounts_migrated'])) === 'success'; ?>
+				<div class="<?php echo esc_attr($migration_success ? 'notice notice-success inline' : 'notice notice-error inline'); ?>">
+					<p>
+						<?php
+						echo esc_html($migration_success
+							? 'Family accounts migrated to PMPro Group Accounts.'
+							: (isset($_GET['aac_group_accounts_message']) ? sanitize_text_field(wp_unslash($_GET['aac_group_accounts_message'])) : 'Family account migration could not run.'));
+						?>
+					</p>
+				</div>
+			<?php endif; ?>
+			<?php if (class_exists('AAC_Member_Portal_Group_Accounts')) : ?>
+				<?php $migration = get_option(AAC_Member_Portal_Group_Accounts::MIGRATION_OPTION, []); ?>
+				<div style="align-items:center;background:#f6f7f7;border:1px solid #dcdcde;display:flex;gap:16px;justify-content:space-between;margin:16px 0;padding:14px 16px;">
+					<div>
+						<strong>PMPro Group Accounts migration</strong>
+						<p class="description" style="margin:4px 0 0;">
+							<?php if (is_array($migration) && !empty($migration['migrated_at'])) : ?>
+								Last run <?php echo esc_html($migration['migrated_at']); ?>. Synced <?php echo esc_html((string) ($migration['groups_synced'] ?? 0)); ?> groups and <?php echo esc_html((string) ($migration['children_linked'] ?? 0)); ?> linked children. Imported children checked: <?php echo esc_html((string) ($migration['imported_children_checked'] ?? 0)); ?>; unresolved: <?php echo esc_html((string) ($migration['imported_children_unresolved'] ?? 0)); ?>.
+							<?php else : ?>
+								Creates PMPro group accounts for existing AAC family slots and repairs imported parent/child family accounts using parent login, parent email, parent AAC member ID, group ID, group code, or group order metadata.
+							<?php endif; ?>
+						</p>
+					</div>
+					<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+						<?php wp_nonce_field('aac_member_portal_migrate_group_accounts'); ?>
+						<input type="hidden" name="action" value="aac_member_portal_migrate_group_accounts" />
+						<button type="submit" class="button button-primary">Run Migration</button>
+					</form>
+				</div>
+				<?php if (isset($_GET['aac_family_group_links_imported'])) : ?>
+					<?php $import_success = sanitize_key(wp_unslash($_GET['aac_family_group_links_imported'])) === 'success'; ?>
+					<div class="<?php echo esc_attr($import_success ? 'notice notice-success inline' : 'notice notice-error inline'); ?>">
+						<p>
+							<?php echo esc_html(isset($_GET['aac_family_group_links_message']) ? sanitize_text_field(wp_unslash($_GET['aac_family_group_links_message'])) : ($import_success ? 'Family group links imported.' : 'Family group links could not be imported.')); ?>
+						</p>
+					</div>
+				<?php endif; ?>
+				<div style="background:#fff;border:1px solid #dcdcde;margin:16px 0 20px;padding:16px;">
+					<h3 style="margin-top:0;">Import Family Group Links CSV</h3>
+					<p class="description">Use this after PMPro member import if child accounts did not attach to the parent Group Account. Upload the family child/link CSV with parent login, parent email, parent member ID, group ID, group code, or group order columns. This links existing imported users; it does not create Stripe subscriptions.</p>
+					<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+						<?php wp_nonce_field('aac_member_portal_import_family_group_links'); ?>
+						<input type="hidden" name="action" value="aac_member_portal_import_family_group_links" />
+						<input type="file" name="family_group_links_csv" accept=".csv,text/csv" required />
+						<button type="submit" class="button button-primary">Import Family Links</button>
+					</form>
+				</div>
+			<?php endif; ?>
+			<?php if (isset($_GET['aac_family_add_result'])) : ?>
+				<?php $add_success = sanitize_key(wp_unslash($_GET['aac_family_add_result'])) === 'success'; ?>
+				<div class="<?php echo esc_attr($add_success ? 'notice notice-success inline' : 'notice notice-error inline'); ?>">
+					<p>
+						<?php
+						echo esc_html($add_success
+							? 'Family member added and synced to the group account.'
+							: (isset($_GET['aac_family_add_message']) ? sanitize_text_field(wp_unslash($_GET['aac_family_add_message'])) : 'Family member could not be added.'));
+						?>
+					</p>
+				</div>
+			<?php endif; ?>
+			<div style="background:#fff;border:1px solid #dcdcde;margin:16px 0 20px;padding:16px;">
+				<h3 style="margin-top:0;">Add Family / Group Member Manually</h3>
+				<p class="description">Use this when there is no open invite slot. It creates a family slot, links the child user, and syncs them into PMPro Group Accounts. This does not update Stripe billing.</p>
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:grid;gap:12px;grid-template-columns:repeat(2,minmax(220px,1fr));max-width:980px;">
+					<?php wp_nonce_field('aac_member_portal_add_family_member'); ?>
+					<input type="hidden" name="action" value="aac_member_portal_add_family_member" />
+					<label>
+						<strong>Parent user</strong><br />
+						<input type="text" name="parent_identifier" class="regular-text" placeholder="Parent ID, email, or username" required />
+					</label>
+					<label>
+						<strong>Member type</strong><br />
+						<select name="member_type">
+							<option value="dependent">Dependent</option>
+							<option value="adult">Additional adult</option>
+						</select>
+					</label>
+					<label>
+						<strong>Existing child user</strong><br />
+						<input type="text" name="child_identifier" class="regular-text" placeholder="User ID, email, or username" />
+					</label>
+					<div class="description" style="align-self:end;">Or create a new WordPress user below.</div>
+					<label>
+						<strong>New user first name</strong><br />
+						<input type="text" name="child_first_name" class="regular-text" />
+					</label>
+					<label>
+						<strong>New user last name</strong><br />
+						<input type="text" name="child_last_name" class="regular-text" />
+					</label>
+					<label>
+						<strong>New user email</strong><br />
+						<input type="email" name="child_email" class="regular-text" />
+					</label>
+					<label>
+						<strong>New user password</strong><br />
+						<input type="text" name="child_password" class="regular-text" placeholder="Leave blank to generate one" />
+					</label>
+					<div style="grid-column:1 / -1;">
+						<button type="submit" class="button button-primary">Add Member to Family / Group</button>
+					</div>
+				</form>
+			</div>
+			<?php if (empty($rows)) : ?>
+				<p>No family invite codes found yet.</p>
+			<?php else : ?>
+				<table class="widefat striped" style="margin-top:16px;">
+					<thead>
+						<tr>
+							<th>Parent</th>
+							<th>Slot</th>
+							<th>Status</th>
+							<th>Invite Code</th>
+							<th>Redeem URL</th>
+							<th>PMPro Group</th>
+							<th>Group Invite Link</th>
+							<th>Linked User</th>
+							<th>Admin Link</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($rows as $row) : ?>
+							<tr>
+								<td>
+									<strong><?php echo esc_html($row['parent_name']); ?></strong><br />
+									<a href="<?php echo esc_url($row['parent_edit_url']); ?>"><?php echo esc_html($row['parent_email']); ?></a>
+								</td>
+								<td>
+									<?php echo esc_html($row['label']); ?><br />
+									<span class="description"><?php echo esc_html(ucfirst($row['type'])); ?> · <?php echo esc_html($row['price']); ?></span>
+								</td>
+								<td><?php echo esc_html($row['status_label']); ?></td>
+								<td><code style="font-size:13px;"><?php echo esc_html($row['invite_code']); ?></code></td>
+								<td>
+									<input type="text" readonly class="regular-text code" value="<?php echo esc_attr($row['redeem_url']); ?>" onclick="this.select();" />
+								</td>
+								<td>
+									<?php if (!empty($row['group_summary'])) : ?>
+										<strong>Group #<?php echo esc_html((string) $row['group_summary']['id']); ?></strong><br />
+										<span class="description"><?php echo esc_html((string) $row['group_summary']['active_members']); ?>/<?php echo esc_html((string) $row['group_summary']['total_seats']); ?> seats</span><br />
+										<code><?php echo esc_html($row['group_summary']['checkout_code']); ?></code>
+										<?php if (!empty($row['group_summary']['manage_url'])) : ?>
+											<br /><a href="<?php echo esc_url($row['group_summary']['manage_url']); ?>">Manage group</a>
+										<?php endif; ?>
+									<?php else : ?>
+										<span class="description">Not synced</span>
+									<?php endif; ?>
+								</td>
+								<td>
+									<?php if (!empty($row['group_invite_url'])) : ?>
+										<input type="text" readonly class="regular-text code" value="<?php echo esc_attr($row['group_invite_url']); ?>" onclick="this.select();" />
+									<?php else : ?>
+										<span class="description">Run migration first</span>
+									<?php endif; ?>
+								</td>
+								<td>
+									<?php if ($row['child_user_id']) : ?>
+										<strong><?php echo esc_html($row['child_name']); ?></strong><br />
+										<a href="<?php echo esc_url($row['child_edit_url']); ?>"><?php echo esc_html($row['child_email']); ?></a>
+									<?php else : ?>
+										<span class="description">Not linked</span>
+									<?php endif; ?>
+								</td>
+								<td>
+									<?php if ($row['can_link']) : ?>
+										<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:grid;gap:8px;min-width:220px;">
+											<?php wp_nonce_field('aac_member_portal_link_family_invite'); ?>
+											<input type="hidden" name="action" value="aac_member_portal_link_family_invite" />
+											<input type="hidden" name="parent_user_id" value="<?php echo esc_attr((string) $row['parent_user_id']); ?>" />
+											<input type="hidden" name="slot_id" value="<?php echo esc_attr($row['slot_id']); ?>" />
+											<input type="text" name="child_identifier" class="regular-text" placeholder="User ID, email, or username" />
+											<button type="submit" class="button button-secondary">Link User</button>
+										</form>
+									<?php else : ?>
+										<span class="description">Already linked</span>
+									<?php endif; ?>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+		</section>
+		<?php
+	}
+
+	private function get_family_invite_rows() {
+		$users = get_users([
+			'meta_key' => 'aac_connected_accounts',
+			'number' => 500,
+			'fields' => 'all',
+		]);
+		$portal_url = function_exists('aac_member_portal') && aac_member_portal() && method_exists(aac_member_portal(), 'get_portal_page_url')
+			? aac_member_portal()->get_portal_page_url()
+			: home_url('/membership/');
+		$portal_url = trailingslashit($portal_url);
+		$rows = [];
+
+		foreach ($users as $parent_user) {
+			if (!$parent_user instanceof WP_User) {
+				continue;
+			}
+
+			$accounts = get_user_meta($parent_user->ID, 'aac_connected_accounts', true);
+			if (!is_array($accounts)) {
+				continue;
+			}
+			$group_summary = class_exists('AAC_Member_Portal_Group_Accounts')
+				? AAC_Member_Portal_Group_Accounts::get_group_summary_for_parent($parent_user->ID)
+				: null;
+
+			foreach ($accounts as $slot) {
+				if (!is_array($slot)) {
+					continue;
+				}
+
+				$invite_code = sanitize_text_field((string) ($slot['invite_code'] ?? ''));
+				if ($invite_code === '') {
+					continue;
+				}
+
+				$child_user_id = absint($slot['child_user_id'] ?? 0);
+				$child_user = $child_user_id ? get_user_by('id', $child_user_id) : null;
+				$child_name = sanitize_text_field((string) ($slot['child_name'] ?? ''));
+				$child_email = sanitize_email((string) ($slot['child_email'] ?? ''));
+				if ($child_user instanceof WP_User) {
+					$child_name = trim($child_user->first_name . ' ' . $child_user->last_name) ?: $child_user->display_name;
+					$child_email = $child_user->user_email;
+				}
+
+				$status = sanitize_key((string) ($slot['status'] ?? 'pending'));
+				$rows[] = [
+					'parent_user_id' => (int) $parent_user->ID,
+					'parent_name' => $parent_user->display_name ?: $parent_user->user_login,
+					'parent_email' => $parent_user->user_email,
+					'parent_edit_url' => get_edit_user_link($parent_user->ID),
+					'slot_id' => sanitize_text_field((string) ($slot['id'] ?? '')),
+					'type' => sanitize_key((string) ($slot['type'] ?? 'dependent')) ?: 'dependent',
+					'label' => sanitize_text_field((string) ($slot['label'] ?? 'Family member')),
+					'status' => $status,
+					'status_label' => $this->format_family_invite_status($status),
+					'invite_code' => $invite_code,
+					'redeem_url' => $portal_url . '#/linked-accounts?code=' . rawurlencode($invite_code),
+					'group_summary' => $group_summary,
+					'group_invite_url' => class_exists('AAC_Member_Portal_Group_Accounts')
+						? AAC_Member_Portal_Group_Accounts::get_invite_url_for_parent_slot($parent_user->ID, $slot)
+						: '',
+					'child_user_id' => $child_user_id,
+					'child_name' => $child_name,
+					'child_email' => $child_email,
+					'child_edit_url' => $child_user_id ? get_edit_user_link($child_user_id) : '',
+					'price' => '$' . number_format((float) ($slot['price'] ?? 0), 2) . '/yr',
+					'can_link' => $child_user_id <= 0 && $status !== 'connected',
+				];
+			}
+		}
+
+		usort($rows, static function ($a, $b) {
+			return strcasecmp($a['parent_name'] . $a['label'], $b['parent_name'] . $b['label']);
+		});
+
+		return $rows;
+	}
+
+	private function format_family_invite_status($status) {
+		switch (sanitize_key((string) $status)) {
+			case 'connected':
+				return 'Connected';
+			case 'removal_pending':
+				return 'Removing at renewal';
+			case 'pending':
+			default:
+				return 'Pending';
+		}
+	}
+
+	public function handle_link_family_invite() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('You do not have permission to manage family invite codes.', 'aac-member-portal'));
+		}
+
+		check_admin_referer('aac_member_portal_link_family_invite');
+
+		$parent_user_id = isset($_POST['parent_user_id']) ? absint(wp_unslash($_POST['parent_user_id'])) : 0;
+		$slot_id = isset($_POST['slot_id']) ? sanitize_text_field(wp_unslash($_POST['slot_id'])) : '';
+		$child_identifier = isset($_POST['child_identifier']) ? sanitize_text_field(wp_unslash($_POST['child_identifier'])) : '';
+		$result = $this->link_family_invite_to_user($parent_user_id, $slot_id, $child_identifier);
+
+		$redirect_args = [
+			'page' => self::MENU_SLUG,
+			'tab' => 'linked_accounts',
+			'aac_family_link_result' => is_wp_error($result) ? 'error' : 'success',
+		];
+		if (is_wp_error($result)) {
+			$redirect_args['aac_family_link_message'] = rawurlencode($result->get_error_message());
+		}
+
+		wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+		exit;
+	}
+
+	public function handle_add_family_member() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('You do not have permission to add family members.', 'aac-member-portal'));
+		}
+
+		check_admin_referer('aac_member_portal_add_family_member');
+
+		$parent_identifier = isset($_POST['parent_identifier']) ? sanitize_text_field(wp_unslash($_POST['parent_identifier'])) : '';
+		$member_type = isset($_POST['member_type']) ? sanitize_key(wp_unslash($_POST['member_type'])) : 'dependent';
+		$child_identifier = isset($_POST['child_identifier']) ? sanitize_text_field(wp_unslash($_POST['child_identifier'])) : '';
+		$child_first_name = isset($_POST['child_first_name']) ? sanitize_text_field(wp_unslash($_POST['child_first_name'])) : '';
+		$child_last_name = isset($_POST['child_last_name']) ? sanitize_text_field(wp_unslash($_POST['child_last_name'])) : '';
+		$child_email = isset($_POST['child_email']) ? sanitize_email(wp_unslash($_POST['child_email'])) : '';
+		$child_password = isset($_POST['child_password']) ? (string) wp_unslash($_POST['child_password']) : '';
+
+		$parent_user = $this->find_user_for_family_link($parent_identifier);
+		$result = $parent_user instanceof WP_User && $parent_user->exists()
+			? $this->add_family_member_manually($parent_user, $member_type, $child_identifier, $child_first_name, $child_last_name, $child_email, $child_password)
+			: new WP_Error('missing_parent', 'Enter an existing parent user ID, email, or username.');
+
+		$redirect_args = [
+			'page' => self::MENU_SLUG,
+			'tab' => 'linked_accounts',
+			'aac_family_add_result' => is_wp_error($result) ? 'error' : 'success',
+		];
+		if (is_wp_error($result)) {
+			$redirect_args['aac_family_add_message'] = rawurlencode($result->get_error_message());
+		}
+
+		wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+		exit;
+	}
+
+	private function add_family_member_manually(WP_User $parent_user, $member_type, $child_identifier, $child_first_name, $child_last_name, $child_email, $child_password) {
+		$member_type = $member_type === 'adult' ? 'adult' : 'dependent';
+		$child_user = $this->find_user_for_family_link($child_identifier);
+		if (!$child_user instanceof WP_User || !$child_user->exists()) {
+			$child_user = $this->create_family_child_user($child_first_name, $child_last_name, $child_email, $child_password);
+			if (is_wp_error($child_user)) {
+				return $child_user;
+			}
+		}
+
+		if ((int) $child_user->ID === (int) $parent_user->ID) {
+			return new WP_Error('parent_child_match', 'The parent account cannot be linked as its own family member.');
+		}
+
+		$accounts = get_user_meta($parent_user->ID, 'aac_connected_accounts', true);
+		$accounts = is_array($accounts) ? array_values(array_filter($accounts, 'is_array')) : [];
+		foreach ($accounts as $slot) {
+			if (absint($slot['child_user_id'] ?? 0) === (int) $child_user->ID && ($slot['status'] ?? '') === 'connected') {
+				return new WP_Error('already_linked', 'This child user is already linked to this family membership.');
+			}
+		}
+
+		$label = $member_type === 'adult' ? 'Additional adult' : $this->get_next_dependent_label($accounts);
+		$slot = [
+			'id' => wp_generate_uuid4(),
+			'type' => $member_type,
+			'label' => $label,
+			'status' => 'pending',
+			'invite_code' => $this->generate_admin_family_invite_code(),
+			'child_user_id' => 0,
+			'child_name' => '',
+			'child_email' => '',
+			'price' => $member_type === 'adult' ? 80.0 : 45.0,
+			'scheduled_removal_date' => '',
+		];
+		$accounts[] = $slot;
+		update_user_meta($parent_user->ID, 'aac_connected_accounts', array_values($accounts));
+		$this->update_family_config_from_slots($parent_user->ID, $accounts);
+
+		return $this->link_family_invite_to_user((int) $parent_user->ID, $slot['id'], (string) $child_user->ID);
+	}
+
+	private function create_family_child_user($first_name, $last_name, $email, $password) {
+		$email = sanitize_email($email);
+		if (!$email || !is_email($email)) {
+			return new WP_Error('missing_child', 'Enter an existing child user or provide a valid email to create one.');
+		}
+
+		$existing_user = get_user_by('email', $email);
+		if ($existing_user instanceof WP_User) {
+			return $existing_user;
+		}
+
+		if ($password === '') {
+			$password = wp_generate_password(14, true, false);
+		}
+
+		$username = sanitize_user(current(explode('@', $email)), true);
+		if ($username === '') {
+			$username = 'aac-member';
+		}
+		$base_username = $username;
+		$suffix = 1;
+		while (username_exists($username)) {
+			$username = $base_username . $suffix;
+			$suffix++;
+		}
+
+		$user_id = wp_create_user($username, $password, $email);
+		if (is_wp_error($user_id)) {
+			return $user_id;
+		}
+
+		wp_update_user([
+			'ID' => $user_id,
+			'first_name' => $first_name,
+			'last_name' => $last_name,
+			'display_name' => trim($first_name . ' ' . $last_name) ?: $email,
+		]);
+		update_user_meta($user_id, 'aac_account_info', [
+			'first_name' => $first_name,
+			'last_name' => $last_name,
+			'name' => trim($first_name . ' ' . $last_name),
+			'email' => $email,
+		]);
+		update_user_meta($user_id, 't_shirt', 'No T-shirt');
+		update_user_meta($user_id, 'birthdate', '');
+
+		return get_user_by('id', $user_id);
+	}
+
+	private function get_next_dependent_label($accounts) {
+		$count = 0;
+		foreach ($accounts as $slot) {
+			if (is_array($slot) && sanitize_key((string) ($slot['type'] ?? '')) === 'dependent') {
+				$count++;
+			}
+		}
+
+		return sprintf('Dependent %d', $count + 1);
+	}
+
+	private function update_family_config_from_slots($parent_user_id, $accounts) {
+		$dependent_count = 0;
+		$has_adult = false;
+		foreach ($accounts as $slot) {
+			if (!is_array($slot) || ($slot['status'] ?? '') === 'removal_pending') {
+				continue;
+			}
+			if (($slot['type'] ?? '') === 'adult') {
+				$has_adult = true;
+			} elseif (($slot['type'] ?? '') === 'dependent') {
+				$dependent_count++;
+			}
+		}
+
+		update_user_meta($parent_user_id, 'aac_partner_family_config', [
+			'mode' => ($has_adult || $dependent_count > 0) ? 'family' : '',
+			'additional_adult' => $has_adult,
+			'dependent_count' => $dependent_count,
+		]);
+	}
+
+	private function generate_admin_family_invite_code() {
+		return 'AACF-' . strtoupper(wp_generate_password(8, false, false));
+	}
+
+	private function link_family_invite_to_user($parent_user_id, $slot_id, $child_identifier) {
+		if ($parent_user_id <= 0 || $slot_id === '') {
+			return new WP_Error('missing_invite', 'Select a valid family invite slot.');
+		}
+
+		$child_user = $this->find_user_for_family_link($child_identifier);
+		if (!$child_user instanceof WP_User || !$child_user->exists()) {
+			return new WP_Error('missing_child', 'Enter an existing dependent user ID, email, or username.');
+		}
+
+		if ((int) $child_user->ID === (int) $parent_user_id) {
+			return new WP_Error('parent_child_match', 'The parent account cannot be linked as its own dependent.');
+		}
+
+		$existing_parent_id = absint(get_user_meta($child_user->ID, 'aac_linked_parent_user_id', true));
+		if ($existing_parent_id > 0 && $existing_parent_id !== (int) $parent_user_id) {
+			return new WP_Error('already_linked', 'This user is already linked to another family membership.');
+		}
+
+		$accounts = get_user_meta($parent_user_id, 'aac_connected_accounts', true);
+		if (!is_array($accounts)) {
+			return new WP_Error('missing_accounts', 'This parent account does not have family invite slots.');
+		}
+
+		$slot_index = null;
+		foreach ($accounts as $index => $slot) {
+			if (is_array($slot) && sanitize_text_field((string) ($slot['id'] ?? '')) === $slot_id) {
+				$slot_index = $index;
+				break;
+			}
+		}
+
+		if ($slot_index === null || !isset($accounts[$slot_index]) || !is_array($accounts[$slot_index])) {
+			return new WP_Error('missing_slot', 'Family invite slot not found.');
+		}
+
+		$slot = $accounts[$slot_index];
+		$existing_child_id = absint($slot['child_user_id'] ?? 0);
+		if ($existing_child_id > 0 && $existing_child_id !== (int) $child_user->ID) {
+			return new WP_Error('slot_taken', 'This family invite slot is already linked to another user.');
+		}
+
+		$invite_code = sanitize_text_field((string) ($slot['invite_code'] ?? ''));
+		if ($invite_code === '') {
+			return new WP_Error('missing_code', 'This family invite slot does not have an invite code.');
+		}
+
+		$accounts[$slot_index] = array_merge($slot, [
+			'status' => 'connected',
+			'child_user_id' => (int) $child_user->ID,
+			'child_name' => trim($child_user->first_name . ' ' . $child_user->last_name) ?: $child_user->display_name,
+			'child_email' => $child_user->user_email,
+			'scheduled_removal_date' => '',
+		]);
+		update_user_meta($parent_user_id, 'aac_connected_accounts', array_values($accounts));
+
+		update_user_meta($child_user->ID, 'aac_linked_parent_user_id', (int) $parent_user_id);
+		update_user_meta($child_user->ID, 'aac_linked_account_slot_id', $slot_id);
+		update_user_meta($child_user->ID, 'aac_linked_account_invite_code', $invite_code);
+		update_user_meta($child_user->ID, 'aac_linked_account_type', sanitize_key((string) ($slot['type'] ?? 'dependent')));
+		update_user_meta($child_user->ID, 'aac_linked_account_label', sanitize_text_field((string) ($slot['label'] ?? 'Family member')));
+		update_user_meta($parent_user_id, 'aac_family_account_role', 'Parent');
+		update_user_meta($child_user->ID, 'aac_family_account_role', 'Child');
+		delete_user_meta($child_user->ID, 'aac_family_membership_access_until');
+		delete_user_meta($child_user->ID, 'aac_family_membership_pending_removal');
+
+		do_action('aac_member_portal_family_account_linked', (int) $parent_user_id, (int) $child_user->ID);
+
+		return true;
+	}
+
+	private function find_user_for_family_link($identifier) {
+		$identifier = trim((string) $identifier);
+		if ($identifier === '') {
+			return null;
+		}
+
+		if (ctype_digit($identifier)) {
+			$user = get_user_by('id', absint($identifier));
+			if ($user instanceof WP_User) {
+				return $user;
+			}
+		}
+
+		if (is_email($identifier)) {
+			$user = get_user_by('email', sanitize_email($identifier));
+			if ($user instanceof WP_User) {
+				return $user;
+			}
+		}
+
+		$user = get_user_by('login', sanitize_user($identifier, true));
+		return $user instanceof WP_User ? $user : null;
+	}
+
 	private function render_design_tab($settings) {
-		$this->open_panel('Design', 'Update shared portal images, color controls, overlays, and navigation styling used across the AAC member experience.');
+		$this->open_panel('Design', 'Update shared portal images, color controls, overlays, and member app sidebar styling.');
 		?>
 		<table class="form-table" role="presentation"><tbody>
 			<?php $this->render_input_row(self::OPTION_KEY . '[design][page_background]', 'Page background', $settings['design']['page_background'], 'text', 'Used for the lighter page background areas.'); ?>
@@ -1603,25 +1623,13 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_input_row(self::OPTION_KEY . '[design][home_hero_tint_overlay]', 'Home hero tint CSS', $settings['design']['home_hero_tint_overlay'], 'text'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[design][join_hero_overlay]', 'Join hero overlay CSS', $settings['design']['join_hero_overlay'], 'text'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[design][join_hero_tint_overlay]', 'Join hero tint CSS', $settings['design']['join_hero_tint_overlay'], 'text'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][nav_background]', 'Top nav background', $settings['design']['nav_background'], 'text'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][nav_text_color]', 'Top nav text color', $settings['design']['nav_text_color'], 'text'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][nav_hover_text_color]', 'Top nav hover color', $settings['design']['nav_hover_text_color'], 'text'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][nav_icon_color]', 'Top nav icon color', $settings['design']['nav_icon_color'], 'text'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][nav_dropdown_background]', 'Nav dropdown background', $settings['design']['nav_dropdown_background'], 'text'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][nav_dropdown_text_color]', 'Nav dropdown text color', $settings['design']['nav_dropdown_text_color'], 'text'); ?>
 		</tbody></table>
 		<?php
 		$this->close_panel();
 	}
 
 	private function render_navigation_tab($settings) {
-		$this->open_panel('Navigation', 'Update section titles and control where each sidebar item appears.');
-		$portal_page_url = function_exists('aac_member_portal') && aac_member_portal() && method_exists(aac_member_portal(), 'get_portal_page_url')
-			? aac_member_portal()->get_portal_page_url()
-			: home_url('/membership/');
-		$top_nav_registry = function_exists('aac_member_portal') && aac_member_portal()
-			? aac_member_portal()->get_top_nav_item_registry($portal_page_url)
-			: [];
+		$this->open_panel('Member App Sidebar', 'Update the member app sidebar labels, section title, order, and visibility. The embedded member app no longer includes a website top navigation bar.');
 		?>
 		<table class="form-table" role="presentation">
 			<tbody>
@@ -1631,39 +1639,7 @@ class AAC_Member_Portal_Admin {
 			</tbody>
 		</table>
 
-		<h3 style="margin:24px 0 12px;">Top Navigation</h3>
-		<table class="widefat striped" style="margin-top:16px;">
-			<thead>
-				<tr>
-					<th>Section</th>
-					<th>Label</th>
-					<th>Subnavigation</th>
-					<th>Order</th>
-					<th>Visible</th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php foreach ($settings['components']['top_nav_items'] as $item_id => $item_settings) : ?>
-					<?php
-					$current_children = isset($item_settings['children']) && is_array($item_settings['children']) && !empty($item_settings['children'])
-						? $item_settings['children']
-						: (isset($top_nav_registry[$item_id]['children']) && is_array($top_nav_registry[$item_id]['children']) ? $top_nav_registry[$item_id]['children'] : []);
-					?>
-					<tr>
-						<td><strong><?php echo esc_html($item_id); ?></strong></td>
-						<td><input type="text" class="regular-text" name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][label]'); ?>" value="<?php echo esc_attr($item_settings['label']); ?>" /></td>
-						<td style="min-width:340px;">
-							<textarea class="large-text code" rows="5" name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][children_text]'); ?>" placeholder="One item per line: Label | URL | external"><?php echo esc_textarea($this->format_top_nav_children_for_textarea($current_children)); ?></textarea>
-							<p class="description" style="margin:6px 0 0;">Format: <code>Label | URL | external</code>. The third value is optional.</p>
-						</td>
-						<td><input type="number" name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][order]'); ?>" value="<?php echo esc_attr($item_settings['order']); ?>" style="width:90px;" /></td>
-						<td><label><input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY . '[components][top_nav_items][' . $item_id . '][visible]'); ?>" value="1" <?php checked(!empty($item_settings['visible'])); ?> /> Visible</label></td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
-
-		<h3 style="margin:24px 0 12px;">Sidebar Navigation</h3>
+		<h3 style="margin:24px 0 12px;">Sidebar Items</h3>
 		<table class="widefat striped" style="margin-top:16px;">
 			<thead>
 				<tr>
@@ -1741,8 +1717,11 @@ class AAC_Member_Portal_Admin {
 	}
 
 	private function render_discount_card_editor($index, $card = []) {
-		$base_name = self::OPTION_KEY . '[content][discount_cards][' . (int) $index . ']';
+		$field_index = ((string) $index === '__INDEX__') ? '__INDEX__' : (is_numeric($index) ? (string) (int) $index : sanitize_key((string) $index));
+		$base_name = self::OPTION_KEY . '[content][discount_cards][' . $field_index . ']';
 		$brand = $card['brand'] ?? '';
+		$category = AAC_Member_Portal_Settings_Schema::normalize_discount_category($card['category'] ?? '');
+		$brand_tier = AAC_Member_Portal_Settings_Schema::normalize_discount_brand_tier($card['brand_tier'] ?? 'middle');
 		$discount_percent = $card['discount_percent'] ?? '';
 		$discount_code_text = $card['discount_code_text'] ?? '';
 		$discount_code_text_supporter = $card['discount_code_text_supporter'] ?? '';
@@ -1753,16 +1732,37 @@ class AAC_Member_Portal_Admin {
 		$discount_percent_partner = $card['discount_percent_partner'] ?? '';
 		$discount_percent_leader = $card['discount_percent_leader'] ?? '';
 		$discount_percent_advocate = $card['discount_percent_advocate'] ?? '';
+		$discount_percent_supporter = $discount_percent_supporter !== '' ? $discount_percent_supporter : $discount_percent;
+		$discount_percent_partner = $discount_percent_partner !== '' ? $discount_percent_partner : $discount_percent;
+		$discount_percent_leader = $discount_percent_leader !== '' ? $discount_percent_leader : $discount_percent;
+		$discount_percent_advocate = $discount_percent_advocate !== '' ? $discount_percent_advocate : $discount_percent;
 		$display_text = $card['display_text'] ?? '';
 		$button_url = $card['button_url'] ?? '';
 		$image_url = $card['image_url'] ?? '';
+		$visible_tiers = AAC_Member_Portal_Settings_Schema::normalize_discount_visible_tiers($card['visible_tiers'] ?? null);
+		$tier_labels = AAC_Member_Portal_Settings_Schema::get_discount_visibility_tiers();
 		?>
-		<div class="aac-discount-card-editor" data-aac-discount-card>
+		<div class="aac-discount-card-editor" data-aac-discount-card data-aac-discount-category="<?php echo esc_attr($category); ?>">
 			<div class="aac-discount-card-editor__header">
-				<h4>Discount Card</h4>
-				<button type="button" class="button-link-delete" data-aac-remove-discount-card>Remove</button>
+				<h4>Benefit Card</h4>
+				<div class="aac-discount-card-editor__actions">
+					<button type="submit" class="button button-primary" data-aac-save-discount-card formnovalidate>Save This Benefit</button>
+					<button type="button" class="button-link-delete" data-aac-remove-discount-card>Remove</button>
+				</div>
 			</div>
 			<div class="aac-discount-card-editor__grid">
+				<p>
+					<label>
+						<strong>Category</strong><br />
+						<select class="regular-text" name="<?php echo esc_attr($base_name . '[category]'); ?>" data-aac-discount-category-select>
+							<?php foreach (AAC_Member_Portal_Settings_Schema::get_discount_categories() as $category_id => $category_label) : ?>
+								<option value="<?php echo esc_attr($category_id); ?>" <?php selected($category, $category_id); ?>>
+									<?php echo esc_html($category_label); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</label>
+				</p>
 				<p>
 					<label>
 						<strong>Brand</strong><br />
@@ -1771,10 +1771,29 @@ class AAC_Member_Portal_Admin {
 				</p>
 				<p>
 					<label>
-						<strong>Fallback Discount %</strong><br />
-						<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[discount_percent]'); ?>" value="<?php echo esc_attr($discount_percent); ?>" placeholder="20%" />
+						<strong>Brand Tier</strong><br />
+						<select class="regular-text" name="<?php echo esc_attr($base_name . '[brand_tier]'); ?>">
+							<?php foreach (AAC_Member_Portal_Settings_Schema::get_discount_brand_tiers() as $brand_tier_id => $brand_tier_label) : ?>
+								<option value="<?php echo esc_attr($brand_tier_id); ?>" <?php selected($brand_tier, $brand_tier_id); ?>>
+									<?php echo esc_html($brand_tier_label); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
 					</label>
 				</p>
+				<div class="aac-discount-card-editor__full">
+					<strong>Visible to membership tiers</strong>
+					<input type="hidden" name="<?php echo esc_attr($base_name . '[visible_tiers][_configured]'); ?>" value="1" />
+					<div class="aac-discount-card-editor__tiers">
+						<?php foreach ($tier_labels as $tier_key => $tier_label) : ?>
+							<label>
+								<input type="checkbox" name="<?php echo esc_attr($base_name . '[visible_tiers][' . $tier_key . ']'); ?>" value="1" <?php checked(!empty($visible_tiers[$tier_key])); ?> />
+								<?php echo esc_html($tier_label); ?>
+							</label>
+						<?php endforeach; ?>
+					</div>
+					<p class="description" style="margin:6px 0 0;">Members only see cards enabled for their membership tier. The percentage shown to a logged-in member comes from that member's tier field below. GRF and Lifetime use Advocate visibility.</p>
+				</div>
 				<p>
 					<label>
 						<strong>Supporter %</strong><br />
@@ -1801,38 +1820,40 @@ class AAC_Member_Portal_Admin {
 				</p>
 				<p class="aac-discount-card-editor__full">
 					<label>
-						<strong>Fallback Discount Code / Text</strong><br />
+						<strong>Fallback Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text]'); ?>" placeholder="Use code AACMEMBER at checkout."><?php echo esc_textarea($discount_code_text); ?></textarea>
+						<span class="description">Used only when the selected member level details below are blank.</span>
 					</label>
 				</p>
 				<p>
 					<label>
-						<strong>Supporter Code / Text</strong><br />
+						<strong>Supporter Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_supporter]'); ?>" placeholder="Supporter discount details."><?php echo esc_textarea($discount_code_text_supporter); ?></textarea>
 					</label>
 				</p>
 				<p>
 					<label>
-						<strong>Partner Code / Text</strong><br />
+						<strong>Partner Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_partner]'); ?>" placeholder="Partner discount details."><?php echo esc_textarea($discount_code_text_partner); ?></textarea>
 					</label>
 				</p>
 				<p>
 					<label>
-						<strong>Leader Code / Text</strong><br />
+						<strong>Leader Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_leader]'); ?>" placeholder="Leader discount details."><?php echo esc_textarea($discount_code_text_leader); ?></textarea>
 					</label>
 				</p>
 				<p>
 					<label>
-						<strong>Advocate Code / Text</strong><br />
+						<strong>Advocate Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_advocate]'); ?>" placeholder="Advocate discount details."><?php echo esc_textarea($discount_code_text_advocate); ?></textarea>
 					</label>
 				</p>
 				<p class="aac-discount-card-editor__full">
 					<label>
-						<strong>Display Text</strong><br />
+						<strong>Short Card/Search Description</strong><br />
 						<textarea rows="3" class="large-text" name="<?php echo esc_attr($base_name . '[display_text]'); ?>"><?php echo esc_textarea($display_text); ?></textarea>
+						<span class="description">Used for searching/admin context. The public dropdown shows the member-level details above to avoid duplicate descriptions.</span>
 					</label>
 				</p>
 				<p class="aac-discount-card-editor__full">
@@ -1868,12 +1889,23 @@ class AAC_Member_Portal_Admin {
 		<template id="aac-discount-card-template"><?php echo str_replace('__INDEX__', '__INDEX__', $template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
 		<style>
 			.aac-discount-card-editor{border:1px solid #dcdcde;border-radius:12px;padding:16px;background:#fff;margin-bottom:16px}
+			.aac-discount-admin__toolbar{display:flex;justify-content:flex-start;margin:0 0 16px}
+			.aac-discount-admin__tabs{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
+			.aac-discount-admin__tabs .button{min-width:180px;justify-content:center;text-align:center}
 			.aac-discount-card-editor__header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
 			.aac-discount-card-editor__header h4{margin:0}
+			.aac-discount-card-editor__actions{display:flex;align-items:center;gap:12px}
 			.aac-discount-card-editor__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 			.aac-discount-card-editor__full{grid-column:1 / -1}
+			.aac-discount-card-editor__tiers{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
+			.aac-discount-card-editor__tiers label{display:inline-flex;align-items:center;gap:6px;border:1px solid #dcdcde;border-radius:999px;padding:6px 10px;background:#f6f7f7}
 			.aac-discount-card-editor__preview{margin-top:12px;min-height:64px}
 			.aac-discount-card-editor__preview img{display:block;max-width:220px;width:100%;height:auto;border-radius:8px;border:1px solid #dcdcde}
+			.aac-benefits-gallery-admin{border:1px solid #dcdcde;background:#fff;padding:16px;margin-bottom:18px}
+			.aac-benefits-gallery-admin__panel{border:1px solid #e0e0e0;background:#fff;padding:16px}
+			.aac-benefits-gallery-admin__media-row{display:flex;gap:10px;align-items:center}
+			.aac-benefits-gallery-admin__media-row input{flex:1}
+			.aac-benefits-gallery-admin__preview img{display:block;max-width:260px;width:100%;height:auto;border:1px solid #dcdcde;background:#f6f7f7}
 			@media (max-width: 782px){.aac-discount-card-editor__grid{grid-template-columns:1fr}}
 		</style>
 		<script>
@@ -1881,9 +1913,87 @@ class AAC_Member_Portal_Admin {
 				const list = document.getElementById('aac-discount-cards');
 				const template = document.getElementById('aac-discount-card-template');
 				const addButton = document.getElementById('aac-add-discount-card');
+				const tabButtons = Array.from(document.querySelectorAll('[data-aac-discount-admin-tab]'));
+				document.querySelectorAll('[data-aac-benefits-gallery-admin]').forEach((root) => {
+					const galleryTabs = Array.from(root.querySelectorAll('[data-aac-benefits-gallery-tab]'));
+					const galleryPanels = Array.from(root.querySelectorAll('[data-aac-benefits-gallery-panel]'));
+					const activateGalleryTab = (tabId) => {
+						galleryTabs.forEach((button) => {
+							const active = button.dataset.aacBenefitsGalleryTab === tabId;
+							button.classList.toggle('button-primary', active);
+							button.classList.toggle('button-secondary', !active);
+						});
+						galleryPanels.forEach((panel) => {
+							panel.hidden = panel.dataset.aacBenefitsGalleryPanel !== tabId;
+						});
+					};
+
+					galleryTabs.forEach((button) => {
+						button.addEventListener('click', () => activateGalleryTab(button.dataset.aacBenefitsGalleryTab || 'discounts'));
+					});
+
+					root.querySelectorAll('[data-aac-select-benefits-gallery-image]').forEach((button) => {
+						button.addEventListener('click', () => {
+							if (!window.wp || !window.wp.media) {
+								return;
+							}
+
+							const panel = button.closest('[data-aac-benefits-gallery-panel]');
+							const imageInput = panel ? panel.querySelector('.aac-benefits-gallery-admin__image-input') : null;
+							const preview = panel ? panel.querySelector('.aac-benefits-gallery-admin__preview') : null;
+							const frame = window.wp.media({
+								title: 'Select benefits gallery image',
+								button: { text: 'Use image' },
+								multiple: false,
+							});
+
+							frame.on('select', () => {
+								const attachment = frame.state().get('selection').first().toJSON();
+								const nextUrl = attachment.url || '';
+								if (imageInput) {
+									imageInput.value = nextUrl;
+								}
+								if (preview) {
+									preview.innerHTML = nextUrl ? '<img src="' + nextUrl.replace(/"/g, '&quot;') + '" alt="" />' : '';
+								}
+							});
+
+							frame.open();
+						});
+					});
+				});
+				document.querySelectorAll('[data-aac-select-signup-matrix-image]').forEach((button) => {
+					button.addEventListener('click', () => {
+						if (!window.wp || !window.wp.media) return;
+						const row = button.closest('[data-aac-signup-matrix-media]');
+						const imageInput = row ? row.querySelector('input[type="url"]') : null;
+						const preview = document.querySelector('[data-aac-signup-matrix-preview]');
+						const frame = window.wp.media({ title: 'Select signup benefits matrix', button: { text: 'Use image' }, multiple: false });
+						frame.on('select', () => {
+							const attachment = frame.state().get('selection').first().toJSON();
+							const nextUrl = attachment.url || '';
+							if (imageInput) imageInput.value = nextUrl;
+							if (preview) preview.innerHTML = nextUrl ? '<img src="' + nextUrl.replace(/"/g, '&quot;') + '" alt="" />' : '';
+						});
+						frame.open();
+					});
+				});
 				if (!list || !template || !addButton) {
 					return;
 				}
+				let activeCategory = 'discount-brands';
+
+				const applyCategoryFilter = () => {
+					list.querySelectorAll('[data-aac-discount-card]').forEach((card) => {
+						const cardCategory = card.dataset.aacDiscountCategory || 'discount-brands';
+						card.hidden = cardCategory !== activeCategory;
+					});
+					tabButtons.forEach((button) => {
+						const active = button.dataset.aacDiscountAdminTab === activeCategory;
+						button.classList.toggle('button-primary', active);
+						button.classList.toggle('button-secondary', !active);
+					});
+				};
 
 				const refreshIndexes = () => {
 					list.querySelectorAll('[data-aac-discount-card]').forEach((card, index) => {
@@ -1892,6 +2002,11 @@ class AAC_Member_Portal_Admin {
 						});
 					});
 				};
+
+				const settingsForm = list.closest('form');
+				if (settingsForm) {
+					settingsForm.addEventListener('submit', refreshIndexes);
+				}
 
 				const updatePreview = (card) => {
 					const input = card.querySelector('.aac-discount-card-editor__image-input');
@@ -1906,8 +2021,16 @@ class AAC_Member_Portal_Admin {
 
 				const bindCard = (card) => {
 					const removeButton = card.querySelector('[data-aac-remove-discount-card]');
+					const saveButton = card.querySelector('[data-aac-save-discount-card]');
 					const selectButton = card.querySelector('[data-aac-select-discount-image]');
 					const imageInput = card.querySelector('.aac-discount-card-editor__image-input');
+					const categorySelect = card.querySelector('[data-aac-discount-category-select]');
+
+					if (saveButton && settingsForm) {
+						saveButton.addEventListener('click', () => {
+							refreshIndexes();
+						});
+					}
 
 					if (removeButton) {
 						removeButton.addEventListener('click', () => {
@@ -1918,6 +2041,14 @@ class AAC_Member_Portal_Admin {
 
 					if (imageInput) {
 						imageInput.addEventListener('input', () => updatePreview(card));
+					}
+
+					if (categorySelect) {
+						card.dataset.aacDiscountCategory = categorySelect.value || 'discount-brands';
+						categorySelect.addEventListener('change', () => {
+							card.dataset.aacDiscountCategory = categorySelect.value || 'discount-brands';
+							applyCategoryFilter();
+						});
 					}
 
 					if (selectButton && window.wp && window.wp.media) {
@@ -1941,7 +2072,15 @@ class AAC_Member_Portal_Admin {
 					}
 				};
 
+				tabButtons.forEach((button) => {
+					button.addEventListener('click', () => {
+						activeCategory = button.dataset.aacDiscountAdminTab || 'discount-brands';
+						applyCategoryFilter();
+					});
+				});
+
 				list.querySelectorAll('[data-aac-discount-card]').forEach(bindCard);
+				applyCategoryFilter();
 
 				addButton.addEventListener('click', () => {
 					const nextIndex = list.querySelectorAll('[data-aac-discount-card]').length;
@@ -1953,408 +2092,14 @@ class AAC_Member_Portal_Admin {
 						return;
 					}
 					list.appendChild(card);
+					const categorySelect = card.querySelector('[data-aac-discount-category-select]');
+					if (categorySelect) {
+						categorySelect.value = activeCategory;
+						card.dataset.aacDiscountCategory = activeCategory;
+					}
 					bindCard(card);
 					refreshIndexes();
-				});
-			});
-		</script>
-		<?php
-	}
-
-	private function render_rescue_level_editor($index, $level = []) {
-		$base_name = self::OPTION_KEY . '[content][rescue_levels][' . (int) $index . ']';
-		$level_name = $level['level_name'] ?? '';
-		$rescue_amount = isset($level['rescue_amount']) ? (int) $level['rescue_amount'] : 0;
-		$medical_amount = isset($level['medical_amount']) ? (int) $level['medical_amount'] : 0;
-		$mortal_remains_amount = isset($level['mortal_remains_amount']) ? (int) $level['mortal_remains_amount'] : 0;
-		$rescue_reimbursement_process = !empty($level['rescue_reimbursement_process']);
-		?>
-		<div class="aac-rescue-level-editor" data-aac-rescue-level>
-			<div class="aac-rescue-level-editor__header">
-				<h4>Membership Level</h4>
-				<button type="button" class="button-link-delete" data-aac-remove-rescue-level>Remove</button>
-			</div>
-			<div class="aac-rescue-level-editor__grid">
-				<p>
-					<label>
-						<strong>Level Name</strong><br />
-						<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[level_name]'); ?>" value="<?php echo esc_attr($level_name); ?>" placeholder="Partner" />
-					</label>
-				</p>
-				<p>
-					<label>
-						<strong>Rescue Coverage Amount</strong><br />
-						<input type="number" class="regular-text" min="0" step="1" name="<?php echo esc_attr($base_name . '[rescue_amount]'); ?>" value="<?php echo esc_attr($rescue_amount); ?>" placeholder="7500" />
-					</label>
-				</p>
-				<p>
-					<label>
-						<strong>Medical Expense Amount</strong><br />
-						<input type="number" class="regular-text" min="0" step="1" name="<?php echo esc_attr($base_name . '[medical_amount]'); ?>" value="<?php echo esc_attr($medical_amount); ?>" placeholder="5000" />
-					</label>
-				</p>
-				<p>
-					<label>
-						<strong>Mortal Remains Transport Amount</strong><br />
-						<input type="number" class="regular-text" min="0" step="1" name="<?php echo esc_attr($base_name . '[mortal_remains_amount]'); ?>" value="<?php echo esc_attr($mortal_remains_amount); ?>" placeholder="15000" />
-					</label>
-				</p>
-				<p class="aac-rescue-level-editor__full">
-					<label>
-						<input type="checkbox" name="<?php echo esc_attr($base_name . '[rescue_reimbursement_process]'); ?>" value="1" <?php checked($rescue_reimbursement_process); ?> />
-						<strong> Rescue reimbursement process included</strong>
-					</label>
-				</p>
-			</div>
-		</div>
-		<?php
-	}
-
-	private function render_rescue_level_template() {
-		ob_start();
-		$this->render_rescue_level_editor('__INDEX__', []);
-		$template = ob_get_clean();
-		?>
-		<template id="aac-rescue-level-template"><?php echo str_replace('__INDEX__', '__INDEX__', $template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
-		<style>
-			.aac-rescue-level-editor{border:1px solid #dcdcde;border-radius:12px;padding:16px;background:#fff;margin-bottom:16px}
-			.aac-rescue-level-editor__header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-			.aac-rescue-level-editor__header h4{margin:0}
-			.aac-rescue-level-editor__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-			.aac-rescue-level-editor__full{grid-column:1 / -1}
-			@media (max-width: 782px){.aac-rescue-level-editor__grid{grid-template-columns:1fr}}
-		</style>
-		<script>
-			document.addEventListener('DOMContentLoaded', function () {
-				const list = document.getElementById('aac-rescue-levels');
-				const template = document.getElementById('aac-rescue-level-template');
-				const addButton = document.getElementById('aac-add-rescue-level');
-				if (!list || !template || !addButton) {
-					return;
-				}
-
-				const refreshIndexes = () => {
-					list.querySelectorAll('[data-aac-rescue-level]').forEach((card, index) => {
-						card.querySelectorAll('[name]').forEach((field) => {
-							field.name = field.name.replace(/\[rescue_levels\]\[[^\]]+\]/, '[rescue_levels][' + index + ']');
-						});
-					});
-				};
-
-				const bindCard = (card) => {
-					const removeButton = card.querySelector('[data-aac-remove-rescue-level]');
-					if (removeButton) {
-						removeButton.addEventListener('click', () => {
-							card.remove();
-							refreshIndexes();
-						});
-					}
-				};
-
-				list.querySelectorAll('[data-aac-rescue-level]').forEach(bindCard);
-
-				addButton.addEventListener('click', () => {
-					const nextIndex = list.querySelectorAll('[data-aac-rescue-level]').length;
-					const html = template.innerHTML.replace(/__INDEX__/g, String(nextIndex));
-					const wrapper = document.createElement('div');
-					wrapper.innerHTML = html.trim();
-					const card = wrapper.firstElementChild;
-					if (!card) {
-						return;
-					}
-					list.appendChild(card);
-					bindCard(card);
-					refreshIndexes();
-				});
-			});
-		</script>
-		<?php
-	}
-
-	private function render_featured_photographer_editor($index, $photographer = []) {
-		$base_name = self::OPTION_KEY . '[content][featured_photographers][' . (int) $index . ']';
-		$gallery_items = isset($photographer['gallery_items']) && is_array($photographer['gallery_items'])
-			? array_values($photographer['gallery_items'])
-			: [];
-		?>
-		<div class="aac-photographer-editor" data-aac-featured-photographer>
-			<div class="aac-photographer-editor__header">
-				<h4>Photographer</h4>
-				<div class="aac-photographer-editor__actions">
-					<button type="button" class="button button-secondary" data-aac-photographer-move-up>↑</button>
-					<button type="button" class="button button-secondary" data-aac-photographer-move-down>↓</button>
-					<button type="button" class="button-link-delete" data-aac-remove-featured-photographer>Remove</button>
-				</div>
-			</div>
-			<div class="aac-photographer-editor__grid">
-				<p><label><strong>Name</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[name]'); ?>" value="<?php echo esc_attr($photographer['name'] ?? ''); ?>" /></label></p>
-				<p><label><strong>Website URL</strong><br /><input type="url" class="large-text" name="<?php echo esc_attr($base_name . '[website_url]'); ?>" value="<?php echo esc_attr($photographer['website_url'] ?? ''); ?>" /></label></p>
-				<p><label><strong>Instagram URL</strong><br /><input type="url" class="large-text" name="<?php echo esc_attr($base_name . '[instagram_url]'); ?>" value="<?php echo esc_attr($photographer['instagram_url'] ?? ''); ?>" /></label></p>
-				<p><label><strong>Facebook URL</strong><br /><input type="url" class="large-text" name="<?php echo esc_attr($base_name . '[facebook_url]'); ?>" value="<?php echo esc_attr($photographer['facebook_url'] ?? ''); ?>" /></label></p>
-				<p><label><strong>X / Twitter URL</strong><br /><input type="url" class="large-text" name="<?php echo esc_attr($base_name . '[x_url]'); ?>" value="<?php echo esc_attr($photographer['x_url'] ?? ''); ?>" /></label></p>
-				<div class="aac-photographer-editor__full">
-					<label><strong>Profile Image URL</strong><br /><input type="url" class="large-text aac-photographer-editor__image-input" name="<?php echo esc_attr($base_name . '[profile_image_url]'); ?>" value="<?php echo esc_attr($photographer['profile_image_url'] ?? ''); ?>" /></label>
-					<p style="margin:8px 0 0;"><button type="button" class="button button-secondary" data-aac-select-photographer-image>Select Profile Image</button></p>
-					<div class="aac-photographer-editor__preview"><?php if (!empty($photographer['profile_image_url'])) : ?><img src="<?php echo esc_url($photographer['profile_image_url']); ?>" alt="" /><?php endif; ?></div>
-				</div>
-				<p class="aac-photographer-editor__full"><label><strong>Short Bio</strong><br /><textarea rows="4" class="large-text" name="<?php echo esc_attr($base_name . '[short_bio]'); ?>"><?php echo esc_textarea($photographer['short_bio'] ?? ''); ?></textarea></label></p>
-			</div>
-			<div class="aac-photographer-editor__gallery">
-				<div class="aac-photographer-editor__gallery-header">
-					<h5>Gallery Images</h5>
-					<button type="button" class="button button-secondary" data-aac-add-photographer-gallery-item>Add Gallery Image</button>
-				</div>
-				<p class="description" style="margin:0 0 12px;">The page shows up to six images per photographer. Order here becomes top-left to bottom-right in the gallery grid.</p>
-				<div class="aac-photographer-gallery-list" data-aac-photographer-gallery-list>
-					<?php foreach ($gallery_items as $gallery_index => $gallery_item) : ?>
-						<?php $this->render_featured_photographer_gallery_item_editor($index, $gallery_index, $gallery_item); ?>
-					<?php endforeach; ?>
-				</div>
-			</div>
-		</div>
-		<?php
-	}
-
-	private function render_featured_photographer_gallery_item_editor($photographer_index, $gallery_index, $gallery_item = []) {
-		$base_name = self::OPTION_KEY . '[content][featured_photographers][' . $photographer_index . '][gallery_items][' . $gallery_index . ']';
-		?>
-		<div class="aac-photographer-gallery-item" data-aac-photographer-gallery-item>
-			<div class="aac-photographer-gallery-item__header">
-				<strong>Gallery Image</strong>
-				<div class="aac-photographer-editor__actions">
-					<button type="button" class="button button-secondary" data-aac-gallery-move-up>↑</button>
-					<button type="button" class="button button-secondary" data-aac-gallery-move-down>↓</button>
-					<button type="button" class="button-link-delete" data-aac-remove-gallery-item>Remove</button>
-				</div>
-			</div>
-			<p>
-				<label><strong>Image URL</strong><br /><input type="url" class="large-text aac-photographer-gallery-item__image-input" name="<?php echo esc_attr($base_name . '[image_url]'); ?>" value="<?php echo esc_attr($gallery_item['image_url'] ?? ''); ?>" /></label>
-			</p>
-			<p style="margin-top:8px;">
-				<button type="button" class="button button-secondary" data-aac-select-gallery-image>Select Image</button>
-			</p>
-			<p style="margin-top:12px;">
-				<label><strong>Caption</strong><br /><input type="text" class="large-text" name="<?php echo esc_attr($base_name . '[caption]'); ?>" value="<?php echo esc_attr($gallery_item['caption'] ?? ''); ?>" /></label>
-			</p>
-			<div class="aac-photographer-gallery-item__preview"><?php if (!empty($gallery_item['image_url'])) : ?><img src="<?php echo esc_url($gallery_item['image_url']); ?>" alt="" /><?php endif; ?></div>
-		</div>
-		<?php
-	}
-
-	private function render_featured_photographer_templates() {
-		ob_start();
-		$this->render_featured_photographer_editor('__INDEX__', []);
-		$photographer_template = ob_get_clean();
-		ob_start();
-		$this->render_featured_photographer_gallery_item_editor('__P_INDEX__', '__G_INDEX__', []);
-		$gallery_template = ob_get_clean();
-		?>
-		<template id="aac-featured-photographer-template"><?php echo str_replace('__INDEX__', '__INDEX__', $photographer_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
-		<template id="aac-featured-photographer-gallery-item-template"><?php echo str_replace(['__P_INDEX__', '__G_INDEX__'], ['__P_INDEX__', '__G_INDEX__'], $gallery_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
-		<style>
-			.aac-photographer-editor{border:1px solid #dcdcde;border-radius:16px;padding:18px;background:#fff;margin-bottom:18px}
-			.aac-photographer-editor__header,.aac-photographer-editor__gallery-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-			.aac-photographer-editor__header h4,.aac-photographer-editor__gallery-header h5{margin:0}
-			.aac-photographer-editor__actions{display:flex;align-items:center;gap:8px}
-			.aac-photographer-editor__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-			.aac-photographer-editor__full{grid-column:1 / -1}
-			.aac-photographer-editor__preview,.aac-photographer-gallery-item__preview{margin-top:12px;min-height:72px}
-			.aac-photographer-editor__preview img,.aac-photographer-gallery-item__preview img{display:block;max-width:220px;width:100%;height:auto;border-radius:10px;border:1px solid #dcdcde}
-			.aac-photographer-editor__gallery{margin-top:18px;padding-top:18px;border-top:1px solid #e7e5e4}
-			.aac-photographer-gallery-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-			.aac-photographer-gallery-item{border:1px solid #e7e5e4;border-radius:14px;padding:14px;background:#fafaf9}
-			.aac-photographer-gallery-item__header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-			@media (max-width: 782px){.aac-photographer-editor__grid,.aac-photographer-gallery-list{grid-template-columns:1fr}}
-		</style>
-		<script>
-			document.addEventListener('DOMContentLoaded', function () {
-				const list = document.getElementById('aac-featured-photographers');
-				const template = document.getElementById('aac-featured-photographer-template');
-				const galleryTemplate = document.getElementById('aac-featured-photographer-gallery-item-template');
-				const addButton = document.getElementById('aac-add-featured-photographer');
-				if (!list || !template || !galleryTemplate || !addButton) {
-					return;
-				}
-
-				const openMediaFrame = (callback) => {
-					if (!(window.wp && window.wp.media)) {
-						return;
-					}
-					const frame = window.wp.media({
-						title: 'Select image',
-						button: { text: 'Use image' },
-						multiple: false,
-					});
-					frame.on('select', () => {
-						const attachment = frame.state().get('selection').first().toJSON();
-						callback(attachment);
-					});
-					frame.open();
-				};
-
-				const moveNode = (node, direction) => {
-					if (!node || !node.parentNode) {
-						return;
-					}
-					const sibling = direction === 'up' ? node.previousElementSibling : node.nextElementSibling;
-					if (!sibling) {
-						return;
-					}
-					if (direction === 'up') {
-						node.parentNode.insertBefore(node, sibling);
-					} else {
-						node.parentNode.insertBefore(sibling, node);
-					}
-				};
-
-				const updateImagePreview = (input, preview) => {
-					if (!input || !preview) {
-						return;
-					}
-					const nextUrl = String(input.value || '').trim();
-					preview.innerHTML = nextUrl ? '<img src="' + nextUrl.replace(/"/g, '&quot;') + '" alt="" />' : '';
-				};
-
-				const refreshIndexes = () => {
-					list.querySelectorAll('[data-aac-featured-photographer]').forEach((card, pIndex) => {
-						card.querySelectorAll('[name]').forEach((field) => {
-							field.name = field.name.replace(/\[featured_photographers\]\[[^\]]+\]/, '[featured_photographers][' + pIndex + ']');
-						});
-						const galleryList = card.querySelector('[data-aac-photographer-gallery-list]');
-						if (!galleryList) {
-							return;
-						}
-						galleryList.querySelectorAll('[data-aac-photographer-gallery-item]').forEach((galleryItem, gIndex) => {
-							galleryItem.querySelectorAll('[name]').forEach((field) => {
-								field.name = field.name.replace(/\[gallery_items\]\[[^\]]+\]/, '[gallery_items][' + gIndex + ']');
-							});
-						});
-					});
-				};
-
-				const bindGalleryItem = (galleryItem) => {
-					const removeButton = galleryItem.querySelector('[data-aac-remove-gallery-item]');
-					const moveUpButton = galleryItem.querySelector('[data-aac-gallery-move-up]');
-					const moveDownButton = galleryItem.querySelector('[data-aac-gallery-move-down]');
-					const imageInput = galleryItem.querySelector('.aac-photographer-gallery-item__image-input');
-					const preview = galleryItem.querySelector('.aac-photographer-gallery-item__preview');
-					const selectButton = galleryItem.querySelector('[data-aac-select-gallery-image]');
-
-					if (removeButton) {
-						removeButton.addEventListener('click', () => {
-							galleryItem.remove();
-							refreshIndexes();
-						});
-					}
-					if (moveUpButton) {
-						moveUpButton.addEventListener('click', () => {
-							moveNode(galleryItem, 'up');
-							refreshIndexes();
-						});
-					}
-					if (moveDownButton) {
-						moveDownButton.addEventListener('click', () => {
-							moveNode(galleryItem, 'down');
-							refreshIndexes();
-						});
-					}
-					if (imageInput) {
-						imageInput.addEventListener('input', () => updateImagePreview(imageInput, preview));
-					}
-					if (selectButton) {
-						selectButton.addEventListener('click', () => {
-							openMediaFrame((attachment) => {
-								if (imageInput) {
-									imageInput.value = attachment.url || '';
-									updateImagePreview(imageInput, preview);
-								}
-							});
-						});
-					}
-				};
-
-				const bindPhotographerCard = (card) => {
-					const removeButton = card.querySelector('[data-aac-remove-featured-photographer]');
-					const moveUpButton = card.querySelector('[data-aac-photographer-move-up]');
-					const moveDownButton = card.querySelector('[data-aac-photographer-move-down]');
-					const imageInput = card.querySelector('.aac-photographer-editor__image-input');
-					const preview = card.querySelector('.aac-photographer-editor__preview');
-					const selectButton = card.querySelector('[data-aac-select-photographer-image]');
-					const addGalleryButton = card.querySelector('[data-aac-add-photographer-gallery-item]');
-					const galleryList = card.querySelector('[data-aac-photographer-gallery-list]');
-
-					if (removeButton) {
-						removeButton.addEventListener('click', () => {
-							card.remove();
-							refreshIndexes();
-						});
-					}
-					if (moveUpButton) {
-						moveUpButton.addEventListener('click', () => {
-							moveNode(card, 'up');
-							refreshIndexes();
-						});
-					}
-					if (moveDownButton) {
-						moveDownButton.addEventListener('click', () => {
-							moveNode(card, 'down');
-							refreshIndexes();
-						});
-					}
-					if (imageInput) {
-						imageInput.addEventListener('input', () => updateImagePreview(imageInput, preview));
-					}
-					if (selectButton) {
-						selectButton.addEventListener('click', () => {
-							openMediaFrame((attachment) => {
-								if (imageInput) {
-									imageInput.value = attachment.url || '';
-									updateImagePreview(imageInput, preview);
-								}
-							});
-						});
-					}
-					if (galleryList) {
-						galleryList.querySelectorAll('[data-aac-photographer-gallery-item]').forEach(bindGalleryItem);
-					}
-					if (addGalleryButton && galleryList) {
-						addGalleryButton.addEventListener('click', () => {
-							if (galleryList.querySelectorAll('[data-aac-photographer-gallery-item]').length >= 6) {
-								window.alert('Each photographer can display up to 6 gallery images.');
-								return;
-							}
-							const nextPhotographerIndex = Array.from(list.querySelectorAll('[data-aac-featured-photographer]')).indexOf(card);
-							const nextGalleryIndex = galleryList.querySelectorAll('[data-aac-photographer-gallery-item]').length;
-							const html = galleryTemplate.innerHTML
-								.replace(/__P_INDEX__/g, String(nextPhotographerIndex))
-								.replace(/__G_INDEX__/g, String(nextGalleryIndex));
-							const wrapper = document.createElement('div');
-							wrapper.innerHTML = html.trim();
-							const galleryItem = wrapper.firstElementChild;
-							if (!galleryItem) {
-								return;
-							}
-							galleryList.appendChild(galleryItem);
-							bindGalleryItem(galleryItem);
-							refreshIndexes();
-						});
-					}
-				};
-
-				list.querySelectorAll('[data-aac-featured-photographer]').forEach(bindPhotographerCard);
-
-				addButton.addEventListener('click', () => {
-					const nextIndex = list.querySelectorAll('[data-aac-featured-photographer]').length;
-					const html = template.innerHTML.replace(/__INDEX__/g, String(nextIndex));
-					const wrapper = document.createElement('div');
-					wrapper.innerHTML = html.trim();
-					const card = wrapper.firstElementChild;
-					if (!card) {
-						return;
-					}
-					list.appendChild(card);
-					bindPhotographerCard(card);
-					refreshIndexes();
+					applyCategoryFilter();
 				});
 			});
 		</script>
@@ -2402,12 +2147,115 @@ class AAC_Member_Portal_Admin {
 		<?php
 	}
 
+	private function render_contact_issue_types_row($settings) {
+		$issue_types = isset($settings['content']['contact_issue_types']) && is_array($settings['content']['contact_issue_types'])
+			? AAC_Member_Portal_Settings_Schema::normalize_contact_issue_types($settings['content']['contact_issue_types'])
+			: self::get_default_contact_issue_types();
+		$field_name = self::OPTION_KEY . '[content][contact_issue_types][]';
+		?>
+		<tr>
+			<th scope="row">Contact form dropdown options</th>
+			<td>
+				<input type="hidden" name="<?php echo esc_attr($field_name); ?>" value="" />
+				<div id="aac-contact-issue-types-list" style="display:flex;flex-direction:column;gap:8px;max-width:520px;">
+					<?php foreach ($issue_types as $issue_type) : ?>
+						<div style="display:flex;gap:8px;align-items:center;" data-aac-contact-issue-type-row>
+							<input
+								type="text"
+								name="<?php echo esc_attr($field_name); ?>"
+								value="<?php echo esc_attr($issue_type); ?>"
+								class="regular-text"
+								placeholder="Issue type label"
+							/>
+							<button type="button" class="button button-secondary" data-aac-remove-contact-issue-type>Remove</button>
+						</div>
+					<?php endforeach; ?>
+				</div>
+				<p style="margin-top:10px;">
+					<button type="button" class="button button-secondary" id="aac-add-contact-issue-type">Add issue type</button>
+				</p>
+				<p class="description">These labels appear in the member app Contact Us dropdown and become the email subject category.</p>
+				<script>
+					(() => {
+						const list = document.getElementById('aac-contact-issue-types-list');
+						const addButton = document.getElementById('aac-add-contact-issue-type');
+						if (!list || !addButton) {
+							return;
+						}
+
+						const bindRemove = (row) => {
+							const removeButton = row.querySelector('[data-aac-remove-contact-issue-type]');
+							if (removeButton) {
+								removeButton.addEventListener('click', () => row.remove());
+							}
+						};
+
+						list.querySelectorAll('[data-aac-contact-issue-type-row]').forEach(bindRemove);
+						addButton.addEventListener('click', () => {
+							const row = document.createElement('div');
+							row.style.display = 'flex';
+							row.style.gap = '8px';
+							row.style.alignItems = 'center';
+							row.setAttribute('data-aac-contact-issue-type-row', '1');
+							row.innerHTML = '<input type="text" name="<?php echo esc_js($field_name); ?>" value="" class="regular-text" placeholder="Issue type label" /> <button type="button" class="button button-secondary" data-aac-remove-contact-issue-type>Remove</button>';
+							list.appendChild(row);
+							bindRemove(row);
+							const input = row.querySelector('input');
+							if (input) {
+								input.focus();
+							}
+						});
+					})();
+				</script>
+			</td>
+		</tr>
+		<?php
+	}
+
 	private function render_textarea_row($name, $label, $value) {
 		?>
 		<tr>
 			<th scope="row"><label for="<?php echo esc_attr($name); ?>"><?php echo esc_html($label); ?></label></th>
 			<td>
 				<textarea id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>" rows="3" class="large-text"><?php echo esc_textarea($value); ?></textarea>
+			</td>
+		</tr>
+		<?php
+	}
+
+	private function render_long_textarea_row($name, $label, $value, $help = '') {
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr($name); ?>"><?php echo esc_html($label); ?></label></th>
+			<td>
+				<textarea id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>" rows="14" class="large-text code"><?php echo esc_textarea($value); ?></textarea>
+				<?php if ($help) : ?>
+					<p class="description"><?php echo esc_html($help); ?></p>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	private function render_confirmation_letter_format_row($settings) {
+		$current = isset($settings['content']['confirmation_letter_format']) ? sanitize_key($settings['content']['confirmation_letter_format']) : 'standard';
+		$formats = [
+			'standard' => 'Standard letter',
+			'compact' => 'Compact letter',
+		];
+		$name = self::OPTION_KEY . '[content][confirmation_letter_format]';
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr($name); ?>">Confirmation letter format</label></th>
+			<td>
+				<select id="<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>">
+					<?php foreach ($formats as $value => $label) : ?>
+						<option value="<?php echo esc_attr($value); ?>" <?php selected($current, $value); ?>>
+							<?php echo esc_html($label); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+				<p class="description">Controls the browser preview and modal letter spacing. The PDF keeps a standard letter-size layout.</p>
 			</td>
 		</tr>
 		<?php
@@ -2488,62 +2336,6 @@ class AAC_Member_Portal_Admin {
 		<?php
 	}
 
-	private function render_grant_opportunity_editor($index, $opportunity = []) {
-		$base_name = self::OPTION_KEY . '[content][grant_opportunities][' . (int) $index . ']';
-		$highlights = isset($opportunity['highlights']) && is_array($opportunity['highlights'])
-			? implode("\n", array_filter(array_map('sanitize_text_field', $opportunity['highlights'])))
-			: '';
-		?>
-		<div class="aac-home-card-editor" data-aac-grant-opportunity>
-			<div class="aac-home-card-editor__header">
-				<h4>Grant Opportunity</h4>
-				<button type="button" class="button-link-delete" data-aac-remove-home-card>Remove</button>
-			</div>
-			<div class="aac-home-card-editor__grid">
-				<p><label><strong>Grant name</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[name]'); ?>" value="<?php echo esc_attr($opportunity['name'] ?? ''); ?>" /></label></p>
-				<p><label><strong>Slug</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[slug]'); ?>" value="<?php echo esc_attr($opportunity['slug'] ?? ''); ?>" placeholder="momentum-grant" /></label></p>
-				<p><label><strong>Category</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[category]'); ?>" value="<?php echo esc_attr($opportunity['category'] ?? ''); ?>" /></label></p>
-				<p><label><strong>Award label</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[award]'); ?>" value="<?php echo esc_attr($opportunity['award'] ?? ''); ?>" placeholder="Up to $5,000" /></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Fit guidance</strong><br /><textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[fit]'); ?>"><?php echo esc_textarea($opportunity['fit'] ?? ''); ?></textarea></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Summary</strong><br /><textarea rows="3" class="large-text" name="<?php echo esc_attr($base_name . '[summary]'); ?>"><?php echo esc_textarea($opportunity['summary'] ?? ''); ?></textarea></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Highlights</strong><br /><textarea rows="4" class="large-text" name="<?php echo esc_attr($base_name . '[highlights]'); ?>" placeholder="One highlight per line"><?php echo esc_textarea($highlights); ?></textarea></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Source URL</strong><br /><input type="url" class="large-text" name="<?php echo esc_attr($base_name . '[source_url]'); ?>" value="<?php echo esc_attr($opportunity['source_url'] ?? ''); ?>" /></label></p>
-			</div>
-		</div>
-		<?php
-	}
-
-	private function render_grant_form_field_editor($index, $field = []) {
-		$base_name = self::OPTION_KEY . '[content][grant_form_fields][' . (int) $index . ']';
-		$type = sanitize_key($field['type'] ?? 'text');
-		if (!in_array($type, ['text', 'email', 'number', 'textarea', 'select'], true)) {
-			$type = 'text';
-		}
-		?>
-		<div class="aac-home-card-editor" data-aac-grant-form-field>
-			<div class="aac-home-card-editor__header">
-				<h4>Grant Field</h4>
-				<button type="button" class="button-link-delete" data-aac-remove-home-card>Remove</button>
-			</div>
-			<div class="aac-home-card-editor__grid">
-				<p><label><strong>Field key</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[field_key]'); ?>" value="<?php echo esc_attr($field['field_key'] ?? ''); ?>" placeholder="project_title" /></label></p>
-				<p><label><strong>Label</strong><br /><input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[label]'); ?>" value="<?php echo esc_attr($field['label'] ?? ''); ?>" /></label></p>
-				<p><label><strong>Field type</strong><br />
-					<select name="<?php echo esc_attr($base_name . '[type]'); ?>">
-						<?php foreach (['text' => 'Text', 'email' => 'Email', 'number' => 'Number', 'textarea' => 'Textarea', 'select' => 'Select'] as $type_value => $type_label) : ?>
-							<option value="<?php echo esc_attr($type_value); ?>" <?php selected($type, $type_value); ?>><?php echo esc_html($type_label); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</label></p>
-				<p><label><strong>Required</strong><br /><label><input type="checkbox" name="<?php echo esc_attr($base_name . '[required]'); ?>" value="1" <?php checked(!empty($field['required'])); ?> /> Required field</label></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Placeholder</strong><br /><input type="text" class="large-text" name="<?php echo esc_attr($base_name . '[placeholder]'); ?>" value="<?php echo esc_attr($field['placeholder'] ?? ''); ?>" /></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Help text</strong><br /><textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[help_text]'); ?>"><?php echo esc_textarea($field['help_text'] ?? ''); ?></textarea></label></p>
-				<p class="aac-home-card-editor__full"><label><strong>Select options</strong><br /><textarea rows="3" class="large-text" name="<?php echo esc_attr($base_name . '[options]'); ?>" placeholder="One option per line"><?php echo esc_textarea($field['options'] ?? ''); ?></textarea></label></p>
-			</div>
-		</div>
-		<?php
-	}
-
 	private function render_member_profile_block_editor($index, $block = []) {
 		$base_name = self::OPTION_KEY . '[content][member_profile_blocks][' . $index . ']';
 		$entries = isset($block['entries']) && is_array($block['entries']) ? array_values($block['entries']) : [];
@@ -2613,18 +2405,10 @@ class AAC_Member_Portal_Admin {
 		ob_start();
 		$this->render_home_partner_logo_editor('__INDEX__', []);
 		$partner_template = ob_get_clean();
-		ob_start();
-		$this->render_grant_opportunity_editor('__INDEX__', []);
-		$grant_opportunity_template = ob_get_clean();
-		ob_start();
-		$this->render_grant_form_field_editor('__INDEX__', []);
-		$grant_form_field_template = ob_get_clean();
 		?>
 		<template id="aac-home-involvement-card-template"><?php echo str_replace('__INDEX__', '__INDEX__', $involvement_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
 		<template id="aac-home-publication-card-template"><?php echo str_replace('__INDEX__', '__INDEX__', $publication_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
 		<template id="aac-home-partner-logo-template"><?php echo str_replace('__INDEX__', '__INDEX__', $partner_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
-		<template id="aac-grant-opportunity-template"><?php echo str_replace('__INDEX__', '__INDEX__', $grant_opportunity_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
-		<template id="aac-grant-form-field-template"><?php echo str_replace('__INDEX__', '__INDEX__', $grant_form_field_template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
 		<style>
 			.aac-home-card-editor{border:1px solid #dcdcde;border-radius:12px;padding:16px;background:#fff;margin-bottom:16px}
 			.aac-home-card-editor__header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
@@ -2655,10 +2439,6 @@ class AAC_Member_Portal_Admin {
 			.aac-profile-entry-editor__header h5{margin:0}
 		</style>
 		<?php
-	}
-
-	private function render_grants_builder_templates() {
-		$this->render_home_repeater_templates();
 	}
 
 	private function render_shared_admin_scripts() {
@@ -2785,21 +2565,6 @@ class AAC_Member_Portal_Admin {
 					marker: '[data-aac-home-partner-logo]',
 					replacePattern: /(\[home_partner_logos\])\[[^\]]+\]/,
 				});
-				bindImagePickerList({
-					listId: 'aac-grant-opportunities',
-					addButtonId: 'aac-add-grant-opportunity',
-					templateId: 'aac-grant-opportunity-template',
-					marker: '[data-aac-grant-opportunity]',
-					replacePattern: /(\[grant_opportunities\])\[[^\]]+\]/,
-				});
-				bindImagePickerList({
-					listId: 'aac-grant-form-fields',
-					addButtonId: 'aac-add-grant-form-field',
-					templateId: 'aac-grant-form-field-template',
-					marker: '[data-aac-grant-form-field]',
-					replacePattern: /(\[grant_form_fields\])\[[^\]]+\]/,
-				});
-
 				const bindMemberProfileBlocks = () => {
 					const list = document.getElementById('aac-member-profile-blocks');
 					const template = document.getElementById('aac-member-profile-block-template');
@@ -2894,548 +2659,5 @@ class AAC_Member_Portal_Admin {
 		<?php
 	}
 
-	private function sanitize_discount_cards($cards) {
-		$sanitized_cards = [];
-		foreach ($cards as $card) {
-			if (!is_array($card)) {
-				continue;
-			}
 
-			$brand = sanitize_text_field($card['brand'] ?? '');
-			$discount_percent = sanitize_text_field($card['discount_percent'] ?? '');
-			$discount_code_text = sanitize_textarea_field($card['discount_code_text'] ?? '');
-			$discount_code_text_supporter = sanitize_textarea_field($card['discount_code_text_supporter'] ?? '');
-			$discount_code_text_partner = sanitize_textarea_field($card['discount_code_text_partner'] ?? '');
-			$discount_code_text_leader = sanitize_textarea_field($card['discount_code_text_leader'] ?? '');
-			$discount_code_text_advocate = sanitize_textarea_field($card['discount_code_text_advocate'] ?? '');
-			$discount_percent_supporter = sanitize_text_field($card['discount_percent_supporter'] ?? '');
-			$discount_percent_partner = sanitize_text_field($card['discount_percent_partner'] ?? '');
-			$discount_percent_leader = sanitize_text_field($card['discount_percent_leader'] ?? '');
-			$discount_percent_advocate = sanitize_text_field($card['discount_percent_advocate'] ?? '');
-			$display_text = sanitize_textarea_field($card['display_text'] ?? '');
-			$button_url = esc_url_raw($card['button_url'] ?? '');
-			$image_url = esc_url_raw($card['image_url'] ?? '');
-
-			if (
-				$brand === '' &&
-				$discount_percent === '' &&
-				$discount_code_text === '' &&
-				$discount_code_text_supporter === '' &&
-				$discount_code_text_partner === '' &&
-				$discount_code_text_leader === '' &&
-				$discount_code_text_advocate === '' &&
-				$discount_percent_supporter === '' &&
-				$discount_percent_partner === '' &&
-				$discount_percent_leader === '' &&
-				$discount_percent_advocate === '' &&
-				$display_text === '' &&
-				$button_url === '' &&
-				$image_url === ''
-			) {
-				continue;
-			}
-
-			$fallback_percent = $discount_percent;
-
-			$sanitized_cards[] = [
-				'brand' => $brand,
-				'discount_percent' => $fallback_percent,
-				'discount_code_text' => $discount_code_text,
-				'discount_code_text_supporter' => $discount_code_text_supporter !== '' ? $discount_code_text_supporter : $discount_code_text,
-				'discount_code_text_partner' => $discount_code_text_partner !== '' ? $discount_code_text_partner : $discount_code_text,
-				'discount_code_text_leader' => $discount_code_text_leader !== '' ? $discount_code_text_leader : $discount_code_text,
-				'discount_code_text_advocate' => $discount_code_text_advocate !== '' ? $discount_code_text_advocate : $discount_code_text,
-				'discount_percent_supporter' => $discount_percent_supporter !== '' ? $discount_percent_supporter : $fallback_percent,
-				'discount_percent_partner' => $discount_percent_partner !== '' ? $discount_percent_partner : $fallback_percent,
-				'discount_percent_leader' => $discount_percent_leader !== '' ? $discount_percent_leader : $fallback_percent,
-				'discount_percent_advocate' => $discount_percent_advocate !== '' ? $discount_percent_advocate : $fallback_percent,
-				'display_text' => $display_text,
-				'button_url' => $button_url,
-				'image_url' => $image_url,
-			];
-		}
-
-		return $sanitized_cards;
-	}
-
-	private function sanitize_home_involvement_cards($cards) {
-		$sanitized = [];
-		foreach ($cards as $card) {
-			if (!is_array($card)) {
-				continue;
-			}
-
-			$title = sanitize_text_field($card['title'] ?? '');
-			$description = sanitize_textarea_field($card['description'] ?? '');
-			$button_label = sanitize_text_field($card['button_label'] ?? '');
-			$button_url = esc_url_raw($card['button_url'] ?? '');
-			$image_url = esc_url_raw($card['image_url'] ?? '');
-			$accent_style = sanitize_key($card['accent_style'] ?? 'gold');
-			if (!in_array($accent_style, ['gold', 'light', 'sand', 'dark'], true)) {
-				$accent_style = 'gold';
-			}
-
-			if ($title === '' && $description === '' && $button_label === '' && $button_url === '' && $image_url === '') {
-				continue;
-			}
-
-			$sanitized[] = [
-				'title' => $title,
-				'description' => $description,
-				'button_label' => $button_label,
-				'button_url' => $button_url,
-				'image_url' => $image_url,
-				'accent_style' => $accent_style,
-			];
-		}
-
-		return !empty($sanitized) ? $sanitized : self::get_default_home_involvement_cards();
-	}
-
-	private function sanitize_home_publication_cards($cards) {
-		$sanitized = [];
-		foreach ($cards as $card) {
-			if (!is_array($card)) {
-				continue;
-			}
-
-			$title = sanitize_text_field($card['title'] ?? '');
-			$description = sanitize_textarea_field($card['description'] ?? '');
-			$button_label = sanitize_text_field($card['button_label'] ?? '');
-			$button_url = esc_url_raw($card['button_url'] ?? '');
-			$image_url = esc_url_raw($card['image_url'] ?? '');
-			$accent_color = sanitize_text_field($card['accent_color'] ?? '');
-
-			if ($title === '' && $description === '' && $button_label === '' && $button_url === '' && $image_url === '') {
-				continue;
-			}
-
-			$sanitized[] = [
-				'title' => $title,
-				'description' => $description,
-				'button_label' => $button_label,
-				'button_url' => $button_url,
-				'image_url' => $image_url,
-				'accent_color' => $accent_color,
-			];
-		}
-
-		return !empty($sanitized) ? $sanitized : self::get_default_home_publication_cards();
-	}
-
-	private function sanitize_home_partner_logos($logos) {
-		$sanitized = [];
-		foreach ($logos as $logo) {
-			if (!is_array($logo)) {
-				continue;
-			}
-
-			$name = sanitize_text_field($logo['name'] ?? '');
-			$image_url = esc_url_raw($logo['image_url'] ?? '');
-			$link_url = esc_url_raw($logo['link_url'] ?? '');
-
-			if ($name === '' && $image_url === '' && $link_url === '') {
-				continue;
-			}
-
-			$sanitized[] = [
-				'name' => $name,
-				'image_url' => $image_url,
-				'link_url' => $link_url,
-			];
-		}
-
-		return !empty($sanitized) ? $sanitized : self::get_default_home_partner_logos();
-	}
-
-	private function sanitize_grant_opportunities($opportunities) {
-		$sanitized = [];
-		foreach ($opportunities as $opportunity) {
-			if (!is_array($opportunity)) {
-				continue;
-			}
-
-			$name = sanitize_text_field($opportunity['name'] ?? '');
-			$slug = sanitize_title($opportunity['slug'] ?? '');
-			$category = sanitize_text_field($opportunity['category'] ?? '');
-			$award = sanitize_text_field($opportunity['award'] ?? '');
-			$fit = sanitize_textarea_field($opportunity['fit'] ?? '');
-			$summary = sanitize_textarea_field($opportunity['summary'] ?? '');
-			$source_url = esc_url_raw($opportunity['source_url'] ?? '');
-			$raw_highlights = preg_split('/\r\n|\r|\n/', (string) ($opportunity['highlights'] ?? ''));
-			$highlights = array_values(array_filter(array_map('sanitize_text_field', is_array($raw_highlights) ? $raw_highlights : [])));
-
-			if ($name === '' && $slug === '' && $category === '' && $award === '' && $fit === '' && $summary === '' && empty($highlights) && $source_url === '') {
-				continue;
-			}
-
-			if ($slug === '') {
-				$slug = sanitize_title($name);
-			}
-
-			if ($name === '' || $slug === '') {
-				continue;
-			}
-
-			$sanitized[] = [
-				'slug' => $slug,
-				'name' => $name,
-				'category' => $category,
-				'award' => $award,
-				'fit' => $fit,
-				'summary' => $summary,
-				'highlights' => $highlights,
-				'source_url' => $source_url,
-			];
-		}
-
-		return !empty($sanitized) ? $sanitized : self::get_default_grant_opportunities();
-	}
-
-	private function sanitize_member_profile_blocks($blocks) {
-		$sanitized = [];
-		foreach ($blocks as $block) {
-			if (!is_array($block)) {
-				continue;
-			}
-
-			$title = sanitize_text_field($block['title'] ?? '');
-			$description = sanitize_textarea_field($block['description'] ?? '');
-			$button_label = sanitize_text_field($block['button_label'] ?? '');
-			$button_url = esc_url_raw($block['button_url'] ?? '');
-			$icon = sanitize_key($block['icon'] ?? 'receipt');
-			if (!in_array($icon, ['receipt', 'user', 'shield', 'users', 'heart', 'credit-card', 'calendar'], true)) {
-				$icon = 'receipt';
-			}
-
-			$entries = [];
-			if (isset($block['entries']) && is_array($block['entries'])) {
-				foreach ($block['entries'] as $entry) {
-					if (!is_array($entry)) {
-						continue;
-					}
-
-					$label = sanitize_text_field($entry['label'] ?? '');
-					$value = sanitize_text_field($entry['value'] ?? '');
-					$entry_description = sanitize_textarea_field($entry['description'] ?? '');
-					if ($label === '' && $value === '' && $entry_description === '') {
-						continue;
-					}
-
-					$entries[] = [
-						'label' => $label,
-						'value' => $value,
-						'description' => $entry_description,
-					];
-				}
-			}
-
-			if ($title === '' && $description === '' && $button_label === '' && $button_url === '' && empty($entries)) {
-				continue;
-			}
-
-			$sanitized[] = [
-				'title' => $title,
-				'description' => $description,
-				'button_label' => $button_label,
-				'button_url' => $button_url,
-				'icon' => $icon,
-				'entries' => $entries,
-			];
-		}
-
-		return $sanitized;
-	}
-
-	private function sanitize_member_profile_card_sections($sections) {
-		$sanitized = self::get_default_member_profile_card_sections();
-
-		foreach ($sanitized as $section_id => $defaults) {
-			$section_input = isset($sections[$section_id]) && is_array($sections[$section_id]) ? $sections[$section_id] : [];
-			$sanitized[$section_id] = [
-				'label' => sanitize_text_field($section_input['label'] ?? $defaults['label']),
-				'visible' => empty($section_input['visible']) ? 0 : 1,
-			];
-		}
-
-		return $sanitized;
-	}
-
-	private function sanitize_top_nav_children($children_input) {
-		if (is_string($children_input)) {
-			$children_input = $this->parse_top_nav_children_textarea($children_input);
-		}
-
-		if (!is_array($children_input)) {
-			return [];
-		}
-
-		$sanitized = [];
-		foreach ($children_input as $child) {
-			if (!is_array($child)) {
-				continue;
-			}
-
-			$label = sanitize_text_field($child['label'] ?? '');
-			$href = esc_url_raw($child['href'] ?? '');
-			$external = !empty($child['external']) ? 1 : 0;
-
-			if ($label === '' || $href === '') {
-				continue;
-			}
-
-			$sanitized[] = [
-				'label' => $label,
-				'href' => $href,
-				'external' => $external,
-			];
-		}
-
-		return $sanitized;
-	}
-
-	private function parse_top_nav_children_textarea($value) {
-		$lines = preg_split('/\r\n|\r|\n/', (string) $value);
-		$children = [];
-
-		foreach ((array) $lines as $line) {
-			$line = trim((string) $line);
-			if ($line === '') {
-				continue;
-			}
-
-			$parts = array_map('trim', explode('|', $line));
-			$label = $parts[0] ?? '';
-			$href = $parts[1] ?? '';
-			$external_flag = strtolower($parts[2] ?? '');
-
-			if ($label === '' || $href === '') {
-				continue;
-			}
-
-			$children[] = [
-				'label' => $label,
-				'href' => $href,
-				'external' => in_array($external_flag, ['1', 'yes', 'true', 'external'], true) ? 1 : 0,
-			];
-		}
-
-		return $children;
-	}
-
-	private function format_top_nav_children_for_textarea($children) {
-		if (!is_array($children) || empty($children)) {
-			return '';
-		}
-
-		$lines = [];
-		foreach ($children as $child) {
-			if (!is_array($child)) {
-				continue;
-			}
-
-			$label = sanitize_text_field($child['label'] ?? '');
-			$href = esc_url_raw($child['href'] ?? '');
-			if ($label === '' || $href === '') {
-				continue;
-			}
-
-			$line = $label . ' | ' . $href;
-			if (!empty($child['external'])) {
-				$line .= ' | external';
-			}
-			$lines[] = $line;
-		}
-
-		return implode("\n", $lines);
-	}
-
-	private function sanitize_grant_form_fields($fields) {
-		$sanitized = [];
-		foreach ($fields as $field) {
-			if (!is_array($field)) {
-				continue;
-			}
-
-			$field_key = sanitize_key($field['field_key'] ?? '');
-			$label = sanitize_text_field($field['label'] ?? '');
-			$type = sanitize_key($field['type'] ?? 'text');
-			$required = !empty($field['required']) ? 1 : 0;
-			$placeholder = sanitize_text_field($field['placeholder'] ?? '');
-			$help_text = sanitize_textarea_field($field['help_text'] ?? '');
-			$options_lines = preg_split('/\r\n|\r|\n/', (string) ($field['options'] ?? ''));
-			$options = array_values(array_filter(array_map('sanitize_text_field', is_array($options_lines) ? $options_lines : [])));
-
-			if (!in_array($type, ['text', 'email', 'number', 'textarea', 'select'], true)) {
-				$type = 'text';
-			}
-
-			if ($field_key === '' && $label === '' && $placeholder === '' && $help_text === '' && empty($options)) {
-				continue;
-			}
-
-			if ($field_key === '') {
-				$field_key = sanitize_key(str_replace('-', '_', sanitize_title($label)));
-			}
-
-			if ($field_key === '' || $label === '') {
-				continue;
-			}
-
-			$sanitized[] = [
-				'field_key' => $field_key,
-				'label' => $label,
-				'type' => $type,
-				'required' => $required,
-				'placeholder' => $placeholder,
-				'help_text' => $help_text,
-				'options' => implode("\n", $options),
-			];
-		}
-
-		return !empty($sanitized) ? $sanitized : self::get_default_grant_form_fields();
-	}
-
-	private function sanitize_featured_photographers($photographers) {
-		$sanitized = [];
-		foreach ($photographers as $photographer) {
-			if (!is_array($photographer)) {
-				continue;
-			}
-
-			$name = sanitize_text_field($photographer['name'] ?? '');
-			$short_bio = sanitize_textarea_field($photographer['short_bio'] ?? '');
-			$website_url = esc_url_raw($photographer['website_url'] ?? '');
-			$instagram_url = esc_url_raw($photographer['instagram_url'] ?? '');
-			$facebook_url = esc_url_raw($photographer['facebook_url'] ?? '');
-			$x_url = esc_url_raw($photographer['x_url'] ?? '');
-			$profile_image_url = esc_url_raw($photographer['profile_image_url'] ?? '');
-			$gallery_items = [];
-
-			if (isset($photographer['gallery_items']) && is_array($photographer['gallery_items'])) {
-				foreach (array_slice(array_values($photographer['gallery_items']), 0, 6) as $gallery_item) {
-					if (!is_array($gallery_item)) {
-						continue;
-					}
-					$image_url = esc_url_raw($gallery_item['image_url'] ?? '');
-					$caption = sanitize_text_field($gallery_item['caption'] ?? '');
-					if ($image_url === '' && $caption === '') {
-						continue;
-					}
-					$gallery_items[] = [
-						'image_url' => $image_url,
-						'caption' => $caption,
-					];
-				}
-			}
-
-			if (
-				$name === '' &&
-				$short_bio === '' &&
-				$website_url === '' &&
-				$instagram_url === '' &&
-				$facebook_url === '' &&
-				$x_url === '' &&
-				$profile_image_url === '' &&
-				empty($gallery_items)
-			) {
-				continue;
-			}
-
-			$sanitized[] = [
-				'name' => $name,
-				'short_bio' => $short_bio,
-				'website_url' => $website_url,
-				'instagram_url' => $instagram_url,
-				'facebook_url' => $facebook_url,
-				'x_url' => $x_url,
-				'profile_image_url' => $profile_image_url,
-				'gallery_items' => $gallery_items,
-			];
-		}
-
-		return !empty($sanitized) ? $sanitized : self::get_default_featured_photographers();
-	}
-
-	private function sanitize_rescue_levels($levels) {
-		$sanitized_levels = [];
-		foreach ($levels as $level) {
-			if (!is_array($level)) {
-				continue;
-			}
-
-			$level_name = sanitize_text_field($level['level_name'] ?? '');
-			$rescue_amount = max(0, (int) ($level['rescue_amount'] ?? 0));
-			$medical_amount = max(0, (int) ($level['medical_amount'] ?? 0));
-			$mortal_remains_amount = max(0, (int) ($level['mortal_remains_amount'] ?? 0));
-			$rescue_reimbursement_process = !empty($level['rescue_reimbursement_process']);
-
-			if (
-				$level_name === '' &&
-				$rescue_amount === 0 &&
-				$medical_amount === 0 &&
-				$mortal_remains_amount === 0 &&
-				!$rescue_reimbursement_process
-			) {
-				continue;
-			}
-
-			if ($level_name === '') {
-				continue;
-			}
-
-			$sanitized_levels[] = [
-				'level_name' => $level_name,
-				'rescue_amount' => $rescue_amount,
-				'medical_amount' => $medical_amount,
-				'mortal_remains_amount' => $mortal_remains_amount,
-				'rescue_reimbursement_process' => $rescue_reimbursement_process,
-			];
-		}
-
-		return !empty($sanitized_levels) ? $sanitized_levels : self::get_default_rescue_levels();
-	}
-
-	private function sanitize_opacity($value) {
-		$value = is_scalar($value) ? (float) $value : 0.18;
-		$value = max(0, min(1, $value));
-		return number_format($value, 2, '.', '');
-	}
-
-	private function sanitize_hex_color_or_default($value, $default) {
-		$sanitized = sanitize_hex_color($value);
-		return $sanitized ? $sanitized : $default;
-	}
-
-	private static function merge_with_defaults($defaults, $values) {
-		foreach ($defaults as $key => $default_value) {
-			if (is_array($default_value)) {
-				if (self::is_list_array($default_value)) {
-					$values[$key] = isset($values[$key]) && is_array($values[$key]) ? array_values($values[$key]) : $default_value;
-					continue;
-				}
-
-				$values[$key] = self::merge_with_defaults($default_value, isset($values[$key]) && is_array($values[$key]) ? $values[$key] : []);
-				continue;
-			}
-
-			if (!array_key_exists($key, $values)) {
-				$values[$key] = $default_value;
-			}
-		}
-
-		return $values;
-	}
-
-	private static function is_list_array($value) {
-		if (!is_array($value)) {
-			return false;
-		}
-
-		if (function_exists('array_is_list')) {
-			return array_is_list($value);
-		}
-
-		return array_keys($value) === range(0, count($value) - 1);
-	}
 }

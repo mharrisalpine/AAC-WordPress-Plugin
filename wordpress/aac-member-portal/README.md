@@ -16,7 +16,7 @@ That copies the latest `dist/` frontend build into:
 
 ## Install
 
-1. Install and activate **Paid Memberships Pro** on the same site (membership tiers, payments, account page).
+1. Install and activate **Paid Memberships Pro** on the same site (membership tiers, payments, account page). To show the optional donation step during checkout, also install and configure the **Paid Memberships Pro Donations Add On**; the portal styles the add-on fields but no longer creates fallback donation fields itself. To let members choose whether checkout is recurring, install and configure the **Paid Memberships Pro Auto-Renewal Checkbox Add On**; the portal styles the add-on checkbox but does not create fallback auto-renewal fields. To manage upgrade credits and renewal-date downgrades, install and configure the **Paid Memberships Pro Proration and Delayed Downgrades Add On**; the portal routes level changes through PMPro checkout and does not calculate its own upgrade proration credit.
 2. Zip this folder
 3. Upload it in WordPress under `Plugins > Add New > Upload Plugin`
 4. Activate `AAC Member Portal`

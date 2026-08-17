@@ -1,5 +1,6 @@
 import { getFullName } from '@/lib/memberProfile';
 import { getTierDisplayLabel } from '@/lib/membershipTiers';
+import { getPortalUiSettings } from '@/lib/portalSettings';
 
 const AAC_LOGO_URL = 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/light-header-logo.svg';
 const PDF_POINTS_WIDTH = 612;
@@ -15,6 +16,23 @@ const HEADER_IMAGE_GAP = 16;
 const MAX_TEXT_WIDTH = PDF_POINTS_WIDTH - PAGE_MARGIN_X * 2;
 const REGULAR_TEXT_WIDTH_FACTOR = 0.52;
 const BOLD_TEXT_WIDTH_FACTOR = 0.56;
+
+export const DEFAULT_CONFIRMATION_LETTER_BODY = `To Whom it May Concern,
+
+This letter confirms that **{member_name}** is a member of The American Alpine Club.
+{benefit_sentence}
+
+{reimbursement_sentence}
+
+In case of rescue contact Redpoint Travel Protection: +01-628-251-1510
+
+Please contact the American Alpine Club with any questions at 303-384-0110 or email us at info@americanalpineclub.org.
+
+Regards,
+
+The American Alpine Club
+710 Tenth Street Suite 100
+Golden, CO 80401 USA`;
 
 const escapePdfText = (value) =>
   String(value || '')
@@ -53,6 +71,16 @@ const buildCityStateZip = (accountInfo = {}) => {
   return [cityState, zip].filter(Boolean).join(' ');
 };
 
+const getConfirmationLetterSettings = () => {
+  const content = getPortalUiSettings().content || {};
+  const format = ['standard', 'compact'].includes(content.confirmation_letter_format)
+    ? content.confirmation_letter_format
+    : 'standard';
+  const body = String(content.confirmation_letter_body || '').trim() || DEFAULT_CONFIRMATION_LETTER_BODY;
+
+  return { format, body };
+};
+
 const measureText = (text, { bold = false, fontSize = BODY_FONT_SIZE } = {}) =>
   String(text || '').length * fontSize * (bold ? BOLD_TEXT_WIDTH_FACTOR : REGULAR_TEXT_WIDTH_FACTOR);
 
@@ -85,6 +113,35 @@ const normalizeSegments = (segments) => {
 
   return merged.filter((segment) => segment.text !== '');
 };
+
+const parseRichTextSegments = (text) => {
+  const segments = [];
+  const source = String(text || '');
+  const boldPattern = /\*\*([^*]+)\*\*/g;
+  let lastIndex = 0;
+  let match = boldPattern.exec(source);
+
+  while (match) {
+    if (match.index > lastIndex) {
+      segments.push({ text: source.slice(lastIndex, match.index) });
+    }
+    segments.push({ text: match[1], bold: true });
+    lastIndex = match.index + match[0].length;
+    match = boldPattern.exec(source);
+  }
+
+  if (lastIndex < source.length) {
+    segments.push({ text: source.slice(lastIndex) });
+  }
+
+  return segments.length ? segments : [{ text: source }];
+};
+
+const replaceConfirmationLetterTokens = (template, context) =>
+  String(template || '').replace(/\{([a-z0-9_]+)\}/gi, (match, token) => {
+    const value = context[token];
+    return value === undefined || value === null ? match : String(value);
+  });
 
 const wrapSegments = (segments, maxWidth, fontSize = BODY_FONT_SIZE) => {
   const tokens = [];
@@ -136,16 +193,17 @@ const wrapSegments = (segments, maxWidth, fontSize = BODY_FONT_SIZE) => {
   return wrapped.length ? wrapped : [[{ text: '', bold: false }]];
 };
 
-const getLetterBlocks = (profile) => {
+export const getMembershipConfirmationLetterBlocks = (profile) => {
   const accountInfo = profile?.account_info || {};
   const profileInfo = profile?.profile_info || {};
   const benefitsInfo = profile?.benefits_info || {};
+  const letterSettings = getConfirmationLetterSettings();
   const memberName = getFullName(accountInfo);
   const membershipLevel = getTierDisplayLabel(profileInfo.tier, 'Free');
   const dateLabel = accountInfo.auto_renew ? 'Renewal Date' : 'Expiration Date';
-  const membershipDate = accountInfo.auto_renew
+  const membershipDate = profileInfo.valid_through_date || (accountInfo.auto_renew
     ? profileInfo.renewal_date
-    : profileInfo.expiration_date;
+    : profileInfo.expiration_date);
   const rescueAmount = formatMoney(benefitsInfo.rescue_amount);
   const medicalAmount = formatMoney(benefitsInfo.medical_amount);
   const mortalRemainsAmount = formatMoney(benefitsInfo.mortal_remains_amount);
@@ -154,6 +212,31 @@ const getLetterBlocks = (profile) => {
     Number(benefitsInfo.medical_amount || 0) > 0 ||
     Number(benefitsInfo.mortal_remains_amount || 0) > 0;
   const hasReimbursementProcess = Boolean(benefitsInfo.rescue_reimbursement_process);
+  const benefitSentence = hasRescueBenefits
+    ? `${membershipLevel} level members are entitled to ${rescueAmount} in rescue services, ${medicalAmount} in medical expense coverage, and ${mortalRemainsAmount} in mortal remains transportation coverage from Redpoint Travel Protection through the expiration of their membership.`
+    : `${membershipLevel} level members are not entitled to Redpoint rescue, medical expense, or mortal remains transportation coverage.`;
+  const reimbursementSentence = hasReimbursementProcess
+    ? 'Proof of service through Redpoint Travel Protection can be verified with this letter for the above-mentioned membership level.'
+    : 'This membership level does not include the Redpoint rescue reimbursement process.';
+  const tokenContext = {
+    member_name: memberName,
+    member_id: profileInfo.member_id || 'N/A',
+    membership_level: membershipLevel,
+    membership_status: profileInfo.status || 'Not available',
+    date_label: dateLabel,
+    membership_date: formatMembershipDate(membershipDate),
+    expiration_date: formatMembershipDate(profileInfo.expiration_date),
+    renewal_date: formatMembershipDate(profileInfo.renewal_date),
+    valid_through: formatMembershipDate(membershipDate),
+    rescue_coverage: rescueAmount,
+    medical_coverage: medicalAmount,
+    mortal_remains_transport: mortalRemainsAmount,
+    benefit_sentence: benefitSentence,
+    reimbursement_sentence: reimbursementSentence,
+  };
+  const bodyLines = replaceConfirmationLetterTokens(letterSettings.body, tokenContext)
+    .split(/\r?\n/)
+    .map((text) => text.trimEnd());
 
   const line = (segments, fontSize = BODY_FONT_SIZE) => ({
     type: 'line',
@@ -161,7 +244,7 @@ const getLetterBlocks = (profile) => {
     segments: Array.isArray(segments) ? segments : [{ text: segments, bold: false }],
   });
 
-  return [
+  const blocks = [
     line([{ text: memberName, bold: true }]),
     line([{ text: accountInfo.street || '', bold: true }]),
     line([{ text: buildCityStateZip(accountInfo), bold: true }]),
@@ -170,49 +253,22 @@ const getLetterBlocks = (profile) => {
     line([{ text: 'Membership Level: ' }, { text: membershipLevel, bold: true }], LABEL_FONT_SIZE),
     line([{ text: `${dateLabel}: ` }, { text: formatMembershipDate(membershipDate), bold: true }], LABEL_FONT_SIZE),
     { type: 'spacer', height: 8 },
-    line([{ text: 'To Whom it May Concern,' }]),
-    { type: 'spacer', height: 4 },
-    line([
-      { text: 'This letter confirms that ' },
-      { text: memberName, bold: true },
-      { text: ' is a member of The American Alpine Club.' },
-    ]),
-    ...(hasRescueBenefits
-      ? [line([
-          { text: membershipLevel, bold: true },
-          { text: ' level members are entitled to ' },
-          { text: rescueAmount, bold: true },
-          { text: ' in rescue services, ' },
-          { text: medicalAmount, bold: true },
-          { text: ' in medical expense coverage, and ' },
-          { text: mortalRemainsAmount, bold: true },
-          { text: ' in mortal remains transportation coverage from Redpoint Travel Protection through the expiration of their membership.' },
-        ])]
-      : [line([
-          { text: membershipLevel, bold: true },
-          { text: ' level members are not entitled to Redpoint rescue, medical expense, or mortal remains transportation coverage.' },
-        ])]),
-    { type: 'spacer', height: 4 },
-    line([{
-      text: hasReimbursementProcess
-        ? 'Proof of service through Redpoint Travel Protection can be verified with this letter for the above-mentioned membership level.'
-        : 'This membership level does not include the Redpoint rescue reimbursement process.'
-    }]),
-    { type: 'spacer', height: 4 },
-    line([{ text: 'In case of rescue contact Redpoint Travel Protection: +01-628-251-1510' }]),
-    { type: 'spacer', height: 4 },
-    line([{ text: 'Please contact the American Alpine Club with any questions at 303-384-0110 or email us at info@americanalpineclub.org and visit americanalpineclub.org/rescue for more information.' }]),
-    { type: 'spacer', height: 8 },
-    line([{ text: 'Regards,' }]),
-    { type: 'spacer', height: 2 },
-    line([{ text: 'The American Alpine Club' }]),
-    line([{ text: '710 Tenth Street Suite 100' }]),
-    line([{ text: 'Golden, CO 80401 USA' }]),
   ];
+
+  bodyLines.forEach((text, index) => {
+    if (text.trim() === '') {
+      blocks.push({ type: 'spacer', height: index === bodyLines.length - 1 ? 2 : 6 });
+      return;
+    }
+
+    blocks.push(line(parseRichTextSegments(text)));
+  });
+
+  return blocks;
 };
 
 const buildTextLines = (profile) => {
-  const blocks = getLetterBlocks(profile);
+  const blocks = getMembershipConfirmationLetterBlocks(profile);
   const lines = [];
 
   blocks.forEach((block) => {

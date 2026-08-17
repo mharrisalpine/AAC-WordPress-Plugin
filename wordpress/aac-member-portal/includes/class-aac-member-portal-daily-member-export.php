@@ -57,7 +57,7 @@ class AAC_Member_Portal_Daily_Member_Export {
 
 	public function register_admin_page() {
 		add_submenu_page(
-			AAC_Member_Portal_Admin::MENU_SLUG,
+			null,
 			'Daily Member Export',
 			'Daily Member Export',
 			'manage_options',
@@ -425,6 +425,11 @@ class AAC_Member_Portal_Daily_Member_Export {
 		?>
 		<div class="wrap">
 			<h1>Daily Member Export</h1>
+			<?php
+			if (class_exists('AAC_Member_Portal_Member_Database')) {
+				AAC_Member_Portal_Member_Database::render_database_tools_nav(self::MENU_SLUG);
+			}
+			?>
 
 			<?php if (isset($_GET['aac_export_saved'])) : ?>
 				<div class="notice notice-success is-dismissible"><p>Daily member export settings saved.</p></div>

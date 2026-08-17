@@ -12,58 +12,17 @@ const pluginDir = path.join(projectRoot, 'wordpress', 'aac-member-portal');
 const pluginAppDir = path.join(pluginDir, 'app');
 const pluginZipPath = path.join(projectRoot, 'wordpress', 'aac-member-portal.zip');
 const execFileAsync = promisify(execFile);
-const EXTRA_PLUGIN_ASSETS = [
-  {
-    source: path.join(projectRoot, 'src', 'assets', 'photographers-hero.jpg'),
-    target: path.join(pluginAppDir, 'assets', 'photographers-hero.jpg'),
-  },
-];
-
-const JS_COMPATIBILITY_ALIASES = [
-  'index-154a6d6e.js',
-  'index-5387f896.js',
-  'index-24a16865.js',
-  'index-3ef14e59.js',
-];
-
-const CSS_COMPATIBILITY_ALIASES = [
-  'index-03c3ab31.css',
-  'index-595f891c.css',
-];
+const EXTRA_PLUGIN_ASSETS = [];
 
 const STABLE_ASSET_ALIASES = {
   js: 'portal-app.js',
   css: 'portal-app.css',
 };
 
-const MEDIA_COMPATIBILITY_ALIASES = [
-  {
-    pattern: /^login-hero-left-image-[^.]+\.jpg$/,
-    alias: 'login-hero-left-image.jpg',
-  },
-  {
-    pattern: /^join-hero-homepage-image-[^.]+\.jpg$/,
-    alias: 'join-hero-homepage-image.jpg',
-  },
+const REQUIRED_STABLE_MEDIA_ALIASES = [
   {
     pattern: /^join-hero-static-image-[^.]+\.jpg$/,
     alias: 'join-hero-static-image.jpg',
-  },
-  {
-    pattern: /^join-hero-uploaded-poster-[^.]+\.png$/,
-    alias: 'join-hero-uploaded-poster.png',
-  },
-  {
-    pattern: /^join-hero-uploaded-video-web-[^.]+\.mp4$/,
-    alias: 'join-hero-uploaded-video-web.mp4',
-  },
-  {
-    pattern: /^join-hero-uploaded-video-web-[^.]+\.webm$/,
-    alias: 'join-hero-uploaded-video-web.webm',
-  },
-  {
-    pattern: /^photographers-hero-[^.]+\.jpg$/,
-    alias: 'photographers-hero.jpg',
   },
 ];
 
@@ -83,29 +42,13 @@ async function createCompatibilityAliases() {
 
   if (latestJs) {
     await fs.copyFile(path.join(assetsDir, latestJs), path.join(assetsDir, STABLE_ASSET_ALIASES.js));
-
-    await Promise.all(JS_COMPATIBILITY_ALIASES.map(async (alias) => {
-      if (alias === latestJs) {
-        return;
-      }
-
-      await fs.copyFile(path.join(assetsDir, latestJs), path.join(assetsDir, alias));
-    }));
   }
 
   if (latestCss) {
     await fs.copyFile(path.join(assetsDir, latestCss), path.join(assetsDir, STABLE_ASSET_ALIASES.css));
-
-    await Promise.all(CSS_COMPATIBILITY_ALIASES.map(async (alias) => {
-      if (alias === latestCss) {
-        return;
-      }
-
-      await fs.copyFile(path.join(assetsDir, latestCss), path.join(assetsDir, alias));
-    }));
   }
 
-  await Promise.all(MEDIA_COMPATIBILITY_ALIASES.map(async ({ pattern, alias }) => {
+  await Promise.all(REQUIRED_STABLE_MEDIA_ALIASES.map(async ({ pattern, alias }) => {
     const source = assetEntries.find((entry) => pattern.test(entry));
     if (!source || source === alias) {
       return;
@@ -131,6 +74,12 @@ async function copyExtraPluginAssets() {
   );
 }
 
+async function removeUnusedPluginAssets() {
+  await Promise.all([
+    fs.rm(path.join(pluginAppDir, 'login-hero-uploaded-video.mp4'), { force: true }),
+  ]);
+}
+
 async function main() {
   await ensureDirectoryExists(distDir);
   await ensureDirectoryExists(pluginDir);
@@ -140,6 +89,7 @@ async function main() {
   await fs.cp(distDir, pluginAppDir, { recursive: true });
   await copyExtraPluginAssets();
   await createCompatibilityAliases();
+  await removeUnusedPluginAssets();
   await createPluginZip();
 
   console.log(`WordPress plugin assets copied to ${pluginAppDir}`);

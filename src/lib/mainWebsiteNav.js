@@ -1,4 +1,5 @@
 import { getAppRuntimeConfig } from '@/lib/backendConfig';
+import { JOIN_PAGE_URL } from '@/lib/portalSettings';
 
 const trimTrailingSlash = (value) => String(value || '').replace(/\/$/, '');
 
@@ -34,7 +35,7 @@ export const AAC_MAIN_NAV = [
     path: '/membership',
     children: [
       { label: 'Benefits', path: '/benefits' },
-      { label: 'Join', href: '/join' },
+      { label: 'Join', href: JOIN_PAGE_URL, external: true },
       { label: 'Renew', href: 'https://membership.americanalpineclub.org/renew', external: true },
     ],
   },
@@ -44,20 +45,8 @@ export const AAC_MAIN_NAV = [
     path: '/stories',
     children: [
       { label: 'Articles & News', path: '/stories' },
-      { label: 'Featured Photographers', href: '/membership/#/photographers' },
       { label: 'The Prescription', path: '/prescription' },
       { label: 'The Line', path: '/line-archive' },
-    ],
-  },
-  {
-    type: 'folder',
-    label: 'Lodging',
-    path: '/lodging',
-    children: [
-      { label: 'Grand Teton', path: '/grand-teton-climbers-ranch' },
-      { label: 'The Gunks', path: '/gunks-campground' },
-      { label: 'Hueco Tanks', path: '/hueco-rock-ranch' },
-      { label: 'New River Gorge', path: '/new-river-gorge-campground' },
     ],
   },
   {
@@ -67,7 +56,6 @@ export const AAC_MAIN_NAV = [
     children: [
       { label: 'AAJ', path: '/publications/aaj' },
       { label: 'Accidents', path: '/publications/accidents' },
-      { label: 'Podcasts', path: '/the-american-alpine-club-podcast' },
     ],
   },
   {
@@ -76,7 +64,6 @@ export const AAC_MAIN_NAV = [
     path: '/our-work',
     children: [
       { label: "Gov't Affairs", path: '/advocacy' },
-      { label: 'Grants', path: '/grants' },
       { label: 'Grief Fund', path: '/grieffund' },
       { label: 'Library', path: '/library' },
       { label: 'Chapters', path: '/chapters' },
@@ -95,7 +82,5 @@ export function resolveNavChildHref(child) {
 export const MAIN_SITE_TOP_NAV = [
   { label: 'Membership', path: '/membership' },
   { label: 'Our Work', path: '/our-work' },
-  { label: 'Lodging', path: '/lodging-2' },
   { label: 'Stories', path: '/stories' },
-  { label: 'Shop', path: '/shop' },
 ];

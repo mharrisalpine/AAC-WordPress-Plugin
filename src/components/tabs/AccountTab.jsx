@@ -1,18 +1,19 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, KeyRound, Receipt, User } from 'lucide-react';
+import { KeyRound, Receipt } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
-import ChangePhotoModal from '@/components/ChangePhotoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getMemberTransactions } from '@/lib/memberApi';
-import { getMembershipBenefits, formatDollars } from '@/lib/fakePaymentFlows';
-import { getFullName, normalizeAccountInfo, TSHIRT_SIZE_OPTIONS, formatTShirtSizeLabel } from '@/lib/memberProfile';
+import { getMemberApiBase } from '@/lib/backendConfig';
+import { getMembershipBenefits, formatDollars } from '@/lib/membershipBenefits';
+import { normalizeAccountInfo, TSHIRT_SIZE_OPTIONS, formatTShirtSizeLabel } from '@/lib/memberProfile';
+import { isPartnerOrAboveMembershipTierId } from '@/lib/membershipTiers';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import {
   listMemberTransactions,
@@ -20,12 +21,174 @@ import {
   MEMBER_TRANSACTIONS_STORAGE_KEY,
 } from '@/lib/transactions';
 
+const ProfileSection = ({ title, children, className = '', titleClassName = '' }) => (
+  <section className={`bg-white py-6 ${className}`}>
+    {title ? (
+      <div className={`mb-5 border-b-2 border-[#b71c1c] pb-4 ${titleClassName}`}>
+        <h3 className="text-xl font-bold text-black">{title}</h3>
+      </div>
+    ) : null}
+    {children}
+  </section>
+);
+
+const TRANSACTION_REGISTER_VISIBLE_KINDS = new Set(['Membership']);
+const SERVICE_COMPONENT_OPTIONS = [
+  'Active',
+  'Reserve',
+  'Veteran',
+  'Retired',
+];
+const AAC_PROFILE_FIELD_CLASS = 'mt-1 flex h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black';
+
+const normalizeUniversitySearch = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const formatUniversityOption = (school) => {
+  const name = String(school?.name || '').trim();
+  const city = String(school?.city || '').trim();
+  const state = String(school?.state || '').trim();
+  const parent = String(school?.parent || '').trim();
+  const location = [city, state].filter(Boolean).join(', ');
+  const campusLabel = parent && parent !== name ? `${name} (${parent})` : name;
+
+  return [campusLabel, location].filter(Boolean).join(' - ');
+};
+
+const StudentUniversityField = ({ value, schoolId, onChange }) => {
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const requestSequenceRef = useRef(0);
+  const searchTimerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => () => {
+    window.clearTimeout(searchTimerRef.current);
+  }, []);
+
+  const searchUniversities = useCallback((query) => {
+    const normalizedQuery = normalizeUniversitySearch(query);
+    const requestId = ++requestSequenceRef.current;
+    window.clearTimeout(searchTimerRef.current);
+
+    if (normalizedQuery.length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    searchTimerRef.current = window.setTimeout(async () => {
+      try {
+        const requestUrl = new URL(`${getMemberApiBase()}/universities`, window.location.origin);
+        requestUrl.searchParams.set('q', query);
+        requestUrl.searchParams.set('limit', '30');
+
+        const response = await fetch(requestUrl.toString(), { credentials: 'same-origin' });
+        const payload = response.ok ? await response.json() : null;
+        const schools = Array.isArray(payload?.schools) ? payload.schools : [];
+        if (requestId === requestSequenceRef.current) {
+          setResults(schools);
+        }
+      } catch (_error) {
+        if (requestId === requestSequenceRef.current) {
+          setResults([]);
+        }
+      } finally {
+        if (requestId === requestSequenceRef.current) {
+          setLoading(false);
+        }
+      }
+    }, 180);
+  }, []);
+
+  const selectSchool = useCallback((label, selectedSchoolId = '') => {
+    onChange(label, selectedSchoolId);
+    setOpen(false);
+    setResults([]);
+    inputRef.current?.focus();
+  }, [onChange]);
+
+  const renderedOptions = results
+    .map((school) => ({
+      id: String(school?.id || ''),
+      label: formatUniversityOption(school),
+    }))
+    .filter((school) => school.label);
+  const showDropdown = open && (normalizeUniversitySearch(value).length > 0 || renderedOptions.length > 0);
+
+  return (
+    <div className="relative">
+      <Label htmlFor="student_university" className="text-black">School / University</Label>
+      <Input
+        ref={inputRef}
+        id="student_university"
+        name="university_or_school"
+        autoComplete="off"
+        placeholder="Start typing your university"
+        value={value || ''}
+        onChange={(e) => {
+          onChange(e.target.value, '');
+          setOpen(true);
+          searchUniversities(e.target.value);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          searchUniversities(value);
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 140);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && showDropdown) {
+            e.preventDefault();
+            const firstOption = renderedOptions[0];
+            if (firstOption) {
+              selectSchool(firstOption.label, firstOption.id);
+            }
+          }
+        }}
+        className="bg-white border-[#d9d9d9] text-black mt-1"
+      />
+      <input type="hidden" name="student_university_id" value={schoolId || ''} readOnly />
+      {showDropdown ? (
+        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto border border-[#d9d9d9] bg-white text-sm text-black shadow-lg">
+          <button
+            type="button"
+            className="block w-full px-3 py-2 text-left text-black hover:bg-[#f4f0ea] focus:bg-[#f4f0ea]"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => selectSchool('Other / not listed', '')}
+          >
+            Other / not listed
+          </button>
+          {renderedOptions.map((school) => (
+            <button
+              key={`${school.id}-${school.label}`}
+              type="button"
+              className="block w-full px-3 py-2 text-left text-black hover:bg-[#f4f0ea] focus:bg-[#f4f0ea]"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => selectSchool(school.label, school.id)}
+            >
+              {school.label}
+            </button>
+          ))}
+          {!loading && renderedOptions.length === 0 && normalizeUniversitySearch(value).length >= 2 ? (
+            <div className="px-3 py-2 text-black/60">No matching schools. Choose Other / not listed if needed.</div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const AccountTab = ({ profile }) => {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
   const [accountData, setAccountData] = useState(null);
   const accountDataRef = useRef(null);
-  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [localTransactions, setLocalTransactions] = useState([]);
@@ -98,11 +261,12 @@ const AccountTab = ({ profile }) => {
         }
 
         seen.add(dedupeKey);
-        return true;
+        return TRANSACTION_REGISTER_VISIBLE_KINDS.has(transaction.kind);
       })
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [localTransactions, remoteTransactions]);
   const recentTransactions = React.useMemo(() => transactions.slice(0, 2), [transactions]);
+  const canManagePublicationPreferences = isPartnerOrAboveMembershipTierId(profile?.profile_info?.tier);
 
   useEffect(() => {
     if (profile && profile.account_info) {
@@ -136,13 +300,33 @@ const AccountTab = ({ profile }) => {
         { value: 'Friend', label: 'Friend' },
         { value: 'Other', label: 'Other' },
       ];
-  const publicationPreferencesDirty = publicationFieldKeys.some(
+  const publicationPreferencesDirty = canManagePublicationPreferences && publicationFieldKeys.some(
     (key) => (accountData?.[key] || '') !== (currentProfileAccountInfo?.[key] || '')
   );
 
   const handleSave = async () => {
     const nextAccountData = accountDataRef.current || accountData;
     const normalizedAccountData = normalizeAccountInfo(nextAccountData);
+    const requiredFields = [
+      ['first_name', 'First name'],
+      ['last_name', 'Last name'],
+      ['email', 'Email'],
+      ['street', 'Street address'],
+      ['city', 'City'],
+      ['state', 'State'],
+      ['zip', 'ZIP / Postal code'],
+      ['country', 'Country'],
+    ];
+    const missingField = requiredFields.find(([key]) => !String(normalizedAccountData[key] || '').trim());
+    if (missingField) {
+      toast({
+        variant: 'destructive',
+        title: `${missingField[1]} is required`,
+        description: 'Complete the required profile fields before saving changes.',
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       accountDataRef.current = normalizedAccountData;
@@ -158,7 +342,7 @@ const AccountTab = ({ profile }) => {
   };
 
   const handlePublicationPreferencesSave = async () => {
-    if (!accountData) {
+    if (!accountData || !canManagePublicationPreferences) {
       return;
     }
 
@@ -187,19 +371,6 @@ const AccountTab = ({ profile }) => {
       });
     } finally {
       setSavingPreferences(false);
-    }
-  };
-
-  const handlePhotoSave = async (newUrl) => {
-    if (newUrl) {
-      const updatedData = normalizeAccountInfo({ ...accountData, photo_url: newUrl });
-      accountDataRef.current = updatedData;
-      setAccountData(updatedData);
-      await updateProfile({ account_info: updatedData });
-      toast({
-        title: "📸 Photo Updated!",
-        description: "Your profile photo has been changed.",
-      });
     }
   };
 
@@ -249,10 +420,13 @@ const AccountTab = ({ profile }) => {
 
   const portalContent = getPortalUiSettings().content;
 
-  const transactionGroups = ['Membership', 'Donation', 'Merchandise', 'Events', 'Lodging'].map((kind) => ({
+  const transactionGroups = ['Membership'].map((kind) => ({
     kind,
     entries: recentTransactions.filter((transaction) => transaction.kind === kind),
   }));
+  const membershipExpirationDate = profile?.profile_info?.expiration_date || profile?.profile_info?.valid_through_date || '';
+  const hasAutoRenewal = Boolean(currentProfileAccountInfo.auto_renew || profile?.membership_actions?.current_subscription_id);
+  const canCancelMembership = hasAutoRenewal && Boolean(getMembershipActionUrl('cancel'));
 
   if (!accountData) return <div className="text-black text-center pt-10">Loading account details...</div>;
 
@@ -264,50 +438,15 @@ const AccountTab = ({ profile }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="max-w-2xl mx-auto space-y-6">
-            {/* Profile Photo */}
-            <div className="card-gradient rounded-2xl p-6 border border-stone-200">
-              <h3 className="text-xl font-bold text-black mb-4">Profile Photo</h3>
-              <div className="flex items-center gap-6">
-                <div className="relative">
-                  {accountData.photo_url ? (
-                    <img
-                      src={accountData.photo_url}
-                      alt="Profile"
-                      className="h-24 w-24 rounded-full border-4 border-[#B71C1C] object-cover"
-                    />
-                  ) : (
-                    <div
-                      className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-dashed border-[#B71C1C]/50 bg-stone-100"
-                      aria-hidden
-                    >
-                      <User className="h-11 w-11 text-stone-400" strokeWidth={1.5} />
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsPhotoModalOpen(true)}
-                    className="absolute bottom-0 right-0 bg-[#b71c1c] hover:bg-[#8f1515] text-white rounded-full p-2 transition-colors"
-                    aria-label="Change profile photo"
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
-                </div>
-                <div>
-                  <p className="text-black font-medium mb-1">{getFullName(accountData)}</p>
-                  <p className="text-black/60 text-sm">Click camera icon to update photo</p>
-                </div>
-              </div>
-            </div>
-
+          <div className="mx-auto max-w-7xl space-y-6 bg-white">
             {/* Personal Information */}
-            <div className="card-gradient rounded-2xl p-6 border border-stone-200">
-              <h3 className="text-xl font-bold text-black mb-4">Personal Information</h3>
+            <ProfileSection title="Personal Information">
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="first_name" className="text-black">First Name</Label>
                   <Input
                     id="first_name"
+                    required
                     value={accountData.first_name || ''}
                     onChange={(e) => patchAccountData({ first_name: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
@@ -318,6 +457,7 @@ const AccountTab = ({ profile }) => {
                   <Label htmlFor="last_name" className="text-black">Last Name</Label>
                   <Input
                     id="last_name"
+                    required
                     value={accountData.last_name || ''}
                     onChange={(e) => patchAccountData({ last_name: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
@@ -329,6 +469,7 @@ const AccountTab = ({ profile }) => {
                   <Input
                     id="email"
                     type="email"
+                    required
                     value={accountData.email || ''}
                     onChange={(e) => patchAccountData({ email: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
@@ -360,6 +501,7 @@ const AccountTab = ({ profile }) => {
                   <Label htmlFor="street" className="text-black">Street Address</Label>
                   <Input
                     id="street"
+                    required
                     value={accountData.street || ''}
                     onChange={(e) => patchAccountData({ street: e.target.value })}
                     className="bg-white border-[#d9d9d9] text-black mt-1"
@@ -379,22 +521,22 @@ const AccountTab = ({ profile }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <Label htmlFor="city" className="text-black">City</Label>
-                        <Input id="city" value={accountData.city || ''} onChange={(e) => patchAccountData({ city: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="city" required value={accountData.city || ''} onChange={(e) => patchAccountData({ city: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                     <div>
                         <Label htmlFor="state" className="text-black">State / Province</Label>
-                        <Input id="state" value={accountData.state || ''} onChange={(e) => patchAccountData({ state: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="state" required value={accountData.state || ''} onChange={(e) => patchAccountData({ state: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <Label htmlFor="zip" className="text-black">ZIP / Postal Code</Label>
-                        <Input id="zip" value={accountData.zip || ''} onChange={(e) => patchAccountData({ zip: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="zip" required value={accountData.zip || ''} onChange={(e) => patchAccountData({ zip: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                     <div>
                         <Label htmlFor="country" className="text-black">Country</Label>
-                        <Input id="country" value={accountData.country || ''} onChange={(e) => patchAccountData({ country: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <Input id="country" required value={accountData.country || ''} onChange={(e) => patchAccountData({ country: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
                     </div>
                 </div>
 
@@ -404,7 +546,7 @@ const AccountTab = ({ profile }) => {
                     id="size"
                     value={accountData.size || 'No T-shirt'}
                     onChange={(e) => patchAccountData({ size: e.target.value })}
-                    className="mt-1 flex h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black"
+                    className={AAC_PROFILE_FIELD_CLASS}
                   >
                     {TSHIRT_SIZE_OPTIONS.map((size) => (
                       <option key={size} value={size}>
@@ -414,7 +556,47 @@ const AccountTab = ({ profile }) => {
                   </select>
                 </div>
 
-                <div className="space-y-3 rounded-xl border border-stone-200 bg-white/70 p-4">
+                <div className="space-y-4 border-t-2 border-[#b71c1c] pt-5">
+                  <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+                    <StudentUniversityField
+                      value={accountData.student_university || ''}
+                      schoolId={accountData.student_university_id || ''}
+                      onChange={(student_university, student_university_id) => patchAccountData({
+                        student_university,
+                        student_university_id,
+                      })}
+                    />
+                    <div>
+                      <Label htmlFor="graduation_date" className="text-black">Graduation Date</Label>
+                      <Input
+                        id="graduation_date"
+                        type="date"
+                        value={accountData.graduation_date || ''}
+                        onChange={(e) => patchAccountData({ graduation_date: e.target.value })}
+                        className="bg-white border-[#d9d9d9] text-black mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="service_component" className="text-black">Service Component</Label>
+                    <select
+                      id="service_component"
+                      value={accountData.service_component || ''}
+                      onChange={(e) => patchAccountData({ service_component: e.target.value })}
+                      className={AAC_PROFILE_FIELD_CLASS}
+                    >
+                      <option value="">Select service component</option>
+                      {SERVICE_COMPONENT_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-3 border-t-2 border-[#b71c1c] pt-5">
                   <div>
                     <h4 className="text-base font-semibold text-black">Emergency Contact</h4>
                     <p className="text-sm text-black/60">
@@ -483,75 +665,26 @@ const AccountTab = ({ profile }) => {
                   </div>
                 </div>
 
-                <div className="space-y-3 rounded-xl border border-stone-200 bg-white/70 p-4">
-                  <div>
-                    <h4 className="text-base font-semibold text-black">Communication Preferences</h4>
-                    <p className="text-sm text-black/60">
-                      These settings help the AAC and connected systems respect how this member wants to be contacted.
-                    </p>
-                  </div>
-
-                  <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-black">Email Opt Out</p>
-                      <p className="text-xs text-black/60">Do not send email outreach or marketing messages.</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(accountData.email_opt_out)}
-                      onChange={(e) => patchAccountData({ email_opt_out: e.target.checked })}
-                      className="h-5 w-5 accent-[#b71c1c]"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-black">Do Not Call</p>
-                      <p className="text-xs text-black/60">Avoid phone outreach for this member.</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(accountData.do_not_call)}
-                      onChange={(e) => patchAccountData({ do_not_call: e.target.checked })}
-                      className="h-5 w-5 accent-[#b71c1c]"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-black">Do Not Contact</p>
-                      <p className="text-xs text-black/60">Use this when the member should not receive general outreach at all.</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(accountData.do_not_contact)}
-                      onChange={(e) => patchAccountData({ do_not_contact: e.target.checked })}
-                      className="h-5 w-5 accent-[#b71c1c]"
-                    />
-                  </label>
-                </div>
-
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="h-12 w-full rounded-full bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
+                  className="h-12 w-full rounded-none bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
-            </div>
+            </ProfileSection>
 
-            {/* Preferences */}
-            <div className="card-gradient rounded-2xl p-6 border border-stone-200">
-              <h3 className="text-xl font-bold text-black mb-4">Preferences</h3>
+            {canManagePublicationPreferences ? (
+            <ProfileSection title="Preferences">
               <div className="space-y-4">
-                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
+                <div className="flex items-center justify-between border-t border-stone-200 py-4">
                   <div>
-                    <p className="text-white font-medium">American Alpine Journal</p>
-                    <p className="text-[#999999] text-sm">Choose how you receive this annual publication</p>
+                    <p className="text-black font-medium">American Alpine Journal</p>
+                    <p className="text-black/60 text-sm">Choose how you receive this annual publication</p>
                   </div>
                   <select
-                    value={accountData.aaj_pref || 'Digital'}
+                    value={accountData.aaj_pref || 'Print'}
                     onChange={(e) => patchAccountData({ aaj_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
@@ -560,13 +693,13 @@ const AccountTab = ({ profile }) => {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
+                <div className="flex items-center justify-between border-t border-stone-200 py-4">
                   <div>
-                    <p className="text-white font-medium">Accidents in North American Climbing</p>
-                    <p className="text-[#999999] text-sm">Choose how you receive this annual publication</p>
+                    <p className="text-black font-medium">Accidents in North American Climbing</p>
+                    <p className="text-black/60 text-sm">Choose how you receive this annual publication</p>
                   </div>
                   <select
-                    value={accountData.anac_pref || 'Digital'}
+                    value={accountData.anac_pref || 'Print'}
                     onChange={(e) => patchAccountData({ anac_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
@@ -575,13 +708,13 @@ const AccountTab = ({ profile }) => {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
+                <div className="flex items-center justify-between border-t border-stone-200 py-4">
                   <div>
-                    <p className="text-white font-medium">American Climbing Journal</p>
-                    <p className="text-[#999999] text-sm">Choose how you receive this journal</p>
+                    <p className="text-black font-medium">American Climbing Journal</p>
+                    <p className="text-black/60 text-sm">Choose how you receive this journal</p>
                   </div>
                   <select
-                    value={accountData.acj_pref || 'Digital'}
+                    value={accountData.acj_pref || 'Print'}
                     onChange={(e) => patchAccountData({ acj_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
@@ -590,13 +723,13 @@ const AccountTab = ({ profile }) => {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between bg-[#0B0B0B] rounded-lg p-4">
+                <div className="flex items-center justify-between border-t border-stone-200 py-4">
                   <div>
-                    <p className="text-white font-medium">Guidebook to Membership</p>
-                    <p className="text-[#999999] text-sm">Choose how you receive AAC guide content</p>
+                    <p className="text-black font-medium">Guidebook to Membership</p>
+                    <p className="text-black/60 text-sm">Choose how you receive AAC guide content</p>
                   </div>
                   <select
-                    value={accountData.guidebook_pref || 'Digital'}
+                    value={accountData.guidebook_pref || 'Print'}
                     onChange={(e) => patchAccountData({ guidebook_pref: e.target.value })}
                     className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
                   >
@@ -609,7 +742,7 @@ const AccountTab = ({ profile }) => {
                   <Button
                     onClick={handlePublicationPreferencesSave}
                     disabled={savingPreferences || !publicationPreferencesDirty}
-                    className="h-12 w-full rounded-full bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
+                    className="h-12 w-full rounded-none bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
                   >
                     {savingPreferences ? 'Saving...' : 'Save Publication Preferences'}
                   </Button>
@@ -619,16 +752,16 @@ const AccountTab = ({ profile }) => {
                 </div>
 
               </div>
-            </div>
+            </ProfileSection>
+            ) : null}
 
-            <div className="card-gradient rounded-2xl p-6 border border-stone-200">
-              <h3 className="text-xl font-bold text-black mb-4">Security</h3>
-              <div className="bg-[#0B0B0B] rounded-lg p-4 flex items-center justify-between gap-4">
+            <ProfileSection title="Security" titleClassName="!mb-2 !pb-2">
+              <div className="flex items-center justify-between gap-4 border-t border-stone-200 py-4">
                 <div className="flex items-center gap-3">
                   <KeyRound className="w-6 h-6 text-[#B71C1C]" />
                   <div>
-                    <p className="text-white font-medium">Password</p>
-                    <p className="text-[#999999] text-sm">Change your AAC portal password without leaving the app</p>
+                    <p className="text-black font-medium">Password</p>
+                    <p className="text-black/60 text-sm">Change your AAC portal password without leaving the app</p>
                   </div>
                 </div>
                 <Button
@@ -639,39 +772,64 @@ const AccountTab = ({ profile }) => {
                   Change
                 </Button>
               </div>
-            </div>
+            </ProfileSection>
 
-            <div className="card-gradient rounded-2xl border border-stone-200 p-6">
-              <div className="flex items-center gap-3 mb-4">
+            <ProfileSection>
+              <div className="mb-5 flex items-center gap-3 border-b-2 border-[#b71c1c] pb-4">
                 <Receipt className="h-6 w-6 text-[#c8a43a]" />
                 <h3 className="text-xl font-bold text-black">Transaction register</h3>
               </div>
               <p className="mb-5 text-sm text-black/60">
-                Purchases and payments you complete in this portal appear here. No sample transactions are added.
+                Membership payments you complete in this portal appear here. Non-membership charges are not shown in this register.
               </p>
               <div className="space-y-5">
                 {transactionGroups.map((group) => (
                   <div key={group.kind}>
                     <p className="mb-3 text-sm uppercase tracking-[0.25em] text-[#c8a43a]">{group.kind}</p>
                     {group.entries.length === 0 ? (
-                      <div className="rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0B0B0B] px-4 py-3 text-sm text-gray-400">
-                        No {group.kind.toLowerCase()} transactions yet.
+                      <div className="border-y-2 border-[#b71c1c] bg-white px-5 py-5 text-sm text-black">
+                        <p className="font-semibold">No {group.kind.toLowerCase()} transactions yet.</p>
+                        <p className="mt-2 leading-6 text-black/60">
+                          Completed membership payments will display here with their date, status, and amount.
+                        </p>
+                        {hasManagedMembershipUrls ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-4 rounded-none border-stone-300 text-black hover:bg-stone-100"
+                            onClick={() => void openMembershipAction('manage')}
+                          >
+                            Open PMPro account
+                          </Button>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-3">
                         {group.entries.map((transaction) => (
                           <div
                             key={transaction.id}
-                            className="flex flex-col gap-3 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0B0B0B] px-4 py-4 md:flex-row md:items-center md:justify-between"
+                            className="flex flex-col gap-3 border-t border-stone-200 py-4 md:flex-row md:items-center md:justify-between"
                           >
                             <div>
-                              <p className="font-medium text-white">{transaction.description}</p>
-                              <p className="text-sm text-gray-400">
+                              <p className="font-medium text-black">{transaction.description}</p>
+                              <p className="text-sm text-stone-500">
                                 {new Date(transaction.createdAt).toLocaleString()} • {transaction.status}
                               </p>
+								<div className="mt-3 space-y-2 border-t border-stone-100 pt-3 md:min-w-[28rem]">
+									{(Array.isArray(transaction.lineItems) && transaction.lineItems.length
+										? transaction.lineItems
+										: [{ label: transaction.description || 'Membership payment', amount: transaction.amount }]
+									).map((item, index) => (
+										<div key={`${transaction.id || transaction.referenceId}-line-${index}`} className="flex items-center justify-between gap-5 text-sm">
+											<span className="text-stone-600">{item.label || 'Membership payment'}</span>
+											<span className="font-medium text-black">{formatDollars(item.amount)}</span>
+										</div>
+									))}
+								</div>
                             </div>
                             <div className="text-left md:text-right">
-                              <p className="text-lg font-bold text-white">{formatDollars(transaction.amount)}</p>
+								<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Total paid</p>
+								<p className="mt-1 text-lg font-bold text-black">{formatDollars(transaction.amount)}</p>
                               <p className="text-xs uppercase tracking-[0.2em] text-[#f1d37b]">{transaction.kind}</p>
                             </div>
                           </div>
@@ -681,7 +839,7 @@ const AccountTab = ({ profile }) => {
                   </div>
                 ))}
               </div>
-            </div>
+            </ProfileSection>
 
             {/* Action Buttons */}
             <div className="space-y-3">
@@ -694,22 +852,26 @@ const AccountTab = ({ profile }) => {
                 </Button>
               ) : null}
 
-              <Button
-                onClick={handleCancel}
-                variant="outline"
-                className="w-full border-stone-400 text-black hover:bg-stone-100 h-12 text-lg"
-              >
-                Cancel Membership
-              </Button>
+              {canCancelMembership ? (
+                <Button
+                  onClick={handleCancel}
+                  variant="outline"
+                  className="w-full border-stone-400 text-black hover:bg-stone-100 h-12 text-lg"
+                >
+                  Turn Off Automatic Renewal
+                </Button>
+              ) : membershipExpirationDate ? (
+                <div className="border-y-2 border-[#b71c1c] bg-white px-5 py-4 text-sm leading-6 text-black">
+                  <p className="font-semibold">Automatic renewal is off.</p>
+                  <p className="text-black/60">
+                    Your membership is not cancelled today. It remains active through {membershipExpirationDate} and will end then unless you renew.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </motion.div>
       </div>
-      <ChangePhotoModal 
-        isOpen={isPhotoModalOpen}
-        onClose={() => setIsPhotoModalOpen(false)}
-        onSave={handlePhotoSave}
-      />
     </>
   );
 };

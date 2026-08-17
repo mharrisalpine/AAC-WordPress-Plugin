@@ -12,7 +12,6 @@ class AAC_Member_Portal_Redpoint_API {
 
 	public function __construct() {
 		add_action('rest_api_init', [$this, 'register_routes']);
-		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('admin_post_aac_redpoint_api_save', [$this, 'handle_settings_save']);
 		add_action('template_redirect', [$this, 'maybe_render_directory_page']);
 	}
@@ -248,6 +247,8 @@ class AAC_Member_Portal_Redpoint_API {
 	public function search_members(WP_REST_Request $request) {
 		$args = [
 			'search' => sanitize_text_field((string) $request->get_param('search')),
+			'first_name' => sanitize_text_field((string) $request->get_param('first_name')),
+			'last_name' => sanitize_text_field((string) $request->get_param('last_name')),
 			'membership_status' => sanitize_text_field((string) $request->get_param('membership_status')),
 			'active' => $this->normalize_boolean_param($request->get_param('active')),
 		];
@@ -337,12 +338,14 @@ class AAC_Member_Portal_Redpoint_API {
 		}
 
 		$request_path = '/' . trim($request_path, '/') . '/';
-		return $request_path === '/redpoint/';
+		return in_array($request_path, ['/redpoint/', '/redpoint-lookup/'], true);
 	}
 
 	private function get_directory_query_args() {
 		return [
 			'search' => sanitize_text_field((string) wp_unslash($_GET['search'] ?? '')),
+			'first_name' => sanitize_text_field((string) wp_unslash($_GET['first_name'] ?? '')),
+			'last_name' => sanitize_text_field((string) wp_unslash($_GET['last_name'] ?? '')),
 			'membership_status' => '',
 			'active' => $this->normalize_boolean_param(wp_unslash($_GET['active'] ?? '')),
 		];
@@ -521,14 +524,27 @@ class AAC_Member_Portal_Redpoint_API {
 
 	private function query_exact_profiles($args) {
 		$search = trim((string) ($args['search'] ?? ''));
-		if ($search === '') {
+		$first_name = trim((string) ($args['first_name'] ?? ''));
+		$last_name = trim((string) ($args['last_name'] ?? ''));
+		if (($first_name === '' || $last_name === '') && $search !== '' && !$this->looks_like_email($search) && $this->normalize_phone($search) === '') {
+			$name_parts = preg_split('/\s+/', $search);
+			$name_parts = is_array($name_parts) ? array_values(array_filter($name_parts, 'strlen')) : [];
+			if (count($name_parts) >= 2) {
+				$first_name = (string) array_shift($name_parts);
+				$last_name = implode(' ', $name_parts);
+			}
+		}
+
+		if ($search === '' && ($first_name === '' || $last_name === '')) {
 			return [
 				'total' => 0,
 				'rows' => [],
 			];
 		}
 
-		if ($this->looks_like_email($search)) {
+		if ($first_name !== '' && $last_name !== '') {
+			$rows = $this->find_profiles_by_exact_name($first_name, $last_name);
+		} elseif ($this->looks_like_email($search)) {
 			$row = $this->find_profile_by_email($search);
 			$rows = $row ? [$row] : [];
 		} else {
@@ -607,6 +623,30 @@ class AAC_Member_Portal_Redpoint_API {
 		$profile = is_array($profile) ? $profile : [];
 		$account_info = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
 		$profile_info = is_array($profile['profile_info'] ?? null) ? $profile['profile_info'] : [];
+		$pmpro_membership = is_array($profile['pmpro_membership'] ?? null) ? $profile['pmpro_membership'] : [];
+		$pmpro_subscription = is_array($profile['pmpro_subscription'] ?? null) ? $profile['pmpro_subscription'] : [];
+		$membership_start_date = $this->normalize_date_for_output($pmpro_membership['startdate'] ?? '');
+		if ($membership_start_date === '') {
+			$membership_start_date = $this->normalize_date_for_output($pmpro_subscription['startdate'] ?? '');
+		}
+		$membership_end_date = $this->normalize_date_for_output($pmpro_membership['enddate'] ?? '');
+		if ($membership_end_date === '') {
+			$membership_end_date = $this->normalize_date_for_output($row['expiration_date'] ?? '');
+		}
+		if ($membership_end_date === '') {
+			$membership_end_date = $this->normalize_date_for_output($row['renewal_date'] ?? '');
+		}
+		if ($membership_end_date === '') {
+			$membership_end_date = $this->normalize_date_for_output($profile_info['valid_through_date'] ?? '');
+		}
+		if ($membership_end_date === '') {
+			foreach (['next_payment_date', 'cycle_enddate', 'enddate'] as $subscription_date_key) {
+				$membership_end_date = $this->normalize_date_for_output($pmpro_subscription[$subscription_date_key] ?? '');
+				if ($membership_end_date !== '') {
+					break;
+				}
+			}
+		}
 
 		return [
 			'user_id' => (int) ($row['user_id'] ?? 0),
@@ -634,9 +674,21 @@ class AAC_Member_Portal_Redpoint_API {
 				'status' => (string) ($row['membership_status'] ?? ''),
 				'renewal_date' => (string) ($row['renewal_date'] ?? ''),
 				'expiration_date' => (string) ($row['expiration_date'] ?? ''),
+				'start_date' => $membership_start_date,
+				'end_date' => $membership_end_date,
 				'member_since' => (string) ($profile_info['joined_date'] ?? ''),
 			],
 		];
+	}
+
+	private function normalize_date_for_output($value) {
+		$value = sanitize_text_field((string) $value);
+		if ($value === '' || $value === '0000-00-00' || $value === '0000-00-00 00:00:00') {
+			return '';
+		}
+
+		$timestamp = strtotime($value);
+		return $timestamp === false ? $value : gmdate('Y-m-d', $timestamp);
 	}
 
 	private function build_ripcord_member_attributes($row, $include_email = true) {

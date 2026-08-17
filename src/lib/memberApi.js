@@ -1,5 +1,4 @@
 import { apiRequest, setAuthToken, setRestNonce } from '@/lib/apiClient';
-import { AAC_CUTTING_EDGE_PODCASTS, normalizePodcastList } from '@/lib/aacPodcasts';
 import { fakeAuthDb, shouldUseFakeMemberDb } from '@/lib/fakeMemberDb';
 
 const withOptionalFakeBackend = async (remoteCall, fallbackCall) => {
@@ -17,6 +16,9 @@ export const getCurrentMember = () =>
   );
 
 export async function loginMember(email, password) {
+  setAuthToken(null);
+  setRestNonce(null);
+
   const data = await withOptionalFakeBackend(
     () => apiRequest('/login', {
       method: 'POST',
@@ -50,25 +52,18 @@ export async function registerMember(email, password, options = {}) {
 }
 
 export async function logoutMember() {
-  try {
-    return await withOptionalFakeBackend(
-      () => apiRequest('/logout', { method: 'POST' }),
-      () => fakeAuthDb.logoutMember()
-    );
-  } finally {
-    setAuthToken(null);
-    setRestNonce(null);
-  }
-}
-
-export const requestPasswordReset = (email) =>
-  withOptionalFakeBackend(
-    () => apiRequest('/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    }),
-    () => fakeAuthDb.requestPasswordReset(email)
+  const data = await withOptionalFakeBackend(
+    () => apiRequest('/logout', { method: 'POST' }),
+    () => fakeAuthDb.logoutMember()
   );
+
+  // Only discard local credentials after WordPress confirms that its session
+  // cookie was cleared. Otherwise a failed request can make the UI appear
+  // signed out while the browser remains authenticated on the server.
+  setAuthToken(null);
+  setRestNonce(null);
+  return data;
+}
 
 export async function changeMemberPassword(currentPassword, newPassword, confirmPassword) {
   const data = await withOptionalFakeBackend(
@@ -99,82 +94,30 @@ export const updateMemberProfile = (updates) =>
     () => fakeAuthDb.updateMemberProfile(updates)
   );
 
-export const submitGrantApplication = (payload) =>
-  withOptionalFakeBackend(
-    () => apiRequest('/grants', {
-      method: 'POST',
-      body: JSON.stringify(payload || {}),
-    }),
-    () => fakeAuthDb.submitGrantApplication(payload)
-  );
-
-export const getGrantApprovalQueue = (params = {}) =>
-  apiRequest(`/grant-approvals?${new URLSearchParams({
-    status: params.status || '',
-    search: params.search || '',
-  }).toString()}`);
-
-export const getGrantApprovalApplication = (applicationId) =>
-  apiRequest(`/grant-approvals/${encodeURIComponent(applicationId)}`);
-
-export const assignGrantApprovalReviewer = (applicationId, assignedReviewerId) =>
-  apiRequest(`/grant-approvals/${encodeURIComponent(applicationId)}/reviewer`, {
-    method: 'POST',
-    body: JSON.stringify({ assigned_reviewer_id: assignedReviewerId ?? 0 }),
-  });
-
-export const updateGrantApprovalWorkflow = (applicationId, payload = {}) =>
-  apiRequest(`/grant-approvals/${encodeURIComponent(applicationId)}/workflow`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-
-export const submitContactMessage = ({ name, email, message }) =>
+export const submitContactMessage = ({ name, email, issueType, message }) =>
   withOptionalFakeBackend(
     () => apiRequest('/contact', {
       method: 'POST',
-      body: JSON.stringify({ name, email, message }),
+      body: JSON.stringify({ name, email, issue_type: issueType, message }),
     }),
-    () => fakeAuthDb.submitContactMessage({ name, email, message })
-  );
-
-export const getLatestPodcasts = async () => {
-  try {
-    if (!shouldUseFakeMemberDb()) {
-      const data = await apiRequest('/podcasts');
-      const podcasts = normalizePodcastList(data?.podcasts);
-
-      return {
-        ...data,
-        podcasts: podcasts.length ? podcasts : AAC_CUTTING_EDGE_PODCASTS,
-      };
-    }
-  } catch (error) {
-    console.warn('Falling back to AAC podcast defaults:', error?.message || error);
-  }
-
-  const data = await fakeAuthDb.getLatestPodcasts();
-  const podcasts = normalizePodcastList(data?.podcasts);
-
-  return {
-    ...data,
-    podcasts: podcasts.length ? podcasts : AAC_CUTTING_EDGE_PODCASTS,
-  };
-};
-
-export const recordPodcastListen = (payload) =>
-  withOptionalFakeBackend(
-    () => apiRequest('/podcasts/listen', {
-      method: 'POST',
-      body: JSON.stringify(payload || {}),
-    }),
-    () => fakeAuthDb.recordPodcastListen(payload)
+    () => fakeAuthDb.submitContactMessage({ name, email, issueType, message })
   );
 
 export const getMemberTransactions = () =>
   withOptionalFakeBackend(
     () => apiRequest('/transactions'),
     () => fakeAuthDb.getMemberTransactions()
+  );
+
+export const scheduleMembershipDowngrade = (targetTier) =>
+  withOptionalFakeBackend(
+    () => apiRequest('/membership/downgrade', {
+      method: 'POST',
+      body: JSON.stringify({ target_tier: targetTier }),
+    }),
+    async () => {
+      throw new Error('Scheduled membership downgrades are not available in demo mode.');
+    }
   );
 
 export const validateInviteCode = (code) =>
@@ -205,5 +148,16 @@ export const scheduleLinkedAccountRemoval = (slotId) =>
     }),
     async () => {
       throw new Error('Linked account renewal removal is not available in the demo mode.');
+    }
+  );
+
+export const createLinkedAccount = (payload) =>
+  withOptionalFakeBackend(
+    () => apiRequest('/linked-accounts/create', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
+    async () => {
+      throw new Error('Linked account creation is not available in the demo mode.');
     }
   );

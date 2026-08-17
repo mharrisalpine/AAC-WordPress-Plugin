@@ -6,11 +6,22 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_API {
 	const ROUTE_NAMESPACE = 'aac/v1';
+	const PROFILE_CACHE_TTL = 90;
 	private static $instance = null;
+	private static $university_school_index = null;
 
 	public function __construct() {
 		self::$instance = $this;
 		add_action('rest_api_init', [$this, 'register_routes']);
+		add_action('profile_update', [$this, 'flush_profile_cache_for_user'], 10, 1);
+		add_action('added_user_meta', [$this, 'maybe_flush_profile_cache_for_meta_change'], 10, 4);
+		add_action('updated_user_meta', [$this, 'maybe_flush_profile_cache_for_meta_change'], 10, 4);
+		add_action('deleted_user_meta', [$this, 'maybe_flush_profile_cache_for_meta_change'], 10, 4);
+		add_action('pmpro_after_checkout', [$this, 'flush_profile_cache_after_checkout'], 5, 2);
+		add_action('pmpro_after_change_membership_level', [$this, 'flush_profile_cache_after_membership_change'], 5, 2);
+		add_action('aac_member_portal_profile_updated', [$this, 'flush_profile_cache_for_user'], 5, 1);
+		add_action('aac_member_portal_family_account_linked', [$this, 'flush_profile_cache_for_family_link'], 5, 2);
+		add_action('update_option_aac_member_portal_settings', [$this, 'bump_profile_cache_version'], 10, 3);
 	}
 
 	public static function get_instance() {
@@ -44,10 +55,20 @@ class AAC_Member_Portal_API {
 			'permission_callback' => '__return_true',
 		]);
 
-		register_rest_route(self::ROUTE_NAMESPACE, '/reset-password', [
-			'methods' => 'POST',
-			'callback' => [$this, 'reset_password'],
+		register_rest_route(self::ROUTE_NAMESPACE, '/universities', [
+			'methods' => 'GET',
+			'callback' => [$this, 'search_universities'],
 			'permission_callback' => '__return_true',
+			'args' => [
+				'q' => [
+					'type' => 'string',
+					'required' => false,
+				],
+				'limit' => [
+					'type' => 'integer',
+					'required' => false,
+				],
+			],
 		]);
 
 		register_rest_route(self::ROUTE_NAMESPACE, '/invite-code', [
@@ -69,6 +90,12 @@ class AAC_Member_Portal_API {
 			'permission_callback' => [$this, 'is_logged_in'],
 		]);
 
+		register_rest_route(self::ROUTE_NAMESPACE, '/linked-accounts/create', [
+			'methods' => 'POST',
+			'callback' => [$this, 'create_linked_account'],
+			'permission_callback' => [$this, 'is_logged_in'],
+		]);
+
 		register_rest_route(self::ROUTE_NAMESPACE, '/change-password', [
 			'methods' => 'POST',
 			'callback' => [$this, 'change_password'],
@@ -87,51 +114,15 @@ class AAC_Member_Portal_API {
 			'permission_callback' => [$this, 'is_logged_in'],
 		]);
 
-		register_rest_route(self::ROUTE_NAMESPACE, '/grants', [
+		register_rest_route(self::ROUTE_NAMESPACE, '/membership/downgrade', [
 			'methods' => 'POST',
-			'callback' => [$this, 'submit_grant_application'],
+			'callback' => [$this, 'schedule_membership_downgrade'],
 			'permission_callback' => [$this, 'is_logged_in'],
-		]);
-
-		register_rest_route(self::ROUTE_NAMESPACE, '/grant-approvals', [
-			'methods' => 'GET',
-			'callback' => [$this, 'get_grant_approval_queue'],
-			'permission_callback' => [$this, 'can_review_grants'],
-		]);
-
-		register_rest_route(self::ROUTE_NAMESPACE, '/grant-approvals/(?P<application_id>\d+)', [
-			'methods' => 'GET',
-			'callback' => [$this, 'get_grant_approval_application'],
-			'permission_callback' => [$this, 'can_review_grants'],
-		]);
-
-		register_rest_route(self::ROUTE_NAMESPACE, '/grant-approvals/(?P<application_id>\d+)/reviewer', [
-			'methods' => 'POST',
-			'callback' => [$this, 'assign_grant_approval_reviewer'],
-			'permission_callback' => [$this, 'can_review_grants'],
-		]);
-
-		register_rest_route(self::ROUTE_NAMESPACE, '/grant-approvals/(?P<application_id>\d+)/workflow', [
-			'methods' => 'POST',
-			'callback' => [$this, 'update_grant_approval_workflow'],
-			'permission_callback' => [$this, 'can_review_grants'],
 		]);
 
 		register_rest_route(self::ROUTE_NAMESPACE, '/contact', [
 			'methods' => 'POST',
 			'callback' => [$this, 'contact'],
-			'permission_callback' => [$this, 'is_logged_in'],
-		]);
-
-		register_rest_route(self::ROUTE_NAMESPACE, '/podcasts', [
-			'methods' => 'GET',
-			'callback' => [$this, 'podcasts'],
-			'permission_callback' => [$this, 'is_logged_in'],
-		]);
-
-		register_rest_route(self::ROUTE_NAMESPACE, '/podcasts/listen', [
-			'methods' => 'POST',
-			'callback' => [$this, 'record_podcast_listen'],
 			'permission_callback' => [$this, 'is_logged_in'],
 		]);
 
@@ -158,16 +149,105 @@ class AAC_Member_Portal_API {
 		return current_user_can('manage_options');
 	}
 
-	public function can_review_grants() {
-		if (current_user_can('manage_options')) {
-			return true;
+	public function flush_profile_cache_for_user($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return;
 		}
 
-		if (class_exists('AAC_Grants_Review_Installer')) {
-			return current_user_can(AAC_Grants_Review_Installer::REVIEW_CAP);
+		delete_transient($this->get_profile_cache_key($user_id));
+
+		$parent_user_id = absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
+		if ($parent_user_id > 0 && $parent_user_id !== $user_id) {
+			delete_transient($this->get_profile_cache_key($parent_user_id));
 		}
 
-		return false;
+		$accounts = get_user_meta($user_id, 'aac_connected_accounts', true);
+		if (!is_array($accounts)) {
+			return;
+		}
+
+		foreach ($accounts as $account) {
+			$child_user_id = absint($account['child_user_id'] ?? 0);
+			if ($child_user_id > 0) {
+				delete_transient($this->get_profile_cache_key($child_user_id));
+			}
+		}
+	}
+
+	public function flush_profile_cache_after_checkout($user_id, $order = null) {
+		$this->flush_profile_cache_for_user($user_id);
+	}
+
+	public function flush_profile_cache_after_membership_change($level_id, $user_id) {
+		$this->flush_profile_cache_for_user($user_id);
+	}
+
+	public function flush_profile_cache_for_family_link($parent_user_id, $child_user_id) {
+		$this->flush_profile_cache_for_user($parent_user_id);
+		$this->flush_profile_cache_for_user($child_user_id);
+	}
+
+	public function maybe_flush_profile_cache_for_meta_change($meta_id, $user_id, $meta_key, $meta_value = null) {
+		static $watched_meta_keys = [
+			'aac_account_info',
+			'aac_profile_info',
+			'aac_benefits_info',
+			'aac_member_id',
+			'aac_membership_discount_type',
+			'aac_magazine_addons',
+			'aac_magazine_subscription_labels',
+			'aac_has_alpinist_subscription',
+			'aac_has_backcountry_subscription',
+			'aac_connected_accounts',
+			'aac_partner_family_config',
+			'aac_partner_family_mode',
+			'aac_partner_family_additional_adult',
+			'aac_partner_family_dependents',
+			'aac_family_account_role',
+			'aac_linked_parent_user_id',
+			'aac_linked_account_slot_id',
+			'aac_linked_account_invite_code',
+			'aac_linked_account_type',
+			'aac_linked_account_label',
+			'aac_family_membership_access_until',
+			'aac_family_membership_pending_removal',
+			'aac_pending_membership_downgrade',
+			'aac_group_account_group_id',
+			'aac_group_account_child_level_id',
+			'aac_group_account_checkout_code',
+			'first_name',
+			'last_name',
+			'pmpro_sfirstname',
+			'pmpro_slastname',
+			'pmpro_sphone',
+			'pmpro_saddress1',
+			'pmpro_saddress2',
+			'pmpro_scity',
+			'pmpro_sstate',
+			'pmpro_szipcode',
+				'pmpro_scountry',
+				't_shirt',
+				'birthdate',
+				'aaj_preference',
+			'anac_preference',
+			'american_climbing_journal_preference',
+			'guidebook_preferences',
+			'student_university',
+			'university_or_school',
+			'student_university_id',
+			'graduation_date',
+			'service_component',
+			'service_branch',
+		];
+
+		if (in_array((string) $meta_key, $watched_meta_keys, true)) {
+			$this->flush_profile_cache_for_user($user_id);
+		}
+	}
+
+	public function bump_profile_cache_version($old_value = null, $value = null, $option = '') {
+		update_option('aac_member_portal_profile_cache_version', (string) microtime(true), false);
 	}
 
 	public function login(WP_REST_Request $request) {
@@ -182,28 +262,22 @@ class AAC_Member_Portal_API {
 		$user = get_user_by('email', $email);
 
 		if (!$user) {
-			return new WP_Error('invalid_credentials', 'Incorrect password. Please try again.', ['status' => 401]);
+			return new WP_Error('invalid_credentials', 'Incorrect email or password. Please try again.', ['status' => 401]);
+		}
+
+		if (!wp_check_password($password, $user->user_pass, $user->ID)) {
+			return new WP_Error('invalid_credentials', 'Incorrect email or password. Please try again.', ['status' => 401]);
 		}
 
 		if (is_user_logged_in()) {
 			wp_logout();
 		}
 
-		$signon = wp_signon([
-			'user_login' => $user->user_login,
-			'user_password' => $password,
-			'remember' => true,
-		], is_ssl());
+		$rest_nonce = $this->establish_fresh_auth_session($user->ID);
 
-		if (is_wp_error($signon)) {
-			return new WP_Error('invalid_credentials', 'Incorrect password. Please try again.', ['status' => 401]);
-		}
+		do_action('aac_member_portal_member_logged_in', $user->ID, $request);
 
-		$rest_nonce = $this->establish_fresh_auth_session($signon->ID);
-
-		do_action('aac_member_portal_member_logged_in', $signon->ID, $request);
-
-		return $this->build_auth_response($signon, $rest_nonce);
+		return $this->build_auth_response($user, $rest_nonce);
 	}
 
 	public function logout() {
@@ -276,9 +350,6 @@ class AAC_Member_Portal_API {
 			'name' => trim($first_name . ' ' . $last_name),
 			'email' => $email,
 			'birthdate' => '',
-			'email_opt_out' => false,
-			'do_not_call' => false,
-			'do_not_contact' => false,
 		]);
 
 		$rest_nonce = $this->establish_fresh_auth_session($user_id);
@@ -313,34 +384,100 @@ class AAC_Member_Portal_API {
 		]);
 	}
 
-	public function reset_password(WP_REST_Request $request) {
-		$email = sanitize_email($request->get_param('email'));
+	public function search_universities(WP_REST_Request $request) {
+		$query = sanitize_text_field((string) $request->get_param('q'));
+		$normalized_query = $this->normalize_university_search_value($query);
+		$limit = absint($request->get_param('limit'));
+		$limit = min(50, max(1, $limit ?: 25));
 
-		$rate_limit = $this->consume_rate_limit('reset_password', $this->build_rate_limit_identity($request, $email), 5, 15 * MINUTE_IN_SECONDS);
+		if (strlen($normalized_query) < 2) {
+			return rest_ensure_response([
+				'schools' => [],
+			]);
+		}
+
+		$rate_limit = $this->consume_rate_limit('university_search', $this->build_rate_limit_identity($request), 120, 5 * MINUTE_IN_SECONDS);
 		if (is_wp_error($rate_limit)) {
 			return $rate_limit;
 		}
 
-		if (!$email || !is_email($email)) {
-			return rest_ensure_response(['success' => true]);
+		$cache_key = 'aac_university_search_' . md5($normalized_query . '|' . $limit);
+		$cached = get_transient($cache_key);
+		if (is_array($cached)) {
+			return rest_ensure_response([
+				'schools' => $cached,
+			]);
 		}
 
-		$user = get_user_by('email', $email);
+		$terms = preg_split('/\s+/', $normalized_query, -1, PREG_SPLIT_NO_EMPTY);
+		$matches = [];
 
-		if ($user) {
-			$key = get_password_reset_key($user);
-			if (!is_wp_error($key)) {
-				$reset_url = network_site_url("wp-login.php?action=rp&key={$key}&login=" . rawurlencode($user->user_login), 'login');
-
-				wp_mail(
-					$user->user_email,
-					'Password Reset',
-					"Use this link to reset your password:\n\n{$reset_url}"
-				);
+		foreach ($this->load_university_school_index() as $school) {
+			$searchable = $school['search'] ?? '';
+			if ($searchable === '') {
+				continue;
 			}
+
+			$contains_query = strpos($searchable, $normalized_query) !== false;
+			$contains_terms = false;
+			if (!$contains_query && $terms) {
+				$contains_terms = true;
+				foreach ($terms as $term) {
+					if (strpos($searchable, $term) === false) {
+						$contains_terms = false;
+						break;
+					}
+				}
+			}
+
+			if (!$contains_query && !$contains_terms) {
+				continue;
+			}
+
+			$name_search = $school['name_search'] ?? '';
+			$parent_search = $school['parent_search'] ?? '';
+			$location_search = $school['location_search'] ?? '';
+			$score = 8;
+			if ($name_search === $normalized_query) {
+				$score = 0;
+			} elseif (strpos($name_search, $normalized_query) === 0) {
+				$score = 1;
+			} elseif (strpos($name_search, $normalized_query) !== false) {
+				$score = 2;
+			} elseif ($parent_search !== '' && strpos($parent_search, $normalized_query) === 0) {
+				$score = 3;
+			} elseif ($parent_search !== '' && strpos($parent_search, $normalized_query) !== false) {
+				$score = 4;
+			} elseif ($location_search !== '' && strpos($location_search, $normalized_query) !== false) {
+				$score = 6;
+			} elseif ($contains_terms) {
+				$score = 7;
+			}
+
+			$matches[] = [
+				'score' => $score,
+				'label' => $school['label'],
+				'school' => $school['public'],
+			];
 		}
 
-		return rest_ensure_response(['success' => true]);
+		usort($matches, static function ($a, $b) {
+			if ($a['score'] !== $b['score']) {
+				return $a['score'] <=> $b['score'];
+			}
+
+			return strcasecmp((string) $a['label'], (string) $b['label']);
+		});
+
+		$schools = array_map(static function ($match) {
+			return $match['school'];
+		}, array_slice($matches, 0, $limit));
+
+		set_transient($cache_key, $schools, 12 * HOUR_IN_SECONDS);
+
+		return rest_ensure_response([
+			'schools' => $schools,
+		]);
 	}
 
 	public function validate_invite_code(WP_REST_Request $request) {
@@ -415,7 +552,7 @@ class AAC_Member_Portal_API {
 				], is_ssl());
 
 				if (is_wp_error($signon)) {
-					return new WP_Error('invalid_credentials', 'Incorrect password. Please try again.', ['status' => 401]);
+					return new WP_Error('invalid_credentials', 'Incorrect email or password. Please try again.', ['status' => 401]);
 				}
 
 				$child_user = $signon;
@@ -591,6 +728,123 @@ class AAC_Member_Portal_API {
 		]);
 	}
 
+	public function create_linked_account(WP_REST_Request $request) {
+		$parent_user_id = get_current_user_id();
+		if ($parent_user_id <= 0) {
+			return new WP_Error('not_authenticated', 'You must be signed in to manage linked accounts.', ['status' => 401]);
+		}
+
+		$slot_id = sanitize_text_field((string) $request->get_param('slot_id'));
+		$first_name = sanitize_text_field((string) $request->get_param('first_name'));
+		$last_name = sanitize_text_field((string) $request->get_param('last_name'));
+		$email = sanitize_email((string) $request->get_param('email'));
+
+		if ($slot_id === '' || $first_name === '' || $last_name === '' || !$email || !is_email($email)) {
+			return new WP_Error('invalid_input', 'Enter a first name, last name, and valid email address.', ['status' => 400]);
+		}
+
+		$parent_user = get_user_by('id', $parent_user_id);
+		if (!$parent_user instanceof WP_User) {
+			return new WP_Error('not_authenticated', 'Unable to load the parent account.', ['status' => 401]);
+		}
+
+		if (strtolower($parent_user->user_email) === strtolower($email)) {
+			return new WP_Error('invalid_input', 'Use a different email address for the linked family member.', ['status' => 400]);
+		}
+
+		if (email_exists($email)) {
+			return new WP_Error(
+				'email_exists',
+				'An account already exists for that email address. Send the invite code to that member so they can link their existing account.',
+				['status' => 409]
+			);
+		}
+
+		$accounts = get_user_meta($parent_user_id, 'aac_connected_accounts', true);
+		$accounts = is_array($accounts) ? $this->sanitize_connected_accounts($accounts) : [];
+		if (empty($accounts)) {
+			return new WP_Error('not_found', 'No linked accounts were found for this member.', ['status' => 404]);
+		}
+
+		$account_index = null;
+		foreach ($accounts as $index => $account) {
+			if (($account['id'] ?? '') === $slot_id) {
+				$account_index = $index;
+				break;
+			}
+		}
+
+		if ($account_index === null) {
+			return new WP_Error('not_found', 'That linked account could not be found.', ['status' => 404]);
+		}
+
+		$slot = $accounts[$account_index];
+		if (($slot['status'] ?? '') === 'connected' || absint($slot['child_user_id'] ?? 0) > 0) {
+			return new WP_Error('linked_account_claimed', 'That linked account has already been created.', ['status' => 409]);
+		}
+
+		if (($slot['status'] ?? '') === 'removal_pending') {
+			return new WP_Error('linked_account_pending_removal', 'That linked account is scheduled for removal and cannot be created.', ['status' => 409]);
+		}
+
+		$username = $this->generate_unique_username_from_email($email);
+		$password = wp_generate_password(24, true, true);
+		$child_user_id = wp_create_user($username, $password, $email);
+		if (is_wp_error($child_user_id)) {
+			return $child_user_id;
+		}
+
+		wp_update_user([
+			'ID' => $child_user_id,
+			'first_name' => $first_name,
+			'last_name' => $last_name,
+			'display_name' => trim($first_name . ' ' . $last_name) ?: $email,
+		]);
+
+		update_user_meta($child_user_id, 'aac_account_info', [
+			'first_name' => $first_name,
+			'last_name' => $last_name,
+			'name' => trim($first_name . ' ' . $last_name),
+			'email' => $email,
+		]);
+		update_user_meta($child_user_id, 't_shirt', 'No T-shirt');
+		update_user_meta($child_user_id, 'birthdate', '');
+
+		$child_user = get_user_by('id', $child_user_id);
+		if (!$child_user instanceof WP_User) {
+			return new WP_Error('linked_account_create_failed', 'Unable to create that linked account right now.', ['status' => 500]);
+		}
+
+		$invite_code = $this->normalize_invite_code($slot['invite_code'] ?? '');
+		$accounts[$account_index] = array_merge($slot, [
+			'status' => 'connected',
+			'child_user_id' => (int) $child_user->ID,
+			'child_name' => trim($child_user->first_name . ' ' . $child_user->last_name) ?: $child_user->display_name,
+			'child_email' => $child_user->user_email,
+		]);
+		update_user_meta($parent_user_id, 'aac_connected_accounts', array_values($accounts));
+
+		update_user_meta($child_user->ID, 'aac_linked_parent_user_id', $parent_user_id);
+		update_user_meta($child_user->ID, 'aac_linked_account_slot_id', sanitize_text_field($slot['id'] ?? ''));
+		update_user_meta($child_user->ID, 'aac_linked_account_invite_code', $invite_code);
+		update_user_meta($child_user->ID, 'aac_linked_account_type', sanitize_key($slot['type'] ?? 'dependent'));
+		update_user_meta($child_user->ID, 'aac_linked_account_label', sanitize_text_field($slot['label'] ?? 'Family member'));
+		update_user_meta($parent_user_id, 'aac_family_account_role', 'Parent');
+		update_user_meta($child_user->ID, 'aac_family_account_role', 'Child');
+		delete_user_meta($child_user->ID, 'aac_family_membership_access_until');
+		delete_user_meta($child_user->ID, 'aac_family_membership_pending_removal');
+
+		do_action('aac_member_portal_family_account_linked', $parent_user_id, (int) $child_user->ID);
+
+		$email_sent = $this->send_linked_account_password_setup_email($child_user, $parent_user, $slot);
+
+		return rest_ensure_response([
+			'success' => true,
+			'email_sent' => (bool) $email_sent,
+			'profile' => $this->build_profile($parent_user_id),
+		]);
+	}
+
 	public function change_password(WP_REST_Request $request) {
 		$user = wp_get_current_user();
 		$current_password = (string) $request->get_param('current_password');
@@ -640,22 +894,32 @@ class AAC_Member_Portal_API {
 		return rest_ensure_response($this->build_auth_response(wp_get_current_user()));
 	}
 
+	public function get_current_user_auth_payload() {
+		if (!is_user_logged_in()) {
+			return null;
+		}
+
+		$user = wp_get_current_user();
+		if (!$user instanceof WP_User || !$user->exists()) {
+			return null;
+		}
+
+		return $this->build_auth_response($user);
+	}
+
 	public function update_profile(WP_REST_Request $request) {
 		$user_id = get_current_user_id();
 		$account_info = $request->get_param('account_info');
 		$profile_info = $request->get_param('profile_info');
 		$benefits_info = $request->get_param('benefits_info');
-		$grant_applications = $request->get_param('grant_applications');
 		$saved_account_info = null;
 		$saved_profile_info = null;
 		$saved_benefits_info = null;
-		$saved_grant_applications = null;
 
 		if (
 			!is_array($account_info) &&
 			!is_array($profile_info) &&
-			!is_array($benefits_info) &&
-			!is_array($grant_applications)
+			!is_array($benefits_info)
 		) {
 			return new WP_Error('invalid_input', 'At least one profile section must be provided.', ['status' => 400]);
 		}
@@ -668,6 +932,11 @@ class AAC_Member_Portal_API {
 			$stored_account_info = get_user_meta($user_id, 'aac_account_info', true);
 			$stored_account_info = is_array($stored_account_info) ? $stored_account_info : [];
 			$sanitized_account_info = $this->sanitize_account_info($account_info, $stored_account_info);
+			$required_account_info_error = $this->validate_required_account_info($sanitized_account_info);
+			if (is_wp_error($required_account_info_error)) {
+				return $required_account_info_error;
+			}
+
 			$synced_account_info = $this->sync_wp_user_from_account_info($user_id, $sanitized_account_info);
 			if (is_wp_error($synced_account_info)) {
 				return $synced_account_info;
@@ -694,11 +963,7 @@ class AAC_Member_Portal_API {
 			update_user_meta($user_id, 'aac_benefits_info', $saved_benefits_info);
 		}
 
-		if (is_array($grant_applications)) {
-			$saved_grant_applications = $this->sanitize_member_editable_grant_applications($grant_applications);
-			update_user_meta($user_id, 'aac_grant_applications', $saved_grant_applications);
-		}
-
+		$this->flush_profile_cache_for_user($user_id);
 		$profile = $this->build_profile($user_id);
 		if (is_array($saved_account_info)) {
 			$profile['account_info'] = array_merge(
@@ -720,10 +985,8 @@ class AAC_Member_Portal_API {
 				$saved_benefits_info
 			);
 		}
-		if (is_array($saved_grant_applications)) {
-			$profile['grant_applications'] = $saved_grant_applications;
-		}
 		do_action('aac_member_portal_profile_updated', $user_id, $profile, $request);
+		$this->set_cached_profile($user_id, $profile);
 
 		return rest_ensure_response([
 			'success' => true,
@@ -731,273 +994,72 @@ class AAC_Member_Portal_API {
 		]);
 	}
 
-	public function submit_grant_application(WP_REST_Request $request) {
+	public function schedule_membership_downgrade(WP_REST_Request $request) {
 		$user_id = get_current_user_id();
-		$profile = $this->build_profile($user_id);
-		$account_info = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
-		$grant_slug = sanitize_title((string) $request->get_param('grant_slug'));
-		$grant_name = sanitize_text_field((string) $request->get_param('grant_name'));
-		$category = sanitize_text_field((string) $request->get_param('category'));
-		$field_definitions = $this->get_grant_builder_field_definitions();
-		$submitted_fields = $this->sanitize_portal_grant_submission_fields($request->get_param('fields'), $field_definitions);
-		$legacy_values = [
-			'project_title' => sanitize_text_field((string) $request->get_param('project_title')),
-			'requested_amount' => sanitize_text_field((string) $request->get_param('requested_amount')),
-			'objective_location' => sanitize_text_field((string) $request->get_param('objective_location')),
-			'discipline' => sanitize_text_field((string) $request->get_param('discipline')),
-			'team_name' => sanitize_text_field((string) $request->get_param('team_name')),
-			'summary' => sanitize_textarea_field((string) $request->get_param('summary')),
-		];
-		foreach ($submitted_fields as &$submitted_field) {
-			$field_key = sanitize_key($submitted_field['field_key'] ?? '');
-			if ($field_key && $submitted_field['value'] === '' && isset($legacy_values[$field_key])) {
-				$submitted_field['value'] = $legacy_values[$field_key];
-			}
-		}
-		unset($submitted_field);
-		$project_title = $this->get_grant_submission_field_value($submitted_fields, 'project_title');
-		$requested_amount = $this->get_grant_submission_field_value($submitted_fields, 'requested_amount');
-		$objective_location = $this->get_grant_submission_field_value($submitted_fields, 'objective_location');
-		$discipline = $this->get_grant_submission_field_value($submitted_fields, 'discipline');
-		$team_name = $this->get_grant_submission_field_value($submitted_fields, 'team_name');
-		$summary = $this->get_grant_submission_field_value($submitted_fields, 'summary');
+		$target_tier = sanitize_text_field((string) $request->get_param('target_tier'));
+		$target_tier = class_exists('AAC_Member_Portal_PMPro') ? AAC_Member_Portal_PMPro::normalize_tier_name($target_tier) : $target_tier;
 
-		if ($grant_slug === '' || $grant_name === '') {
-			return new WP_Error('invalid_input', 'Grant name and grant slug are required.', ['status' => 400]);
+		if ($user_id <= 0) {
+			return new WP_Error('not_authenticated', 'You must be logged in to schedule a downgrade.', ['status' => 401]);
 		}
 
-		foreach ($field_definitions as $field_definition) {
-			if (!empty($field_definition['required'])) {
-				$value = $this->get_grant_submission_field_value($submitted_fields, $field_definition['field_key'] ?? '');
-				if ($value === '') {
-					return new WP_Error('invalid_input', sprintf('%s is required.', $field_definition['label'] ?? 'This field'), ['status' => 400]);
-				}
-			}
+		if (!class_exists('AAC_Member_Portal_PMPro') || !AAC_Member_Portal_PMPro::is_available()) {
+			return new WP_Error('pmpro_unavailable', 'Membership changes are not available right now.', ['status' => 503]);
 		}
 
-		$repository = $this->get_grants_review_repository();
-		$submitted_at = current_time('mysql');
+		$current_membership = AAC_Member_Portal_PMPro::get_primary_membership($user_id);
+		if (!is_array($current_membership) || empty($current_membership['level_id'])) {
+			return new WP_Error('membership_not_found', 'We could not find an active membership to downgrade.', ['status' => 409]);
+		}
 
-		if ($repository && method_exists($repository, 'create_portal_application') && method_exists($repository, 'get_application') && method_exists($repository, 'format_application_for_member')) {
-			$normalized_fields = array_merge(
-				[
-					['field_id' => 'grant_slug', 'label' => 'Grant Slug', 'type' => 'text', 'value' => $grant_slug],
-					['field_id' => 'grant_category', 'label' => 'Grant Category', 'type' => 'text', 'value' => $category],
-				],
-				array_map(static function ($field) {
-					return [
-						'field_id' => $field['field_key'],
-						'label' => $field['label'],
-						'type' => $field['type'],
-						'value' => $field['value'],
-					];
-				}, $submitted_fields)
+		$target_level = AAC_Member_Portal_PMPro::find_level_by_tier($target_tier);
+		if (!is_object($target_level) || empty($target_level->id)) {
+			return new WP_Error('invalid_target_tier', 'Choose a valid membership level.', ['status' => 400]);
+		}
+
+		$current_rank = AAC_Member_Portal_PMPro::get_tier_rank_for_level_id((int) $current_membership['level_id']);
+		$target_rank = AAC_Member_Portal_PMPro::get_tier_rank_from_name($target_tier);
+		if ($current_rank <= 0 || $target_rank <= 0 || $target_rank >= $current_rank) {
+			return new WP_Error('not_a_downgrade', 'Only lower membership levels can be scheduled for renewal.', ['status' => 400]);
+		}
+
+		if (!AAC_Member_Portal_PMPro::has_active_auto_renewal($user_id, (int) $current_membership['level_id'])) {
+			return new WP_Error(
+				'downgrade_requires_autorenew',
+				'Downgrades can only be scheduled for memberships with active automatic renewal.',
+				['status' => 409]
 			);
-
-			try {
-				$raw_field_map = [];
-				foreach ($submitted_fields as $field) {
-					$raw_field_map[$field['field_key']] = $field['value'];
-				}
-
-				$application_id = $repository->create_portal_application([
-					'applicant_user_id' => $user_id,
-					'aac_member_id' => $this->normalize_member_id_value($profile['profile_info']['member_id'] ?? ''),
-					'applicant_name' => trim(($account_info['first_name'] ?? '') . ' ' . ($account_info['last_name'] ?? '')) ?: ($account_info['name'] ?? ''),
-					'applicant_email' => sanitize_email($account_info['email'] ?? ''),
-					'grant_name' => $grant_name,
-					'project_title' => $project_title,
-					'requested_amount' => $requested_amount,
-					'normalized_fields' => $normalized_fields,
-					'raw_payload' => [
-						'source' => 'portal',
-						'grant_slug' => $grant_slug,
-						'grant_name' => $grant_name,
-						'category' => $category,
-						'fields' => $raw_field_map,
-						'project_title' => $project_title,
-						'requested_amount' => $requested_amount,
-						'objective_location' => $objective_location,
-						'discipline' => $discipline,
-						'team_name' => $team_name,
-						'summary' => $summary,
-					],
-					'submitted_at' => $submitted_at,
-				]);
-
-				if (!$application_id) {
-					return new WP_Error('grant_submission_failed', 'Unable to save the grant application right now.', ['status' => 500]);
-				}
-
-				$application = $repository->get_application($application_id);
-				$fresh_profile = $this->build_profile($user_id);
-				do_action('aac_member_portal_grant_application_submitted', $user_id, $application, $fresh_profile, $request);
-
-				return rest_ensure_response([
-					'success' => true,
-					'application' => $repository->format_application_for_member($application),
-					'profile' => $fresh_profile,
-				]);
-			} catch (Throwable $exception) {
-				$this->log_grants_integration_failure('submit_grant_application', $exception, [
-					'user_id' => $user_id,
-					'grant_slug' => $grant_slug,
-				]);
-			}
 		}
 
-		$fallback_applications = $this->sanitize_member_editable_grant_applications(array_merge(
-			[
-				[
-					'id' => wp_generate_uuid4(),
-					'grant_slug' => $grant_slug,
-					'grant_name' => $grant_name,
-					'category' => $category,
-					'application_date' => gmdate('c', strtotime($submitted_at)),
-					'status' => 'Pending review',
-					'project_title' => $project_title,
-					'requested_amount' => $requested_amount,
-					'objective_location' => $objective_location,
-					'discipline' => $discipline,
-					'team_name' => $team_name,
-					'summary' => $summary,
-					'fields' => array_map(static function ($field) {
-						return [
-							'field_key' => $field['field_key'],
-							'label' => $field['label'],
-							'type' => $field['type'],
-							'value' => $field['value'],
-						];
-					}, $submitted_fields),
-				],
-			],
-			is_array($profile['grant_applications'] ?? null) ? $profile['grant_applications'] : []
-		));
-		update_user_meta($user_id, 'aac_grant_applications', $fallback_applications);
-		$fresh_profile = $this->build_profile($user_id);
+		if (!AAC_Member_Portal_PMPro::can_schedule_membership_downgrade($user_id, $current_membership)) {
+			return new WP_Error(
+				'downgrade_window_closed',
+				'Downgrades can only be scheduled within 30 days of your renewal date.',
+				['status' => 409]
+			);
+		}
 
+		$effective_date = sanitize_text_field((string) ($current_membership['renewal_date'] ?: $current_membership['expiration_date']));
+		if ($effective_date === '') {
+			return new WP_Error(
+				'missing_renewal_date',
+				'We could not determine the renewal date for this membership. Please contact AAC support to schedule the downgrade.',
+				['status' => 409]
+			);
+		}
+
+		update_user_meta($user_id, 'aac_pending_membership_downgrade', [
+			'target_level_id' => (int) $target_level->id,
+			'target_tier' => $target_tier,
+			'effective_date' => $effective_date,
+			'requested_at' => current_time('mysql'),
+			'status' => 'scheduled',
+		]);
+
+		$this->flush_profile_cache_for_user($user_id);
 		return rest_ensure_response([
 			'success' => true,
-			'profile' => $fresh_profile,
-			'application' => $fallback_applications[0] ?? null,
-		]);
-	}
-
-	public function get_grant_approval_queue(WP_REST_Request $request) {
-		$repository = $this->get_grants_review_repository();
-		if (!$repository) {
-			return new WP_Error('grant_review_unavailable', 'Grant review workflow is not available right now.', ['status' => 503]);
-		}
-
-		$status = sanitize_key((string) $request->get_param('status'));
-		$search = sanitize_text_field((string) $request->get_param('search'));
-		$applications = $repository->get_applications([
-			'status' => $status,
-			'search' => $search,
-			'limit' => 200,
-		]);
-		$counts = $repository->count_applications_by_status();
-		$labels = class_exists('AAC_Grants_Review_Repository')
-			? AAC_Grants_Review_Repository::get_workflow_labels()
-			: [];
-
-		return rest_ensure_response([
-			'applications' => array_values(array_filter(array_map([$this, 'format_grant_review_application_for_admin'], $applications))),
-			'counts' => is_array($counts) ? $counts : [],
-			'labels' => $labels,
-			'filters' => [
-				'status' => $status,
-				'search' => $search,
-			],
-			'reviewers' => $this->get_grant_review_reviewer_options(),
-			'currentUser' => [
-				'id' => get_current_user_id(),
-				'is_admin' => current_user_can('manage_options'),
-			],
-		]);
-	}
-
-	public function get_grant_approval_application(WP_REST_Request $request) {
-		$repository = $this->get_grants_review_repository();
-		if (!$repository) {
-			return new WP_Error('grant_review_unavailable', 'Grant review workflow is not available right now.', ['status' => 503]);
-		}
-
-		$application_id = absint($request['application_id']);
-		$application = $repository->get_application($application_id);
-		if (!$application) {
-			return new WP_Error('missing_application', 'Grant application not found.', ['status' => 404]);
-		}
-
-		return rest_ensure_response([
-			'application' => $this->format_grant_review_application_for_admin($application),
-			'labels' => class_exists('AAC_Grants_Review_Repository')
-				? AAC_Grants_Review_Repository::get_workflow_labels()
-				: [],
-			'transitions' => class_exists('AAC_Grants_Review_Repository')
-				? (AAC_Grants_Review_Repository::get_workflow_transitions()[$application['workflow_status']] ?? [])
-				: [],
-			'reviewers' => $this->get_grant_review_reviewer_options(),
-		]);
-	}
-
-	public function assign_grant_approval_reviewer(WP_REST_Request $request) {
-		$repository = $this->get_grants_review_repository();
-		if (!$repository) {
-			return new WP_Error('grant_review_unavailable', 'Grant review workflow is not available right now.', ['status' => 503]);
-		}
-
-		$application_id = absint($request['application_id']);
-		$assigned_reviewer_id = absint($request->get_param('assigned_reviewer_id'));
-		$repository->assign_reviewer($application_id, $assigned_reviewer_id, get_current_user_id());
-		$application = $repository->get_application($application_id);
-		if (!$application) {
-			return new WP_Error('missing_application', 'Grant application not found.', ['status' => 404]);
-		}
-
-		return rest_ensure_response([
-			'success' => true,
-			'application' => $this->format_grant_review_application_for_admin($application),
-		]);
-	}
-
-	public function update_grant_approval_workflow(WP_REST_Request $request) {
-		$repository = $this->get_grants_review_repository();
-		if (!$repository) {
-			return new WP_Error('grant_review_unavailable', 'Grant review workflow is not available right now.', ['status' => 503]);
-		}
-
-		$application_id = absint($request['application_id']);
-		$next_status = sanitize_key((string) $request->get_param('next_status'));
-		$note = sanitize_textarea_field((string) $request->get_param('note'));
-		$assigned_reviewer_id = $request->get_param('assigned_reviewer_id');
-		$assigned_reviewer_id = $assigned_reviewer_id === null ? null : absint($assigned_reviewer_id);
-		$allow_terminal_override = rest_sanitize_boolean($request->get_param('direct_terminal_decision'));
-
-		$result = $repository->update_workflow(
-			$application_id,
-			$next_status,
-			$note,
-			$assigned_reviewer_id,
-			get_current_user_id(),
-			$allow_terminal_override
-		);
-
-		if (is_wp_error($result)) {
-			return $result;
-		}
-
-		$application = $repository->get_application($application_id);
-		if (!$application) {
-			return new WP_Error('missing_application', 'Grant application not found.', ['status' => 404]);
-		}
-
-		return rest_ensure_response([
-			'success' => true,
-			'application' => $this->format_grant_review_application_for_admin($application),
-			'transitions' => class_exists('AAC_Grants_Review_Repository')
-				? (AAC_Grants_Review_Repository::get_workflow_transitions()[$application['workflow_status']] ?? [])
-				: [],
+			'profile' => $this->build_profile($user_id),
 		]);
 	}
 
@@ -1006,17 +1068,24 @@ class AAC_Member_Portal_API {
 		$message = sanitize_textarea_field($request->get_param('message'));
 		$sender_name = sanitize_text_field($request->get_param('name'));
 		$sender_email = sanitize_email($request->get_param('email')) ?: $current_user->user_email;
+		$issue_type = sanitize_text_field($request->get_param('issue_type'));
+		$allowed_issue_types = AAC_Member_Portal_Admin::get_contact_issue_types();
 
 		if (!$message) {
 			return new WP_Error('invalid_input', 'Message is required.', ['status' => 400]);
 		}
 
+		if (!in_array($issue_type, $allowed_issue_types, true)) {
+			return new WP_Error('invalid_input', 'Issue type is required.', ['status' => 400]);
+		}
+
 		$recipient_email = AAC_Member_Portal_Admin::get_contact_recipient_email();
-		$subject = 'AAC Member Portal Contact Message';
+		$subject = sprintf('AAC Member Portal: %s', $issue_type);
 		$body = sprintf(
-			"Name: %s\nEmail: %s\n\n%s",
+			"Name: %s\nEmail: %s\nIssue Type: %s\n\n%s",
 			$sender_name,
 			$sender_email,
+			$issue_type,
 			$message
 		);
 
@@ -1032,63 +1101,6 @@ class AAC_Member_Portal_API {
 		wp_mail($recipient_email, $subject, $body, $headers);
 
 		return rest_ensure_response(['success' => true]);
-	}
-
-	public function podcasts() {
-		$podcasts = get_posts([
-			'post_type' => 'podcast',
-			'post_status' => 'publish',
-			'numberposts' => 5,
-		]);
-
-		$items = array_map(function ($post) {
-			$title = get_the_title($post);
-			$description = has_excerpt($post)
-				? wp_strip_all_tags(get_the_excerpt($post), true)
-				: wp_strip_all_tags(wp_trim_words((string) $post->post_content, 34, '...'), true);
-			$embed_url = get_post_meta($post->ID, 'embed_url', true);
-			$source_url = get_post_meta($post->ID, 'source_url', true);
-
-			return [
-				'title' => $title ? html_entity_decode(wp_strip_all_tags($title), ENT_QUOTES) : '',
-				'description' => $description,
-				'published_at' => get_post_time('c', true, $post),
-				'source_url' => is_string($source_url) ? esc_url_raw($source_url) : '',
-				'embed_url' => is_string($embed_url) ? esc_url_raw($embed_url) : '',
-			];
-		}, $podcasts);
-
-		return rest_ensure_response([
-			'podcasts' => array_values(array_filter($items, function ($item) {
-				return !empty($item['embed_url']);
-			})),
-		]);
-	}
-
-	public function record_podcast_listen(WP_REST_Request $request) {
-		$user_id = get_current_user_id();
-		$payload = [
-			'episode_id' => sanitize_text_field((string) $request->get_param('episode_id')),
-			'episode_title' => sanitize_text_field((string) $request->get_param('episode_title')),
-			'source_url' => esc_url_raw((string) $request->get_param('source_url')),
-			'source_page_url' => esc_url_raw((string) $request->get_param('source_page_url')),
-			'embed_url' => esc_url_raw((string) $request->get_param('embed_url')),
-			'status' => sanitize_text_field((string) $request->get_param('status')),
-			'completion_percent' => (float) $request->get_param('completion_percent'),
-			'duration_ms' => (int) $request->get_param('duration_ms'),
-			'last_position_ms' => (int) $request->get_param('last_position_ms'),
-			'listener_ip' => $this->get_request_ip_address($request),
-		];
-
-		$listen = AAC_Member_Portal_Member_Database::record_podcast_listen($user_id, $payload);
-		if (is_wp_error($listen)) {
-			return $listen;
-		}
-
-		return rest_ensure_response([
-			'success' => true,
-			'listen' => $listen,
-		]);
 	}
 
 	private function get_request_ip_address(WP_REST_Request $request) {
@@ -1134,10 +1146,12 @@ class AAC_Member_Portal_API {
 			return [];
 		}
 
-		return $this->build_profile($user_id);
+		return $this->get_cached_profile($user_id);
 	}
 
 	private function build_auth_response($user, $rest_nonce = null) {
+		$can_access_admin = $user instanceof WP_User && $user->has_cap('edit_posts');
+
 		return [
 			'session' => [
 				'user' => [
@@ -1148,10 +1162,40 @@ class AAC_Member_Portal_API {
 			'user' => [
 				'id' => $user->ID,
 				'email' => $user->user_email,
+				'adminUrl' => $can_access_admin ? admin_url() : '',
 			],
-			'profile' => $this->build_profile($user->ID),
+			'profile' => $this->get_cached_profile($user->ID),
 			'restNonce' => $rest_nonce ?: wp_create_nonce('wp_rest'),
 		];
+	}
+
+	private function get_profile_cache_key($user_id) {
+		$settings_version = (string) get_option('aac_member_portal_profile_cache_version', '1');
+		return 'aac_member_profile_' . md5(AAC_MEMBER_PORTAL_VERSION . '|' . $settings_version) . '_' . (int) $user_id;
+	}
+
+	private function get_cached_profile($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return [];
+		}
+
+		$cached = get_transient($this->get_profile_cache_key($user_id));
+		if (is_array($cached)) {
+			return $cached;
+		}
+
+		$profile = $this->build_profile($user_id);
+		$this->set_cached_profile($user_id, $profile);
+		return $profile;
+	}
+
+	private function set_cached_profile($user_id, $profile) {
+		if ((int) $user_id <= 0 || !is_array($profile)) {
+			return;
+		}
+
+		set_transient($this->get_profile_cache_key($user_id), $profile, self::PROFILE_CACHE_TTL);
 	}
 
 	private function establish_fresh_auth_session($user_id) {
@@ -1221,14 +1265,11 @@ class AAC_Member_Portal_API {
 			'zip' => '',
 			'country' => '',
 			'size' => 'No T-shirt',
-			'email_opt_out' => false,
-			'do_not_call' => false,
-			'do_not_contact' => false,
-			'publication_pref' => 'Digital',
-			'aaj_pref' => 'Digital',
-			'anac_pref' => 'Digital',
-			'acj_pref' => 'Digital',
-			'guidebook_pref' => 'Digital',
+			'publication_pref' => 'Print',
+			'aaj_pref' => 'Print',
+			'anac_pref' => 'Print',
+			'acj_pref' => 'Print',
+			'guidebook_pref' => 'Print',
 			'magazine_subscriptions' => [],
 			'membership_discount_type' => '',
 			'auto_renew' => false,
@@ -1251,12 +1292,19 @@ class AAC_Member_Portal_API {
 			$account_info['auto_renew'] = false;
 		}
 
-		$grant_applications = $this->get_member_grant_applications($user_id, $account_info);
-
 		$connected_accounts = get_user_meta($user_id, 'aac_connected_accounts', true);
 		$connected_accounts = is_array($connected_accounts)
 			? $this->sanitize_connected_accounts($connected_accounts)
 			: [];
+		if (class_exists('AAC_Member_Portal_Group_Accounts')) {
+			$group_connected_accounts = AAC_Member_Portal_Group_Accounts::get_connected_accounts_for_parent($user_id);
+			if (!empty($group_connected_accounts)) {
+				$connected_accounts = $this->merge_connected_accounts(
+					$connected_accounts,
+					$this->sanitize_connected_accounts($group_connected_accounts)
+				);
+			}
+		}
 
 		$linked_parent_account = $this->build_linked_parent_account($user_id);
 
@@ -1264,13 +1312,20 @@ class AAC_Member_Portal_API {
 		$family_membership = is_array($family_membership)
 			? $this->sanitize_family_membership($family_membership)
 			: ['mode' => '', 'additional_adult' => false, 'dependent_count' => 0];
+		if (($family_membership['mode'] ?? '') !== 'family' && class_exists('AAC_Member_Portal_Group_Accounts')) {
+			$family_membership = $this->sanitize_family_membership(
+				AAC_Member_Portal_Group_Accounts::get_family_config_for_parent($user_id)
+			);
+		}
+		if (($family_membership['mode'] ?? '') !== 'family' && !empty($connected_accounts)) {
+			$family_membership = $this->family_membership_from_connected_accounts($connected_accounts);
+		}
 
 		$profile = [
 			'account_info' => $account_info,
 			'profile_info' => $profile_info,
 			'benefits_info' => $benefits_info,
 			'membership_actions' => $membership_actions,
-			'grant_applications' => $grant_applications,
 			'connected_accounts' => $connected_accounts,
 			'family_membership' => $family_membership,
 			'linked_parent_account' => $linked_parent_account,
@@ -1300,22 +1355,25 @@ class AAC_Member_Portal_API {
 			// of helper tiers.
 			$primary = AAC_Member_Portal_PMPro::get_primary_membership($membership_owner_user_id);
 			if ($primary) {
-				$status_reference_date = $family_membership_pending_removal
+				$valid_through_date = $family_membership_pending_removal
 					? $family_membership_active_until
-					: ($primary['expiration_date'] ?: $primary['renewal_date']);
+					: ($primary['valid_through_date'] ?: ($primary['expiration_date'] ?: $primary['renewal_date']));
+				$status_reference_date = $valid_through_date;
 				$primary_tier = $is_linked_child_account
 					? 'Partner'
 					: (isset($primary['tier']) && $primary['tier'] === 'Partner Family'
 						? 'Partner'
 						: $primary['tier']);
+				$primary_status = sanitize_key((string) ($primary['status'] ?? ''));
 
 					return [
 						'member_id' => $member_id ?: (string) $user_id,
 					'tier' => $primary_tier,
 					'renewal_date' => $family_membership_pending_removal ? '' : $primary['renewal_date'],
 					'expiration_date' => $family_membership_pending_removal ? $family_membership_active_until : $primary['expiration_date'],
+					'valid_through_date' => $valid_through_date,
 					'joined_date' => $primary['joined_date'] ?? '',
-					'status' => $this->membership_status_pmpro($status_reference_date),
+					'status' => $this->membership_status_pmpro($status_reference_date, $primary_status),
 				];
 			}
 		}
@@ -1325,6 +1383,7 @@ class AAC_Member_Portal_API {
 			'tier' => 'Free',
 			'renewal_date' => '',
 			'expiration_date' => '',
+			'valid_through_date' => '',
 			'joined_date' => '',
 			'status' => 'Inactive',
 		];
@@ -1388,6 +1447,74 @@ class AAC_Member_Portal_API {
 		return $matrix[$normalized_tier] ?? $fallback;
 	}
 
+	private function load_university_school_index() {
+		if (is_array(self::$university_school_index)) {
+			return self::$university_school_index;
+		}
+
+		self::$university_school_index = [];
+		$data_path = AAC_MEMBER_PORTAL_DIR . 'includes/data/us-universities-dapip-static.json';
+		if (!is_readable($data_path)) {
+			$data_path = AAC_MEMBER_PORTAL_DIR . 'includes/data/us-universities-scorecard-seed.json';
+		}
+
+		if (!is_readable($data_path)) {
+			return self::$university_school_index;
+		}
+
+		$payload = json_decode((string) file_get_contents($data_path), true);
+		$schools = is_array($payload['schools'] ?? null) ? $payload['schools'] : [];
+
+		foreach ($schools as $school) {
+			if (!is_array($school)) {
+				continue;
+			}
+
+			$name = trim((string) ($school['name'] ?? ''));
+			if ($name === '') {
+				continue;
+			}
+
+			$city = trim((string) ($school['city'] ?? ''));
+			$state = trim((string) ($school['state'] ?? ''));
+			$parent = trim((string) ($school['parent'] ?? ''));
+			$location = trim(implode(', ', array_filter([$city, $state])));
+			$campus_label = $parent !== '' && strcasecmp($parent, $name) !== 0 ? sprintf('%s (%s)', $name, $parent) : $name;
+			$label = trim(implode(' - ', array_filter([$campus_label, $location])));
+			$public = [
+				'id' => sanitize_text_field((string) ($school['id'] ?? '')),
+				'name' => sanitize_text_field($name),
+				'city' => sanitize_text_field($city),
+				'state' => sanitize_text_field($state),
+				'parent' => sanitize_text_field($parent),
+			];
+
+			self::$university_school_index[] = [
+				'label' => $label,
+				'public' => $public,
+				'name_search' => $this->normalize_university_search_value($name),
+				'parent_search' => $this->normalize_university_search_value($parent),
+				'location_search' => $this->normalize_university_search_value($location),
+				'search' => $this->normalize_university_search_value(implode(' ', [
+					$name,
+					$parent,
+					$city,
+					$state,
+					$school['type'] ?? '',
+					$school['address'] ?? '',
+				])),
+			];
+		}
+
+		return self::$university_school_index;
+	}
+
+	private function normalize_university_search_value($value) {
+		$value = strtolower((string) $value);
+		$value = preg_replace('/[^a-z0-9]+/', ' ', $value);
+		return trim((string) $value);
+	}
+
 	private function build_membership_actions($user_id, $profile_info) {
 		if (AAC_Member_Portal_PMPro::is_available()) {
 			return AAC_Member_Portal_PMPro::build_membership_actions($user_id, $profile_info);
@@ -1400,6 +1527,8 @@ class AAC_Member_Portal_API {
 			'current_level_id' => null,
 			'current_subscription_id' => null,
 			'current_level_checkout_url' => '',
+			'add_dependent_checkout_url' => '',
+			'pending_downgrade' => null,
 			'levels' => new stdClass(),
 		];
 	}
@@ -1407,12 +1536,18 @@ class AAC_Member_Portal_API {
 	/**
 	 * PMPro: empty renewal means no fixed expiration date, which we treat as active.
 	 */
-	private function membership_status_pmpro($renewal_date) {
+	private function membership_status_pmpro($renewal_date, $pmpro_status = '') {
+		$pmpro_status = sanitize_key((string) $pmpro_status);
 		if ($renewal_date === '' || $renewal_date === null) {
+			return in_array($pmpro_status, ['expired', 'inactive'], true) ? 'Inactive' : 'Active';
+		}
+
+		$is_future_date = strtotime($renewal_date . ' 23:59:59') >= current_time('timestamp');
+		if ($is_future_date || in_array($pmpro_status, ['active', 'trialing'], true)) {
 			return 'Active';
 		}
 
-		return strtotime($renewal_date . ' 23:59:59') >= current_time('timestamp') ? 'Active' : 'Inactive';
+		return 'Inactive';
 	}
 
 	private function has_managed_membership_plugin() {
@@ -1429,12 +1564,12 @@ class AAC_Member_Portal_API {
 					$values['anac_pref'] ?? '',
 					$this->normalize_print_digital_value(
 						$values['acj_pref'] ?? '',
-						$this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Digital')
+						$this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Print')
 					)
 				)
 			)
 		);
-		$guidebook_pref = $this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Digital');
+		$guidebook_pref = $this->normalize_print_digital_value($values['guidebook_pref'] ?? 'Print');
 
 		return [
 			'publication_pref' => $legacy_publication_pref,
@@ -1445,7 +1580,7 @@ class AAC_Member_Portal_API {
 		];
 	}
 
-	private function normalize_print_digital_value($value, $fallback = 'Digital') {
+	private function normalize_print_digital_value($value, $fallback = 'Print') {
 		return $value === 'Print' ? 'Print' : ($value === 'Digital' ? 'Digital' : $fallback);
 	}
 
@@ -1534,10 +1669,11 @@ class AAC_Member_Portal_API {
 			'emergency_contact_phone' => sanitize_text_field($account_info['emergency_contact_phone'] ?? ''),
 			'emergency_contact_email' => sanitize_email($account_info['emergency_contact_email'] ?? ''),
 			'emergency_contact_relationship' => sanitize_text_field($account_info['emergency_contact_relationship'] ?? ''),
+			'student_university' => sanitize_text_field($account_info['student_university'] ?? $account_info['university_or_school'] ?? ''),
+			'student_university_id' => sanitize_text_field($account_info['student_university_id'] ?? $account_info['university_school_id'] ?? ''),
+			'graduation_date' => $this->sanitize_birthdate_value($account_info['graduation_date'] ?? $account_info['student_graduation_date'] ?? ''),
+			'service_component' => sanitize_text_field($account_info['service_component'] ?? $account_info['service_branch'] ?? $account_info['military_service_component'] ?? ''),
 			'size' => $this->normalize_tshirt_size_value($account_info['size'] ?? $stored_tshirt_size, $stored_tshirt_size),
-			'email_opt_out' => !empty($account_info['email_opt_out']),
-			'do_not_call' => !empty($account_info['do_not_call']),
-			'do_not_contact' => !empty($account_info['do_not_contact']),
 			'aaj_pref' => $publication_preferences['aaj_pref'],
 			'anac_pref' => $publication_preferences['anac_pref'],
 			'acj_pref' => $publication_preferences['acj_pref'],
@@ -1548,8 +1684,40 @@ class AAC_Member_Portal_API {
 		];
 	}
 
+	private function validate_required_account_info($account_info) {
+		$required_fields = [
+			'first_name' => 'First name',
+			'last_name' => 'Last name',
+			'email' => 'Email',
+			'street' => 'Street address',
+			'city' => 'City',
+			'state' => 'State / Province',
+			'zip' => 'ZIP / Postal code',
+			'country' => 'Country',
+		];
+
+		foreach ($required_fields as $field_key => $field_label) {
+			if (trim((string) ($account_info[$field_key] ?? '')) === '') {
+				return new WP_Error(
+					'missing_required_account_info',
+					sprintf('%s is required.', $field_label),
+					['status' => 400, 'field' => $field_key]
+				);
+			}
+		}
+
+		if (!is_email($account_info['email'] ?? '')) {
+			return new WP_Error('invalid_email', 'A valid email address is required.', ['status' => 400, 'field' => 'email']);
+		}
+
+		return true;
+	}
+
 	private function get_pmpro_managed_account_info_keys() {
 		return [
+			'first_name',
+			'last_name',
+			'name',
 			'phone',
 			'birthdate',
 			'street',
@@ -1563,10 +1731,11 @@ class AAC_Member_Portal_API {
 			'emergency_contact_phone',
 			'emergency_contact_email',
 			'emergency_contact_relationship',
+			'student_university',
+			'student_university_id',
+			'graduation_date',
+			'service_component',
 			'size',
-			'email_opt_out',
-			'do_not_call',
-			'do_not_contact',
 			'publication_pref',
 			'aaj_pref',
 			'anac_pref',
@@ -1635,13 +1804,16 @@ class AAC_Member_Portal_API {
 			return $account_info;
 		}
 
-		$account_info['phone'] = $this->get_preferred_user_meta_value($user_id, ['bphone'], $account_info['phone'] ?? '');
-		$account_info['street'] = $this->get_preferred_user_meta_value($user_id, ['baddress1'], $account_info['street'] ?? '');
-		$account_info['address2'] = $this->get_preferred_user_meta_value($user_id, ['baddress2'], $account_info['address2'] ?? '');
-		$account_info['city'] = $this->get_preferred_user_meta_value($user_id, ['bcity'], $account_info['city'] ?? '');
-		$account_info['state'] = $this->get_preferred_user_meta_value($user_id, ['bstate'], $account_info['state'] ?? '');
-		$account_info['zip'] = $this->get_preferred_user_meta_value($user_id, ['bzipcode'], $account_info['zip'] ?? '');
-		$account_info['country'] = $this->get_preferred_user_meta_value($user_id, ['bcountry'], $account_info['country'] ?? '');
+		$account_info['first_name'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_sfirstname', 'first_name', 'bfirstname'], $account_info['first_name'] ?? '');
+		$account_info['last_name'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_slastname', 'last_name', 'blastname'], $account_info['last_name'] ?? '');
+		$account_info['name'] = trim((string) ($account_info['first_name'] ?? '') . ' ' . (string) ($account_info['last_name'] ?? '')) ?: ($account_info['name'] ?? '');
+		$account_info['phone'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_sphone', 'bphone'], $account_info['phone'] ?? '');
+		$account_info['street'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_saddress1', 'saddress1', 'baddress1'], $account_info['street'] ?? '');
+		$account_info['address2'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_saddress2', 'saddress2', 'baddress2'], $account_info['address2'] ?? '');
+		$account_info['city'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_scity', 'scity', 'bcity'], $account_info['city'] ?? '');
+		$account_info['state'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_sstate', 'sstate', 'bstate'], $account_info['state'] ?? '');
+		$account_info['zip'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_szipcode', 'szipcode', 'bzipcode'], $account_info['zip'] ?? '');
+		$account_info['country'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_scountry', 'scountry', 'bcountry'], $account_info['country'] ?? '');
 		$account_info['emergency_contact_first_name'] = sanitize_text_field(
 			$this->get_preferred_user_meta_value(
 				$user_id,
@@ -1678,32 +1850,36 @@ class AAC_Member_Portal_API {
 			)
 		);
 		$account_info['emergency_contact_relationship_options'] = $this->get_emergency_contact_relationship_options();
+		$account_info['student_university'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value($user_id, ['student_university', 'university_or_school'], $account_info['student_university'] ?? '')
+		);
+		$account_info['student_university_id'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value($user_id, ['student_university_id', 'university_school_id'], $account_info['student_university_id'] ?? '')
+		);
+		$account_info['graduation_date'] = $this->sanitize_birthdate_value(
+			$this->get_preferred_user_meta_value($user_id, ['graduation_date', 'student_graduation_date'], $account_info['graduation_date'] ?? '')
+		);
+		$account_info['service_component'] = sanitize_text_field(
+			$this->get_preferred_user_meta_value($user_id, ['service_component', 'service_branch', 'military_service_component'], $account_info['service_component'] ?? '')
+		);
 		$account_info['birthdate'] = $this->sanitize_birthdate_value(
 			$this->get_preferred_user_meta_value($user_id, ['birthdate'], $account_info['birthdate'] ?? '')
 		);
 		$account_info['size'] = $this->normalize_tshirt_size_value(
 			$this->get_preferred_user_meta_value($user_id, ['t_shirt'], $account_info['size'] ?? 'No T-shirt')
 		);
-		$account_info['email_opt_out'] = $this->normalize_boolean_meta_value(
-			$this->get_preferred_user_meta_value($user_id, ['email_opt_out'], $account_info['email_opt_out'] ?? false)
-		);
-		$account_info['do_not_call'] = $this->normalize_boolean_meta_value(
-			$this->get_preferred_user_meta_value($user_id, ['do_not_call'], $account_info['do_not_call'] ?? false)
-		);
-		$account_info['do_not_contact'] = $this->normalize_boolean_meta_value(
-			$this->get_preferred_user_meta_value($user_id, ['do_not_contact'], $account_info['do_not_contact'] ?? false)
-		);
+		unset($account_info['email_opt_out'], $account_info['do_not_call'], $account_info['do_not_contact']);
 		$account_info['aaj_pref'] = $this->normalize_print_digital_value(
-			$this->get_preferred_user_meta_value($user_id, ['aaj_preference'], $account_info['aaj_pref'] ?? 'Digital')
+			$this->get_preferred_user_meta_value($user_id, ['aaj_preference'], $account_info['aaj_pref'] ?? 'Print')
 		);
 		$account_info['anac_pref'] = $this->normalize_print_digital_value(
-			$this->get_preferred_user_meta_value($user_id, ['anac_preference'], $account_info['anac_pref'] ?? 'Digital')
+			$this->get_preferred_user_meta_value($user_id, ['anac_preference'], $account_info['anac_pref'] ?? 'Print')
 		);
 		$account_info['acj_pref'] = $this->normalize_print_digital_value(
-			$this->get_preferred_user_meta_value($user_id, ['american_climbing_journal_preference'], $account_info['acj_pref'] ?? 'Digital')
+			$this->get_preferred_user_meta_value($user_id, ['american_climbing_journal_preference'], $account_info['acj_pref'] ?? 'Print')
 		);
 		$account_info['guidebook_pref'] = $this->normalize_print_digital_value(
-			$this->get_preferred_user_meta_value($user_id, ['guidebook_preferences'], $account_info['guidebook_pref'] ?? 'Digital')
+			$this->get_preferred_user_meta_value($user_id, ['guidebook_preferences'], $account_info['guidebook_pref'] ?? 'Print')
 		);
 		unset($account_info['phone_type'], $account_info['payment_method']);
 
@@ -1808,302 +1984,6 @@ class AAC_Member_Portal_API {
 		];
 	}
 
-	private function sanitize_grant_applications($grant_applications) {
-		if (!is_array($grant_applications)) {
-			return [];
-		}
-
-		return array_values(array_filter(array_map(function ($application) {
-			if (!is_array($application)) {
-				return null;
-			}
-
-			$status = sanitize_text_field($application['status'] ?? 'Pending review');
-			if (!in_array($status, ['Pending review', 'Submitted', 'Eligibility Review', 'Committee Review', 'Needs Revision', 'Approved', 'Rejected'], true)) {
-				$status = 'Pending review';
-			}
-
-			$application_date = sanitize_text_field($application['application_date'] ?? '');
-			if ($application_date === '') {
-				$application_date = current_time('c');
-			}
-
-			return [
-				'id' => sanitize_text_field($application['id'] ?? wp_generate_uuid4()),
-				'review_application_id' => absint($application['review_application_id'] ?? 0),
-				'aac_member_id' => $this->normalize_member_id_value($application['aac_member_id'] ?? ''),
-				'grant_slug' => sanitize_title($application['grant_slug'] ?? ''),
-				'grant_name' => sanitize_text_field($application['grant_name'] ?? ''),
-				'category' => sanitize_text_field($application['category'] ?? ''),
-				'application_date' => $application_date,
-				'status' => $status,
-				'status_key' => sanitize_key($application['status_key'] ?? ''),
-				'project_title' => sanitize_text_field($application['project_title'] ?? ''),
-				'requested_amount' => sanitize_text_field($application['requested_amount'] ?? ''),
-				'objective_location' => sanitize_text_field($application['objective_location'] ?? ''),
-				'discipline' => sanitize_text_field($application['discipline'] ?? ''),
-				'team_name' => sanitize_text_field($application['team_name'] ?? ''),
-				'summary' => sanitize_textarea_field($application['summary'] ?? ''),
-				'fields' => $this->sanitize_grant_submission_fields_for_profile($application['fields'] ?? []),
-				'last_note' => sanitize_textarea_field($application['last_note'] ?? ''),
-				'reviewed_at' => sanitize_text_field($application['reviewed_at'] ?? ''),
-			];
-		}, $grant_applications)));
-	}
-
-	private function get_grant_builder_field_definitions() {
-		if (class_exists('AAC_Member_Portal_Admin') && method_exists('AAC_Member_Portal_Admin', 'get_settings')) {
-			$settings = AAC_Member_Portal_Admin::get_settings();
-			$fields = isset($settings['content']['grant_form_fields']) && is_array($settings['content']['grant_form_fields'])
-				? array_values($settings['content']['grant_form_fields'])
-				: [];
-			if (!empty($fields)) {
-				return array_values(array_filter(array_map(function ($field) {
-					if (!is_array($field)) {
-						return null;
-					}
-
-					$field_key = sanitize_key($field['field_key'] ?? '');
-					$label = sanitize_text_field($field['label'] ?? '');
-					$type = sanitize_key($field['type'] ?? 'text');
-					if (!in_array($type, ['text', 'email', 'number', 'textarea', 'select'], true)) {
-						$type = 'text';
-					}
-
-					if ($field_key === '' || $label === '') {
-						return null;
-					}
-
-					return [
-						'field_key' => $field_key,
-						'label' => $label,
-						'type' => $type,
-						'required' => !empty($field['required']),
-					];
-				}, $fields)));
-			}
-		}
-
-		return [
-			['field_key' => 'project_title', 'label' => 'Project Title', 'type' => 'text', 'required' => true],
-			['field_key' => 'requested_amount', 'label' => 'Amount Requested', 'type' => 'number', 'required' => true],
-			['field_key' => 'objective_location', 'label' => 'Objective / Project Location', 'type' => 'text', 'required' => false],
-			['field_key' => 'discipline', 'label' => 'Discipline', 'type' => 'text', 'required' => false],
-			['field_key' => 'team_name', 'label' => 'Team / Partners', 'type' => 'text', 'required' => false],
-			['field_key' => 'summary', 'label' => 'Project Summary', 'type' => 'textarea', 'required' => true],
-		];
-	}
-
-	private function sanitize_portal_grant_submission_fields($submitted_fields, $field_definitions) {
-		$submitted_fields = is_array($submitted_fields) ? $submitted_fields : [];
-		$submitted_lookup = [];
-
-		foreach ($submitted_fields as $field) {
-			if (!is_array($field)) {
-				continue;
-			}
-
-			$field_key = sanitize_key($field['field_key'] ?? '');
-			if ($field_key === '') {
-				continue;
-			}
-
-			$submitted_lookup[$field_key] = $field;
-		}
-
-		$normalized = [];
-		foreach ($field_definitions as $definition) {
-			$field_key = sanitize_key($definition['field_key'] ?? '');
-			if ($field_key === '') {
-				continue;
-			}
-
-			$submitted = $submitted_lookup[$field_key] ?? [];
-			$normalized[] = [
-				'field_key' => $field_key,
-				'label' => sanitize_text_field($definition['label'] ?? ''),
-				'type' => sanitize_key($definition['type'] ?? 'text'),
-				'value' => $this->normalize_grant_submission_value($submitted['value'] ?? '', $definition['type'] ?? 'text'),
-			];
-		}
-
-		return $normalized;
-	}
-
-	private function normalize_grant_submission_value($value, $type) {
-		if (is_array($value)) {
-			$value = implode(', ', array_map('sanitize_text_field', $value));
-		}
-
-		if (sanitize_key($type) === 'textarea') {
-			return sanitize_textarea_field((string) $value);
-		}
-
-		return sanitize_text_field((string) $value);
-	}
-
-	private function get_grant_submission_field_value($fields, $field_key) {
-		$field_key = sanitize_key($field_key);
-		foreach ((array) $fields as $field) {
-			if (sanitize_key($field['field_key'] ?? '') === $field_key) {
-				return trim((string) ($field['value'] ?? ''));
-			}
-		}
-
-		return '';
-	}
-
-	private function sanitize_grant_submission_fields_for_profile($fields) {
-		if (!is_array($fields)) {
-			return [];
-		}
-
-		return array_values(array_filter(array_map(function ($field) {
-			if (!is_array($field)) {
-				return null;
-			}
-
-			$field_key = sanitize_key($field['field_key'] ?? '');
-			$label = sanitize_text_field($field['label'] ?? '');
-			$type = sanitize_key($field['type'] ?? 'text');
-			if ($field_key === '' || $label === '') {
-				return null;
-			}
-
-			return [
-				'field_key' => $field_key,
-				'label' => $label,
-				'type' => $type,
-				'value' => $type === 'textarea'
-					? sanitize_textarea_field($field['value'] ?? '')
-					: sanitize_text_field($field['value'] ?? ''),
-			];
-		}, $fields)));
-	}
-
-	private function format_grant_review_application_for_admin($application) {
-		if (!is_array($application)) {
-			return null;
-		}
-
-		$normalized_fields = [];
-		$raw_normalized_fields = $application['normalized_fields'] ?? [];
-		$repository = $this->get_grants_review_repository();
-		if ($repository && method_exists($repository, 'prepare_normalized_fields_for_display')) {
-			$normalized_fields = $repository->prepare_normalized_fields_for_display($raw_normalized_fields);
-		} elseif (is_array($raw_normalized_fields)) {
-			$normalized_fields = $raw_normalized_fields;
-		}
-
-		$workflow_status = sanitize_key((string) ($application['workflow_status'] ?? 'submitted'));
-		$workflow_labels = class_exists('AAC_Grants_Review_Repository')
-			? AAC_Grants_Review_Repository::get_workflow_labels()
-			: [];
-		$assigned_user = !empty($application['assigned_reviewer_id'])
-			? get_userdata(absint($application['assigned_reviewer_id']))
-			: null;
-		$history = array_map(static function ($event) {
-			return [
-				'id' => absint($event['id'] ?? 0),
-				'action' => sanitize_key((string) ($event['action'] ?? '')),
-				'from_status' => sanitize_key((string) ($event['from_status'] ?? '')),
-				'to_status' => sanitize_key((string) ($event['to_status'] ?? '')),
-				'note' => sanitize_textarea_field((string) ($event['note'] ?? '')),
-				'actor_name' => sanitize_text_field((string) ($event['actor_name'] ?? 'System')),
-				'created_at' => sanitize_text_field((string) ($event['created_at'] ?? '')),
-			];
-		}, is_array($application['history'] ?? null) ? $application['history'] : []);
-
-		return [
-			'id' => absint($application['id'] ?? 0),
-			'aac_member_id' => sanitize_text_field((string) ($application['aac_member_id'] ?? '')),
-			'applicant_user_id' => absint($application['applicant_user_id'] ?? 0),
-			'applicant_name' => sanitize_text_field((string) ($application['applicant_name'] ?? '')),
-			'applicant_email' => sanitize_email((string) ($application['applicant_email'] ?? '')),
-			'grant_name' => sanitize_text_field((string) ($application['grant_name'] ?? '')),
-			'project_title' => sanitize_text_field((string) ($application['project_title'] ?? '')),
-			'requested_amount' => (float) ($application['requested_amount'] ?? 0),
-			'requested_amount_formatted' => '$' . number_format((float) ($application['requested_amount'] ?? 0), 2),
-			'workflow_status' => $workflow_status,
-			'workflow_status_label' => sanitize_text_field((string) ($workflow_labels[$workflow_status] ?? ucfirst(str_replace('_', ' ', $workflow_status)))),
-			'assigned_reviewer_id' => absint($application['assigned_reviewer_id'] ?? 0),
-			'assigned_reviewer_name' => $assigned_user ? sanitize_text_field($assigned_user->display_name) : 'Unassigned',
-			'submitted_at' => sanitize_text_field((string) ($application['submitted_at'] ?? '')),
-			'reviewed_at' => sanitize_text_field((string) ($application['reviewed_at'] ?? '')),
-			'last_note' => sanitize_textarea_field((string) ($application['last_note'] ?? '')),
-			'source' => sanitize_key((string) ($application['source'] ?? '')),
-			'fields' => $normalized_fields,
-			'history' => $history,
-		];
-	}
-
-	private function get_grant_review_reviewer_options() {
-		if (!class_exists('AAC_Grants_Review_Installer')) {
-			return [];
-		}
-
-		$reviewers = get_users([
-			'capability' => AAC_Grants_Review_Installer::REVIEW_CAP,
-			'orderby' => 'display_name',
-			'order' => 'ASC',
-		]);
-
-		return array_values(array_map(static function ($user) {
-			return [
-				'id' => absint($user->ID),
-				'name' => sanitize_text_field($user->display_name),
-				'email' => sanitize_email($user->user_email),
-			];
-		}, is_array($reviewers) ? $reviewers : []));
-	}
-
-	private function get_grants_review_repository() {
-		if (!class_exists('AAC_Grants_Review_Repository') || !class_exists('AAC_Grants_Review_Settings')) {
-			return null;
-		}
-
-		return new AAC_Grants_Review_Repository(new AAC_Grants_Review_Settings());
-	}
-
-	private function get_member_grant_applications($user_id, $account_info = []) {
-		$repository = $this->get_grants_review_repository();
-		if ($repository && method_exists($repository, 'get_member_applications')) {
-			try {
-				$applications = $repository->get_member_applications(
-					(int) $user_id,
-					sanitize_email($account_info['email'] ?? '')
-				);
-				if (!empty($applications)) {
-					return $this->sanitize_grant_applications($applications);
-				}
-			} catch (Throwable $exception) {
-				$this->log_grants_integration_failure('get_member_grant_applications', $exception, [
-					'user_id' => $user_id,
-				]);
-			}
-		}
-
-		$grant_applications = get_user_meta($user_id, 'aac_grant_applications', true);
-		return is_array($grant_applications)
-			? $this->sanitize_grant_applications($grant_applications)
-			: [];
-	}
-
-	private function log_grants_integration_failure($context, Throwable $exception, $extra = []) {
-		if (!function_exists('error_log')) {
-			return;
-		}
-
-		$payload = array_merge([
-			'context' => $context,
-			'message' => $exception->getMessage(),
-			'file' => $exception->getFile(),
-			'line' => $exception->getLine(),
-		], is_array($extra) ? $extra : []);
-
-		error_log('AAC grants integration failure: ' . wp_json_encode($payload));
-	}
-
 	private function sanitize_family_membership($family_membership) {
 		if (!is_array($family_membership)) {
 			return ['mode' => '', 'additional_adult' => false, 'dependent_count' => 0];
@@ -2154,6 +2034,50 @@ class AAC_Member_Portal_API {
 				'scheduled_removal_date' => $this->normalize_family_membership_access_date($account['scheduled_removal_date'] ?? ''),
 			];
 		}, $connected_accounts)));
+	}
+
+	private function merge_connected_accounts($stored_accounts, $group_accounts) {
+		$merged = [];
+		$seen = [];
+		foreach (array_merge((array) $stored_accounts, (array) $group_accounts) as $account) {
+			if (!is_array($account)) {
+				continue;
+			}
+
+			$child_user_id = absint($account['child_user_id'] ?? 0);
+			$slot_id = sanitize_text_field((string) ($account['id'] ?? ''));
+			$key = $child_user_id > 0 ? 'child-' . $child_user_id : 'slot-' . $slot_id;
+			if ($key === 'slot-' || isset($seen[$key])) {
+				continue;
+			}
+
+			$seen[$key] = true;
+			$merged[] = $account;
+		}
+
+		return $this->sanitize_connected_accounts($merged);
+	}
+
+	private function family_membership_from_connected_accounts($connected_accounts) {
+		$dependent_count = 0;
+		$has_adult = false;
+		foreach ((array) $connected_accounts as $account) {
+			if (!is_array($account) || ($account['status'] ?? '') === 'removal_pending') {
+				continue;
+			}
+
+			if (($account['type'] ?? '') === 'adult') {
+				$has_adult = true;
+			} elseif (($account['type'] ?? '') === 'dependent') {
+				$dependent_count++;
+			}
+		}
+
+		return [
+			'mode' => ($has_adult || $dependent_count > 0) ? 'family' : '',
+			'additional_adult' => $has_adult,
+			'dependent_count' => max(0, min(3, $dependent_count)),
+		];
 	}
 
 	private function sanitize_linked_parent_account($linked_parent_account) {
@@ -2263,6 +2187,26 @@ class AAC_Member_Portal_API {
 		];
 	}
 
+	private function send_linked_account_password_setup_email(WP_User $child_user, WP_User $parent_user, array $slot) {
+		$reset_key = get_password_reset_key($child_user);
+		if (is_wp_error($reset_key)) {
+			return false;
+		}
+
+		$reset_url = network_site_url(
+			'wp-login.php?action=rp&key=' . rawurlencode($reset_key) . '&login=' . rawurlencode($child_user->user_login),
+			'login'
+		);
+		$parent_name = trim($parent_user->first_name . ' ' . $parent_user->last_name) ?: $parent_user->display_name;
+		$slot_label = sanitize_text_field($slot['label'] ?? 'family member');
+
+		return wp_mail(
+			$child_user->user_email,
+			'Set up your American Alpine Club account',
+			"{$parent_name} created an American Alpine Club {$slot_label} account for you.\n\nUse this secure link to set your password and sign in:\n\n{$reset_url}\n\nIf you were not expecting this email, you can ignore it."
+		);
+	}
+
 	private function generate_unique_username_from_email($email) {
 		$email_parts = explode('@', (string) $email);
 		$username = sanitize_user($email_parts[0] ?? 'aacmember', true);
@@ -2327,27 +2271,41 @@ class AAC_Member_Portal_API {
 		}
 
 		$publication_preferences = $this->get_normalized_publication_preferences($account_info);
+		$first_name = sanitize_text_field($account_info['first_name'] ?? '');
+		$last_name = sanitize_text_field($account_info['last_name'] ?? '');
+		update_user_meta($user_id, 'first_name', $first_name);
+		update_user_meta($user_id, 'last_name', $last_name);
+		update_user_meta($user_id, 'pmpro_sfirstname', $first_name);
+		update_user_meta($user_id, 'pmpro_slastname', $last_name);
 		update_user_meta($user_id, 'birthdate', $this->sanitize_birthdate_value($account_info['birthdate'] ?? ''));
 		update_user_meta($user_id, 't_shirt', sanitize_text_field($account_info['size'] ?? ''));
-		update_user_meta($user_id, 'email_opt_out', !empty($account_info['email_opt_out']) ? '1' : '0');
-		update_user_meta($user_id, 'do_not_call', !empty($account_info['do_not_call']) ? '1' : '0');
-		update_user_meta($user_id, 'do_not_contact', !empty($account_info['do_not_contact']) ? '1' : '0');
-		update_user_meta($user_id, 'bphone', sanitize_text_field($account_info['phone'] ?? ''));
-		update_user_meta($user_id, 'baddress1', sanitize_text_field($account_info['street'] ?? ''));
-		update_user_meta($user_id, 'baddress2', sanitize_text_field($account_info['address2'] ?? ''));
-		update_user_meta($user_id, 'bcity', sanitize_text_field($account_info['city'] ?? ''));
-		update_user_meta($user_id, 'bstate', sanitize_text_field($account_info['state'] ?? ''));
-		update_user_meta($user_id, 'bzipcode', sanitize_text_field($account_info['zip'] ?? ''));
-		update_user_meta($user_id, 'bcountry', sanitize_text_field($account_info['country'] ?? ''));
+		$phone = sanitize_text_field($account_info['phone'] ?? '');
+		$street = sanitize_text_field($account_info['street'] ?? '');
+		$address2 = sanitize_text_field($account_info['address2'] ?? '');
+		$city = sanitize_text_field($account_info['city'] ?? '');
+		$state = sanitize_text_field($account_info['state'] ?? '');
+		$zip = sanitize_text_field($account_info['zip'] ?? '');
+		$country = sanitize_text_field($account_info['country'] ?? '');
+		update_user_meta($user_id, 'pmpro_sphone', $phone);
+		update_user_meta($user_id, 'pmpro_saddress1', $street);
+		update_user_meta($user_id, 'pmpro_saddress2', $address2);
+		update_user_meta($user_id, 'pmpro_scity', $city);
+		update_user_meta($user_id, 'pmpro_sstate', $state);
+		update_user_meta($user_id, 'pmpro_szipcode', $zip);
+		update_user_meta($user_id, 'pmpro_scountry', $country);
+		update_user_meta($user_id, 'student_university', sanitize_text_field($account_info['student_university'] ?? ''));
+		update_user_meta($user_id, 'university_or_school', sanitize_text_field($account_info['student_university'] ?? ''));
+		update_user_meta($user_id, 'student_university_id', sanitize_text_field($account_info['student_university_id'] ?? ''));
+		update_user_meta($user_id, 'graduation_date', $this->sanitize_birthdate_value($account_info['graduation_date'] ?? ''));
+		update_user_meta($user_id, 'student_graduation_date', $this->sanitize_birthdate_value($account_info['graduation_date'] ?? ''));
+		update_user_meta($user_id, 'service_component', sanitize_text_field($account_info['service_component'] ?? ''));
+		update_user_meta($user_id, 'military_service_component', sanitize_text_field($account_info['service_component'] ?? ''));
 		update_user_meta($user_id, 'aaj_preference', sanitize_text_field($publication_preferences['aaj_pref']));
 		update_user_meta($user_id, 'anac_preference', sanitize_text_field($publication_preferences['anac_pref']));
 		update_user_meta($user_id, 'american_climbing_journal_preference', sanitize_text_field($publication_preferences['acj_pref']));
 		update_user_meta($user_id, 'guidebook_preferences', sanitize_text_field($publication_preferences['guidebook_pref']));
 		delete_user_meta($user_id, 'aac_birthdate');
 		delete_user_meta($user_id, 'aac_tshirt_size');
-		delete_user_meta($user_id, 'aac_email_opt_out');
-		delete_user_meta($user_id, 'aac_do_not_call');
-		delete_user_meta($user_id, 'aac_do_not_contact');
 		delete_user_meta($user_id, 'aac_publication_pref');
 		delete_user_meta($user_id, 'aac_aaj_pref');
 		delete_user_meta($user_id, 'aac_anac_pref');
@@ -2448,7 +2406,14 @@ class AAC_Member_Portal_API {
 			return '';
 		}
 
-		return $this->normalize_family_membership_access_date($primary['renewal_date'] ?: $primary['expiration_date']);
+		$term_end_date = $primary['renewal_date'] ?: $primary['expiration_date'];
+		if (class_exists('AAC_Member_Portal_PMPro')) {
+			return $this->normalize_family_membership_access_date(
+				AAC_Member_Portal_PMPro::normalize_date_to_month_end($term_end_date)
+			);
+		}
+
+		return $this->normalize_family_membership_access_date($term_end_date);
 	}
 
 	private function get_family_membership_access_until($user_id) {
@@ -2577,15 +2542,6 @@ class AAC_Member_Portal_API {
 		return array_values(array_filter(array_map(function ($slug) use ($labels_by_slug) {
 			return $labels_by_slug[$slug] ?? null;
 		}, $this->get_member_magazine_subscription_slugs($user_id))));
-	}
-
-	private function sanitize_member_editable_grant_applications($grant_applications) {
-		$grant_applications = $this->sanitize_grant_applications($grant_applications);
-
-		return array_values(array_map(static function ($application) {
-			$application['status'] = 'Pending review';
-			return $application;
-		}, $grant_applications));
 	}
 
 	private function consume_rate_limit($action, $identity, $limit, $window_seconds) {

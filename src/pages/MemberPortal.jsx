@@ -1,52 +1,25 @@
 import React, { useEffect } from 'react';
 import { useOutletContext, useLocation } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import ProfileTab from '@/components/tabs/ProfileTab';
 import DiscountsTab from '@/components/tabs/DiscountsTab';
-import StoreTab from '@/components/tabs/StoreTab';
 import AccountTab from '@/components/tabs/AccountTab';
-import PodcastsTab from '@/components/tabs/PodcastsTab';
-import ShoppingCart from '@/components/ShoppingCart';
-import { useAuth } from '@/hooks/useAuth';
-import { useCart } from '@/hooks/useCart';
-import { useFakePayment } from '@/hooks/useFakePayment';
-import { useToast } from '@/components/ui/use-toast';
-import { createMerchandisePaymentIntent } from '@/lib/fakePaymentFlows';
 
-const MemberPortal = ({ storeTab }) => {
+const MemberPortal = ({ portalTab }) => {
   const { user, profile, loading } = useAuth();
-  const { isCartOpen, setIsCartOpen, activeTab, setActiveTab } = useOutletContext();
-  const { cartItems, removeFromCart, updateQuantity, getCartTotal } = useCart();
-  const { startPaymentFlow } = useFakePayment();
-  const { toast } = useToast();
+  const { activeTab, setActiveTab } = useOutletContext();
   const location = useLocation();
 
   useEffect(() => {
     const tabFromUrl = location.pathname.substring(1);
-    if (['discounts', 'store', 'podcasts', 'account'].includes(tabFromUrl)) {
+    if (['discounts', 'account'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
-    } else if (storeTab) {
-      setActiveTab(storeTab);
+    } else if (portalTab) {
+      setActiveTab(portalTab);
     } else if (location.pathname === '/') {
       setActiveTab('profile');
     }
-  }, [location.pathname, storeTab, setActiveTab]);
-
-  const handleCheckout = async () => {
-    if (cartItems.length === 0) {
-      toast({
-        title: "Your cart is empty",
-        description: "Add some products to your cart before checking out.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsCartOpen(false);
-    startPaymentFlow(createMerchandisePaymentIntent({
-      cartItems,
-      accountInfo: profile?.account_info || {},
-    }));
-  };
+  }, [location.pathname, portalTab, setActiveTab]);
 
   const renderActiveTab = () => {
     if (loading || !profile) {
@@ -57,12 +30,8 @@ const MemberPortal = ({ storeTab }) => {
         return <ProfileTab profile={profile} />;
       case 'discounts':
         return <DiscountsTab profile={profile} />;
-      case 'store':
-        return <StoreTab />;
       case 'account':
         return <AccountTab profile={profile} />;
-      case 'podcasts':
-        return <PodcastsTab />;
       default:
         return <ProfileTab profile={profile} />;
     }
@@ -71,15 +40,6 @@ const MemberPortal = ({ storeTab }) => {
   return (
     <div>
       {renderActiveTab()}
-      <ShoppingCart 
-        isCartOpen={isCartOpen} 
-        setIsCartOpen={setIsCartOpen}
-        cartItems={cartItems}
-        removeFromCart={removeFromCart}
-        updateQuantity={updateQuantity}
-        getCartTotal={getCartTotal}
-        handleCheckout={handleCheckout}
-      />
     </div>
   );
 };

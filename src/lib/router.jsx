@@ -1,9 +1,16 @@
 import React from 'react';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
+import { getAppRuntimeConfig } from '@/lib/backendConfig';
 
 const getRouterMode = () => {
-  if (typeof window !== 'undefined' && window.AAC_MEMBER_PORTAL_CONFIG?.routerMode) {
-    return window.AAC_MEMBER_PORTAL_CONFIG.routerMode;
+  const runtimeConfig = getAppRuntimeConfig();
+
+  if (runtimeConfig.routerMode) {
+    return runtimeConfig.routerMode;
+  }
+
+  if (typeof window !== 'undefined' && window.location.hash.startsWith('#/')) {
+    return 'hash';
   }
 
   if (import.meta.env.VITE_ROUTER_MODE) {
@@ -19,5 +26,9 @@ const getRouterMode = () => {
 
 export const AppRouter = ({ children }) => {
   const RouterComponent = getRouterMode() === 'hash' ? HashRouter : BrowserRouter;
-  return <RouterComponent>{children}</RouterComponent>;
+  return (
+    <RouterComponent future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      {children}
+    </RouterComponent>
+  );
 };

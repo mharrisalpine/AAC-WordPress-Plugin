@@ -6,7 +6,7 @@ export const getFullName = (accountInfo = {}) => {
   return combined || accountInfo.name || 'AAC Member';
 };
 
-export const normalizePrintDigitalPreference = (value, fallback = 'Digital') => {
+export const normalizePrintDigitalPreference = (value, fallback = 'Print') => {
   return value === 'Print' ? 'Print' : value === 'Digital' ? 'Digital' : fallback;
 };
 
@@ -14,18 +14,8 @@ export const normalizeMembershipDiscountType = (value) => {
   return value === 'student' || value === 'military' ? value : '';
 };
 
-export const normalizeBooleanPreference = (value) => {
-  if (typeof value === 'string') {
-    const lowered = value.trim().toLowerCase();
-    return ['1', 'true', 'yes', 'on'].includes(lowered);
-  }
-
-  return Boolean(value);
-};
-
 export const TSHIRT_SIZE_OPTIONS = [
   'No T-shirt',
-  'Unisex X-Small',
   'Unisex Small',
   'Unisex Medium',
   'Unisex Large',
@@ -103,6 +93,15 @@ export const normalizeBirthdateValue = (value) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
 };
 
+export const normalizeDateFieldValue = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+};
+
 export const formatMagazineSubscriptions = (value, fallback = 'None selected') => {
   const subscriptions = normalizeMagazineSubscriptions(value);
 
@@ -139,6 +138,10 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.emergency_contact_phone = normalized.emergency_contact_phone || '';
   normalized.emergency_contact_email = normalized.emergency_contact_email || '';
   normalized.emergency_contact_relationship = normalized.emergency_contact_relationship || '';
+  normalized.student_university = normalized.student_university || normalized.university_or_school || normalized.university_school || normalized.school || '';
+  normalized.student_university_id = normalized.student_university_id || normalized.university_id || normalized.university_school_id || '';
+  normalized.graduation_date = normalizeDateFieldValue(normalized.graduation_date || normalized.student_graduation_date || normalized.aac_graduation_date);
+  normalized.service_component = normalized.service_component || normalized.service_branch || normalized.military_service_component || normalized.aac_service_component || '';
   normalized.emergency_contact_relationship_options = Array.isArray(normalized.emergency_contact_relationship_options)
     ? normalized.emergency_contact_relationship_options
         .map((option) => {
@@ -169,8 +172,8 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.membership_discount_type = normalizeMembershipDiscountType(normalized.membership_discount_type);
   normalized.size = normalizeTShirtSizeValue(normalized.size);
   normalized.auto_renew = Boolean(normalized.auto_renew);
-  normalized.email_opt_out = normalizeBooleanPreference(normalized.email_opt_out);
-  normalized.do_not_call = normalizeBooleanPreference(normalized.do_not_call);
-  normalized.do_not_contact = normalizeBooleanPreference(normalized.do_not_contact);
+  delete normalized.email_opt_out;
+  delete normalized.do_not_call;
+  delete normalized.do_not_contact;
   return normalized;
 };

@@ -1,8 +1,8 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { User, Shield, Settings, Store, Tag, Mic2, Users, Mail, ScrollText, BedDouble, PenSquare, BookOpen, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { BadgePercent, User, Settings, Tag, Mail, PenSquare, BookOpen, LogOut } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { getPortalPageUrl } from '@/lib/backendConfig';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { isPartnerOrAboveMembershipTierId } from '@/lib/membershipTiers';
 import { cn } from '@/lib/utils';
@@ -14,15 +14,10 @@ export function PortalNavLinks({ onNavigate, className }) {
   const canAccessPublications = isPartnerOrAboveMembershipTierId(profile?.profile_info?.tier);
   const iconRegistry = {
     user: User,
-    store: Store,
-    shield: Shield,
     settings: Settings,
     tag: Tag,
-    mic: Mic2,
-    users: Users,
+    'badge-percent': BadgePercent,
     mail: Mail,
-    'scroll-text': ScrollText,
-    bed: BedDouble,
     pen: PenSquare,
     book: BookOpen,
   };
@@ -31,17 +26,17 @@ export function PortalNavLinks({ onNavigate, className }) {
     if (itemId === 'member_profile') {
       return pathname === '/' || pathname === '/profile' || pathname === '';
     }
-    if (itemId === 'store') {
-      return pathname.startsWith('/store') || pathname.startsWith('/product');
-    }
     if (itemId === 'account') {
       return pathname === '/account' || pathname === '/change-password';
     }
     if (itemId === 'publications') {
       return pathname === '/publications';
     }
+    if (itemId === 'discounts') {
+      return pathname === '/discounts' || pathname === '/rescue';
+    }
     if (itemId === 'manage') {
-      return false;
+      return pathname === '/membership';
     }
     return pathname === to;
   };
@@ -50,7 +45,7 @@ export function PortalNavLinks({ onNavigate, className }) {
     <nav className={cn('portal-sidebar-nav flex flex-col gap-6 px-4 py-4', className)} aria-label="Member portal">
       {portalSections.map((section) => (
         <div key={section.title}>
-          <p className="portal-sidebar-section-title mb-3 px-3 text-[0.92rem] font-semibold uppercase tracking-[0.24em] text-white/85">{section.title}</p>
+          <p className="portal-sidebar-section-title mb-3 px-3 text-[0.92rem] font-semibold uppercase tracking-[0.24em] text-white/80">{section.title}</p>
           <ul className="space-y-1">
             {section.items.filter((item) => {
               if (item.id === 'publications' && !canAccessPublications) {
@@ -65,7 +60,7 @@ export function PortalNavLinks({ onNavigate, className }) {
                 'portal-sidebar-link group relative flex items-center gap-3 border-b px-3 py-3.5 text-[1.05rem] font-medium text-white transition-all',
                 active ? 'portal-sidebar-link--active' : '',
               );
-              const icon = <Icon className={cn('h-5 w-5 shrink-0 transition-colors', active ? 'portal-sidebar-link__icon--active' : 'text-white')} />;
+              const icon = <Icon className="h-5 w-5 shrink-0 transition-colors" />;
 
               if (item.href) {
                 return (
@@ -98,73 +93,60 @@ export function PortalNavLinks({ onNavigate, className }) {
   );
 }
 
-const PortalSidebar = ({ mobileOpen, onMobileClose }) => {
-  const portalUiSettings = getPortalUiSettings();
-  const design = portalUiSettings.design;
-  const sidebarTopoUrl = design.sidebarBackgroundUrl || '/sidebar-topo-v2.svg';
+const SidebarSignOut = ({ onSignedOut, horizontal = false }) => {
+  const { signOut } = useAuth();
 
-  const sidebarSurfaceStyle = {
-    position: 'sticky',
-    top: 'var(--aac-portal-header-height)',
-    height: 'calc(100vh - var(--aac-portal-header-height))',
-    maxHeight: 'calc(100vh - var(--aac-portal-header-height))',
-    backgroundColor: '#030000',
-    backgroundImage: `linear-gradient(180deg, rgba(5, 2, 2, ${design.sidebarOverlayStart || '0.18'}), rgba(5, 2, 2, ${design.sidebarOverlayEnd || '0.30'})), url("${sidebarTopoUrl}")`,
-    backgroundPosition: 'center center, center top',
-    backgroundRepeat: 'no-repeat, repeat',
-    backgroundSize: 'cover, 760px auto',
-    '--portal-sidebar-button-bg': design.sidebarButtonBackground || '#000000',
-    '--portal-sidebar-button-hover-bg': design.sidebarButtonHoverBackground || '#111111',
-    '--portal-sidebar-button-active-bg': design.sidebarButtonActiveBackground || '#000000',
-    '--portal-sidebar-accent': design.sidebarAccentColor || '#f8c235',
+  const handleSignOut = async () => {
+    const result = await signOut();
+    if (!result?.error) {
+      try {
+        Object.keys(sessionStorage)
+          .filter((key) => key.startsWith('aac_renewal_modal_'))
+          .forEach((key) => sessionStorage.removeItem(key));
+      } catch (error) {
+        // Session storage cleanup should never block logout.
+      }
+      onSignedOut?.();
+      const loginUrl = new URL(getPortalPageUrl(), window.location.origin);
+      loginUrl.searchParams.set('aac_logged_out', Date.now().toString());
+      loginUrl.hash = '/login';
+      window.location.replace(loginUrl.toString());
+    }
   };
 
   return (
-    <>
-      <aside
-        className="portal-sidebar-surface portal-sidebar-desktop hidden shrink-0 self-stretch border-r border-black/8 md:flex md:flex-col"
-        style={sidebarSurfaceStyle}
-        aria-label="Member portal navigation"
+    <div className={horizontal ? 'portal-sidebar-signout portal-sidebar-signout--horizontal shrink-0 px-4 py-3' : 'mt-auto border-t border-white/15 px-4 py-5'}>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        className="portal-sidebar-link group flex w-full items-center gap-3 border-b px-3 py-3.5 text-left text-[1.05rem] font-medium text-white transition-all hover:bg-white/10"
       >
-        <div className="sticky top-0 flex min-h-full flex-1 flex-col justify-start overflow-visible">
-          <PortalNavLinks className="pb-6" />
-        </div>
-      </aside>
+        <LogOut className="h-5 w-5 shrink-0" />
+        <span className="portal-sidebar-link__label">Sign Out</span>
+      </button>
+    </div>
+  );
+};
 
-      {mobileOpen ? (
-        <div
-          className="fixed inset-0 z-[60] bg-black/60 md:hidden"
-          onClick={onMobileClose}
-          role="presentation"
-        >
-          <aside
-            className="portal-sidebar-surface absolute left-0 top-0 flex h-full w-[min(100%,19rem)] flex-col border-r border-white/10 shadow-xl"
-            style={sidebarSurfaceStyle}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Member portal menu"
-          >
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
-              <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#f8c235]">Member portal</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={onMobileClose}
-                className="text-white hover:bg-white/10 hover:text-white"
-                aria-label="Close menu"
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <PortalNavLinks onNavigate={onMobileClose} className="pb-6" />
-            </div>
-          </aside>
-        </div>
-      ) : null}
-    </>
+const PortalSidebar = () => {
+  const portalUiSettings = getPortalUiSettings();
+  const design = portalUiSettings.design;
+
+  const sidebarSurfaceStyle = {
+    '--portal-sidebar-accent': design.sidebarAccentColor || '#b71c1c',
+  };
+
+  return (
+    <header
+      className="portal-sidebar-surface portal-horizontal-nav aac-member-mobile-nav shrink-0 border-y border-black/8"
+      style={sidebarSurfaceStyle}
+      aria-label="Member portal navigation"
+    >
+      <div className="portal-horizontal-nav__inner">
+        <PortalNavLinks />
+        <SidebarSignOut horizontal />
+      </div>
+    </header>
   );
 };
 

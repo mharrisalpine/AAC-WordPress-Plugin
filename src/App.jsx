@@ -1,16 +1,19 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
-import Header from '@/components/Header';
-import HomePage from '@/pages/HomePage';
+import { toast } from '@/components/ui/use-toast';
 import PortalSidebar from '@/components/PortalSidebar';
-import { MembershipSignupModal } from '@/components/MembershipSignupModal';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getExpirationWarningDetails, shouldPromptMembershipVerification } from '@/lib/membershipRenewal';
+import HomePage from '@/pages/HomePage';
+import LoginPage from '@/pages/LoginPage';
+import MemberJoinPage from '@/pages/MemberJoinPage';
+import { getAppRuntimeConfig } from '@/lib/backendConfig';
+import PortalRouteErrorBoundary from '@/components/PortalRouteErrorBoundary';
 
 const ExpirationBanner = ({ details, onRenew }) => {
   if (!details) {
@@ -44,26 +47,48 @@ const ExpirationBanner = ({ details, onRenew }) => {
 };
 
 function App() {
-  const { user, profile, loading, authReady, signOut } = useAuth();
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [renewalModalOpen, setRenewalModalOpen] = useState(false);
+  const { user, profile, loading, authReady } = useAuth();
+  const runtimeConfig = getAppRuntimeConfig();
+  const isSignupEmbed = runtimeConfig.embedMode === 'signup';
+  const isLoginEmbed = runtimeConfig.embedMode === 'login';
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('profile');
-  const [portalMenuOpen, setPortalMenuOpen] = useState(false);
-  const isDonateRoute = location.pathname === '/donate';
-  const publicHeroRoutes = new Set(['/home', '/join', '/login', '/donate', '/photographers']);
-  const isPublicHeroRoute = publicHeroRoutes.has(location.pathname);
-  const sidebarlessRoutes = new Set(['/photographers']);
-  const hideSidebarForRoute = sidebarlessRoutes.has(location.pathname);
-  const fullBleedContentRoutes = new Set(['/donate', '/photographers']);
+  const fullBleedContentRoutes = new Set([]);
   const isFullBleedContentRoute = fullBleedContentRoutes.has(location.pathname);
   const flushTopMemberRoutes = new Set(['/profile']);
   const isFlushTopMemberRoute = flushTopMemberRoutes.has(location.pathname);
+  const fullWidthContentRoutes = new Set(['/discounts', '/membership']);
+  const isFullWidthContentRoute = fullWidthContentRoutes.has(location.pathname);
+  const publicOutletPaths = new Set(['/login', '/linked-accounts', '/home', '/join']);
+  const showPublicOutlet = publicOutletPaths.has(location.pathname);
   const { openMembershipAction } = useMembershipActions();
   const expirationWarning = getExpirationWarningDetails(profile);
 
-  useEffect(() => {
-    setPortalMenuOpen(false);
+  useLayoutEffect(() => {
+    if (location.pathname !== '/join') {
+      return undefined;
+    }
+
+    const resetSignupScroll = () => {
+      const portalRoot = document.getElementById('aac-member-portal-root') || document.getElementById('root');
+      const publicShellScroller = portalRoot?.querySelector('.topo-lines > main');
+
+      [document.scrollingElement, portalRoot, publicShellScroller].forEach((scrollTarget) => {
+        if (scrollTarget) {
+          scrollTarget.scrollTop = 0;
+          scrollTarget.scrollLeft = 0;
+        }
+      });
+    };
+
+    resetSignupScroll();
+    const animationFrame = window.requestAnimationFrame(resetSignupScroll);
+    const resetTimers = [0, 100, 500].map((delay) => window.setTimeout(resetSignupScroll, delay));
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resetTimers.forEach((timer) => window.clearTimeout(timer));
+    };
   }, [location.pathname]);
 
   useEffect(() => {
@@ -78,100 +103,106 @@ function App() {
     }
     if (shouldPromptMembershipVerification(profile)) {
       sessionStorage.setItem(key, '1');
-      setRenewalModalOpen(true);
+      toast({
+        title: 'Membership renewal reminder',
+        description: 'Your membership is nearing expiration. Use Renew Membership to continue through PMPro checkout.',
+      });
     }
   }, [user?.id, profile]);
 
-  if (!authReady) {
-    return <div className="min-h-screen member-app-surface flex items-center justify-center text-stone-800">Loading...</div>;
+  if (isSignupEmbed) {
+    return (
+      <div className="aac-signup-embed-surface">
+        <PortalRouteErrorBoundary>
+          <MemberJoinPage />
+        </PortalRouteErrorBoundary>
+        <Toaster />
+      </div>
+    );
   }
 
-  const publicOutletPaths = new Set(['/donate', '/payment', '/success', '/login', '/linked-accounts', '/home', '/join', '/photographers']);
-  const showPublicOutlet = publicOutletPaths.has(location.pathname);
-  const shouldRenderPublicShell = !user || showPublicOutlet;
-  const handleLogout = async () => {
-    const result = await signOut();
-    if (!result?.error) {
-      try {
-        Object.keys(sessionStorage)
-          .filter((key) => key.startsWith('aac_renewal_modal_'))
-          .forEach((key) => sessionStorage.removeItem(key));
-      } catch (error) {
-        // If sessionStorage is grumpy or unavailable, that is annoying but not
-        // worth breaking logout over.
-      }
+  if (isLoginEmbed) {
+    return (
+      <div className="aac-login-embed-surface">
+        <LoginPage />
+        <Toaster />
+      </div>
+    );
+  }
 
-      const portalPageUrl = window.AAC_MEMBER_PORTAL_CONFIG?.portalPageUrl || '/membership';
-      const normalizedPortalUrl = String(portalPageUrl).replace(/\/+$/, '');
-      window.location.assign(`${normalizedPortalUrl}/#/login`);
-    }
-  };
+  // Public routes must not depend on the member-session request. On a logged-out
+  // visit that request can be delayed or blocked by caching/security middleware;
+  // gating /join behind it leaves the app on the initial loading screen forever.
+  if (!authReady && !showPublicOutlet) {
+    return (
+      <div className="min-h-screen member-app-surface flex items-center justify-center text-stone-800">
+        Loading...
+      </div>
+    );
+  }
 
+  const protectedMemberPaths = new Set([
+    '/',
+    '/profile',
+    '/change-password',
+    '/discounts',
+    '/publications',
+    '/rescue',
+    '/membership',
+    '/contact',
+    '/account',
+  ]);
+  const showProtectedLogin = !user && protectedMemberPaths.has(location.pathname);
+  const shouldRenderPublicShell = (!user && !showProtectedLogin) || showPublicOutlet || showProtectedLogin;
+  const useCordilleraTheme = location.pathname === '/home' && !showProtectedLogin;
+  const useDocumentScroll = location.pathname === '/join';
   if (shouldRenderPublicShell) {
     return (
-      <div className="topo-lines flex min-h-screen flex-col">
-        <Header
-          variant="public"
-          onLogout={handleLogout}
-          onCartClick={() => {}}
-          onOpenPortalMenu={() => {}}
-        />
+      <div className={`topo-lines flex min-h-screen flex-col ${useCordilleraTheme ? 'aac-cordillera-theme' : ''}`}>
         <main
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto"
-          style={{ paddingTop: isPublicHeroRoute ? '0px' : 'var(--aac-portal-header-height)' }}
+          className={useDocumentScroll ? 'min-w-0 overflow-visible' : 'min-h-0 min-w-0 flex-1 overflow-y-auto'}
+          style={{ paddingTop: '0px' }}
         >
-          {showPublicOutlet ? <Outlet context={{ isCartOpen, setIsCartOpen, activeTab, setActiveTab }} /> : <HomePage />}
+          <PortalRouteErrorBoundary key={location.pathname}>
+            {showProtectedLogin ? <LoginPage /> : showPublicOutlet ? <Outlet context={{ activeTab, setActiveTab }} /> : <HomePage />}
+          </PortalRouteErrorBoundary>
         </main>
         <Toaster />
       </div>
     );
   }
   
-  const showHeader = !['/success'].includes(location.pathname);
-
   return (
     <>
-      <MembershipSignupModal open={renewalModalOpen} onOpenChange={setRenewalModalOpen} mode="renewal" />
       <Helmet>
         <title>American Alpine Club - Member Portal</title>
-        <meta name="description" content="Access your AAC membership card, rescue insurance, partner discounts, merchandise store, and account settings." />
+        <meta name="description" content="Access your AAC membership card, partner discounts, publications, and account settings." />
       </Helmet>
       
-      <div className="member-app-surface flex h-screen min-h-screen flex-col overflow-hidden">
-        {/* Logged-in members get the full portal shell here: header, alerts,
-            sidebar, and the scrollable content pane. Public pages stay outside
-            this wrapper so they can behave more like marketing pages and less
-            like a dashboard wearing a fake mustache. */}
-        {showHeader ? (
-          <>
-            <Header
-              onLogout={handleLogout}
-              onCartClick={() => setIsCartOpen(true)}
-              onOpenPortalMenu={() => setPortalMenuOpen(true)}
-            />
-            <ExpirationBanner
-              details={expirationWarning}
-              onRenew={() => void openMembershipAction('renew', { targetTier: profile?.profile_info?.tier || 'Partner' })}
-            />
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              {!hideSidebarForRoute ? (
-                <PortalSidebar mobileOpen={portalMenuOpen} onMobileClose={() => setPortalMenuOpen(false)} />
-              ) : null}
-              <main
-                className={`portal-main-surface mx-auto min-h-0 min-w-0 flex-1 overflow-y-auto ${isFullBleedContentRoute ? 'px-0 py-0' : isFlushTopMemberRoute ? 'px-4 pb-6 pt-0 md:pb-8' : 'px-4 py-6 md:pb-8'}`}
-                style={{ paddingBottom: isFullBleedContentRoute ? 'env(safe-area-inset-bottom, 0px)' : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
-              >
-                <div className={isDonateRoute || hideSidebarForRoute ? '' : 'mx-auto max-w-7xl'}>
-                  <Outlet context={{ isCartOpen, setIsCartOpen, activeTab, setActiveTab }} />
-                </div>
-              </main>
+      <div
+        className={`member-app-surface flex min-h-screen flex-col overflow-visible ${useCordilleraTheme ? 'aac-cordillera-theme' : ''}`}
+        style={{
+          '--aac-portal-header-height': '0px',
+          paddingTop: '0.75rem',
+        }}
+      >
+        <ExpirationBanner
+          details={expirationWarning}
+          onRenew={() => void openMembershipAction('renew', { targetTier: profile?.profile_info?.tier || 'Partner' })}
+        />
+        <PortalSidebar />
+        <div className="flex min-h-0 flex-1 flex-col overflow-visible">
+          <main
+            className={`portal-main-surface mx-auto min-h-0 min-w-0 flex-1 overflow-visible ${isFullWidthContentRoute ? 'w-full max-w-none !px-[clamp(1.25rem,2.5vw,3rem)]' : ''} ${isFullBleedContentRoute ? 'px-0 py-0' : isFlushTopMemberRoute ? 'px-4 pb-6 pt-8 md:pb-8' : 'px-4 py-8 md:pb-8'}`}
+            style={{ paddingBottom: isFullBleedContentRoute ? 'env(safe-area-inset-bottom, 0px)' : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
+          >
+            <div className={isFullWidthContentRoute ? 'w-full max-w-none' : 'mx-auto max-w-7xl'}>
+              <PortalRouteErrorBoundary key={location.pathname}>
+                <Outlet context={{ activeTab, setActiveTab }} />
+              </PortalRouteErrorBoundary>
             </div>
-          </>
-        ) : (
-          <main className="flex-1 px-4 py-6">
-            <Outlet context={{ isCartOpen, setIsCartOpen, activeTab, setActiveTab }} />
           </main>
-        )}
+        </div>
         <Toaster />
       </div>
     </>

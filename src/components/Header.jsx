@@ -1,12 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DollarSign, LogIn, LogOut, Menu, Plus, Shield, ShoppingCart, User, X } from 'lucide-react';
+import { DollarSign, LogIn, Menu, Plus, User, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useCart } from '@/hooks/useCart';
 import { useAuth } from '@/hooks/useAuth';
 import { Link, useLocation } from 'react-router-dom';
 import { MainSiteNavigation } from '@/components/MainSiteNavigation';
-import { getPortalUiSettings } from '@/lib/portalSettings';
-import { getRescuePageUrl } from '@/lib/backendConfig';
+import { JOIN_PAGE_URL, getPortalUiSettings } from '@/lib/portalSettings';
 
 const LIGHT_LOGO_URL = 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/light-header-logo.svg';
 
@@ -14,45 +12,18 @@ const ACTION_H = 'h-11 min-h-[2.75rem]';
 const UTILITY_LINK_CLASS = 'group inline-flex items-center gap-2 text-[0.88rem] font-semibold tracking-[0.01em] text-white transition-colors hover:text-white';
 const UTILITY_ICON_CLASS = 'h-[1.2rem] w-[1.2rem] text-[#f8c235] transition-transform duration-200 group-hover:scale-105';
 
-const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLogout, showDonate, showLogin, showJoin, showProfile, showRescue, rescueHref, className, compact = false, style }) => {
+const HeaderActions = ({ showDonate, showLogin, showJoin, showProfile, className, compact = false, style }) => {
   const actionHeight = compact ? 'h-10 min-h-[2.5rem]' : ACTION_H;
   const actionPadding = compact ? 'px-3.5 text-[0.72rem] tracking-[0.12em]' : 'px-5 text-[0.95rem] tracking-[0.18em]';
-  const iconButtonSize = compact ? 'h-10 w-10' : `${ACTION_H} w-11`;
-  const logoutButtonSize = compact ? 'h-10 w-10' : 'h-12 w-12';
 
   return (
     <div className={className} style={style}>
-      {showCart ? (
-        <button
-          type="button"
-          onClick={onCartClick}
-          className={`relative inline-flex ${iconButtonSize} items-center justify-center rounded-none border border-white/10 bg-white/[0.03] text-white transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]`}
-          aria-label="Shopping cart"
-        >
-          <ShoppingCart className={compact ? 'h-5 w-5' : 'h-6 w-6'} />
-          {cartItemCount > 0 ? (
-            <span className="absolute -right-1 -top-0 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#f8c235] px-1 text-xs font-bold text-black">
-              {cartItemCount}
-            </span>
-          ) : null}
-        </button>
-      ) : null}
-
       {showDonate ? (
-        <Link
-          to="/donate"
+        <a
+          href="https://americanalpineclub.org/donate"
           className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#8f1515] bg-[#8f1515] ${actionPadding} font-semibold uppercase text-white transition-colors hover:border-[#6b1010] hover:bg-[#6b1010]`}
         >
           Donate
-        </Link>
-      ) : null}
-
-      {showRescue ? (
-        <a
-          href={rescueHref}
-          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-white/10 bg-white/[0.03] ${actionPadding} font-semibold uppercase text-white transition-colors hover:border-[#f8c235]/45 hover:text-[#f8c235]`}
-        >
-          Rescue
         </a>
       ) : null}
 
@@ -66,39 +37,28 @@ const HeaderActions = ({ showCart, cartItemCount, onCartClick, onLogout, showLog
       ) : null}
 
       {showJoin ? (
-        <Link
-          to="/join"
+        <a
+          href={JOIN_PAGE_URL}
           className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black transition-colors hover:bg-[#e1ae14]`}
         >
           Join
-        </Link>
+        </a>
       ) : null}
 
       {showLogin ? (
         <Link
           to="/login"
-          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#f8c235] bg-[#f8c235] ${actionPadding} font-semibold uppercase text-black transition-colors hover:bg-[#e1ae14]`}
+          className={`inline-flex ${actionHeight} items-center justify-center rounded-none border border-[#8f1515] bg-[#8f1515] ${actionPadding} font-semibold uppercase text-white transition-colors hover:border-[#6b1010] hover:bg-[#6b1010]`}
         >
-          Login
+          Sign In
         </Link>
       ) : null}
 
-      {showLogout ? (
-        <Button
-          type="button"
-          onClick={onLogout}
-          className={`${logoutButtonSize} rounded-none border border-[#f8c235] bg-[#f8c235] p-0 text-black hover:bg-[#e1ae14]`}
-          aria-label="Log out"
-          title="Log out"
-        >
-          <LogOut className={compact ? 'h-5 w-5' : 'h-6 w-6'} />
-        </Button>
-      ) : null}
     </div>
   );
 };
 
-const PublicUtilityNav = ({ rescueHref, showProfile, className }) => (
+const PublicUtilityNav = ({ showProfile, className }) => (
   <div className={className}>
     {showProfile ? (
       <Link
@@ -117,29 +77,36 @@ const PublicUtilityNav = ({ rescueHref, showProfile, className }) => (
           <LogIn className={UTILITY_ICON_CLASS} />
           Sign In
         </Link>
-        <Link
-          to="/join"
+        <a
+          href={JOIN_PAGE_URL}
           className={UTILITY_LINK_CLASS}
         >
           <Plus className={UTILITY_ICON_CLASS} />
           Join
-        </Link>
+        </a>
       </>
     )}
     <Link
-      to="/donate"
+      to="/rescue"
+      className={UTILITY_LINK_CLASS}
+    >
+      Rescue
+    </Link>
+    <a
+      href="https://americanalpineclub.org/donate"
       className={UTILITY_LINK_CLASS}
     >
       <DollarSign className={UTILITY_ICON_CLASS} />
       Donate
-    </Link>
-    <a
-      href={rescueHref}
-      className={UTILITY_LINK_CLASS}
-    >
-      <Shield className={UTILITY_ICON_CLASS} />
-      Rescue
     </a>
+    {showProfile ? (
+      <a
+        href={JOIN_PAGE_URL}
+        className={UTILITY_LINK_CLASS}
+      >
+        Join
+      </a>
+    ) : null}
   </div>
 );
 
@@ -147,31 +114,25 @@ const PublicUtilityNav = ({ rescueHref, showProfile, className }) => (
  * @param {object} props
  * @param {'portal' | 'public'} [props.variant] public = join page (no portal menu, no log out)
  */
-const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu }) => {
+const Header = ({ variant = 'portal', onOpenPortalMenu }) => {
   const portalUi = getPortalUiSettings();
   const design = portalUi.design;
   const { user } = useAuth();
   const isPublic = variant === 'public';
-  const { cartItems } = useCart();
   const location = useLocation();
   const headerRef = useRef(null);
   const [mobileSiteNavOpen, setMobileSiteNavOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
-  const forceSolidPublicHeader = false;
+  const forceSolidPublicHeader = true;
   const hideTimerRef = useRef(null);
   const lastScrollYRef = useRef(0);
-  const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const isLoginRoute = location.pathname === '/login';
-  const isDonateRoute = location.pathname === '/donate';
   const isHeroOverlayRoute = isPublic && (location.pathname === '/home' || location.pathname === '/join');
   const usesTransparentPublicHeader = isPublic && !forceSolidPublicHeader;
 
-  const isStoreRelatedPage = location.pathname.startsWith('/store') || location.pathname.startsWith('/product');
-  const showCart = isStoreRelatedPage;
   const showSolidPublicChrome = !usesTransparentPublicHeader || isScrolled;
   const showPublicProfileAction = isPublic && !!user;
-  const rescueHref = getRescuePageUrl();
 
   useEffect(() => {
     const headerNode = headerRef.current;
@@ -335,6 +296,12 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
       }}
     >
       <div className="w-full px-0">
+        {!isPublic ? (
+          <PublicUtilityNav
+            showProfile={!!user}
+            className="flex min-h-[2.75rem] flex-wrap items-center justify-end gap-x-6 gap-y-2 border-b border-white/10 px-4 py-2 md:px-6"
+          />
+        ) : null}
         <div className="flex flex-col gap-3 xl:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-6">
             <div className="flex min-w-0 items-center gap-2">
@@ -372,22 +339,29 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
             </Button>
           </div>
 
-          <HeaderActions
-            showCart={showCart && !isPublic}
-            cartItemCount={cartItemCount}
-            onCartClick={onCartClick}
-            onLogout={onLogout}
-            showLogout={!isPublic}
-            showDonate={isPublic && !isDonateRoute}
-            showLogin={isPublic && !showPublicProfileAction && !isLoginRoute}
-            showJoin={isPublic && !showPublicProfileAction && isLoginRoute}
-            showProfile={showPublicProfileAction}
-            showRescue={isPublic}
-            rescueHref={rescueHref}
-            className="flex flex-wrap items-center gap-1.5 border-t border-white/10 px-4 pt-3 md:px-6"
-            compact
-            style={{ borderColor: chromeDividerColor }}
-          />
+          {!isPublic ? (
+            <HeaderActions
+              showDonate={false}
+              showLogin={!user}
+              showJoin={!user}
+              showProfile={false}
+              className="flex flex-wrap items-center gap-1.5 border-t border-white/10 px-4 pt-3 md:px-6"
+              compact
+              style={{ borderColor: chromeDividerColor }}
+            />
+          ) : null}
+
+          {isPublic ? (
+            <HeaderActions
+              showDonate={false}
+              showLogin
+              showJoin
+              showProfile={false}
+              className="flex flex-wrap items-center gap-1.5 border-t border-white/10 px-4 pt-3 md:px-6"
+              compact
+              style={{ borderColor: chromeDividerColor }}
+            />
+          ) : null}
 
           {mobileSiteNavOpen ? (
             <div className="space-y-3 border-t border-white/10 px-4 pb-4 pt-3 md:px-6" style={{ borderColor: chromeDividerColor }}>
@@ -405,30 +379,25 @@ const Header = ({ variant = 'portal', onLogout, onCartClick, onOpenPortalMenu })
             />
           </Link>
 
-          <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-            {isPublic ? (
-              <PublicUtilityNav
-                rescueHref={rescueHref}
-                showProfile={showPublicProfileAction}
-                className="ml-auto flex w-fit items-center justify-end gap-7 self-end rounded-none bg-black/95 px-7 py-2.5 shadow-[0_18px_42px_rgba(0,0,0,0.34)] backdrop-blur"
-              />
-            ) : null}
-
-            <div className="flex min-w-0 items-center gap-4 pb-3 pr-6">
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
+            <div className="flex min-w-0 items-center gap-4 pr-6">
               <MainSiteNavigation className="min-w-0 flex-1 justify-start" />
               {!isPublic ? (
                 <HeaderActions
-                  showCart={showCart}
-                  cartItemCount={cartItemCount}
-                  onCartClick={onCartClick}
-                  onLogout={onLogout}
-                  showLogout
                   showDonate={false}
-                  showLogin={false}
-                  showJoin={false}
+                  showLogin={!user}
+                  showJoin={!user}
                   showProfile={false}
-                  showRescue={false}
-                  rescueHref={rescueHref}
+                  className="flex shrink-0 items-center gap-2"
+                  compact
+                />
+              ) : null}
+              {isPublic ? (
+                <HeaderActions
+                  showDonate={false}
+                  showLogin
+                  showJoin
+                  showProfile={false}
                   className="flex shrink-0 items-center gap-2"
                   compact
                 />

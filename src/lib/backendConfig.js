@@ -1,9 +1,47 @@
+const parseInlineRuntimeConfig = () => {
+  if (typeof document === 'undefined') {
+    return {};
+  }
+
+  const marker = 'window.AAC_MEMBER_PORTAL_CONFIG';
+  const scripts = Array.from(document.scripts || []);
+  const configScript = scripts.find((script) =>
+    String(script.textContent || '').includes(marker)
+  );
+
+  if (!configScript) {
+    return {};
+  }
+
+  const source = String(configScript.textContent || '');
+  const markerIndex = source.indexOf(marker);
+  const objectStart = source.indexOf('{', markerIndex);
+  const objectEnd = source.lastIndexOf('};');
+
+  if (markerIndex === -1 || objectStart === -1 || objectEnd === -1 || objectEnd < objectStart) {
+    return {};
+  }
+
+  try {
+    const parsedConfig = JSON.parse(source.slice(objectStart, objectEnd + 1));
+    window.AAC_MEMBER_PORTAL_CONFIG = parsedConfig;
+    return parsedConfig;
+  } catch (error) {
+    console.warn('Unable to parse AAC member portal runtime config.', error);
+    return {};
+  }
+};
+
 const getRuntimeConfig = () => {
   if (typeof window === 'undefined') {
     return {};
   }
 
-  return window.AAC_MEMBER_PORTAL_CONFIG || {};
+  if (window.AAC_MEMBER_PORTAL_CONFIG) {
+    return window.AAC_MEMBER_PORTAL_CONFIG;
+  }
+
+  return parseInlineRuntimeConfig();
 };
 
 const trimTrailingSlash = (value) => String(value || '').replace(/\/$/, '');
@@ -58,33 +96,20 @@ export const getPortalPageUrl = () => {
   return trimTrailingSlash(`${window.location.origin}${window.location.pathname}`);
 };
 
-export const getRescuePageUrl = () => {
-  const runtimeRescueUrl = getRuntimeConfig().rescuePageUrl;
-  if (runtimeRescueUrl) {
-    return trimTrailingSlash(runtimeRescueUrl);
+export const getMainWebsiteBaseUrl = () => {
+  const runtimeBaseUrl = getRuntimeConfig().mainWebsiteBaseUrl;
+  if (runtimeBaseUrl) {
+    return trimTrailingSlash(runtimeBaseUrl);
   }
 
   if (typeof window === 'undefined') {
     return '';
   }
 
-  return trimTrailingSlash(`${window.location.origin}/rescue/`);
+  return trimTrailingSlash(window.location.origin);
 };
 
-export const getGrantReviewPageUrl = () => {
-  const runtimeGrantReviewUrl = getRuntimeConfig().grantReviewPageUrl;
-  if (runtimeGrantReviewUrl) {
-    return trimTrailingSlash(runtimeGrantReviewUrl);
-  }
-
-  if (typeof window === 'undefined') {
-    return '';
-  }
-
-  return trimTrailingSlash(`${window.location.origin}/grant-review/`);
-};
-
-export const canManageGrantApprovals = () => Boolean(getRuntimeConfig().canManageGrantApprovals);
+export const getWordPressLostPasswordUrl = () => `${getMainWebsiteBaseUrl()}/wp-login.php?action=lostpassword`;
 
 export const getPmproSocialLoginHtml = () => {
   const runtimeMarkup = getRuntimeConfig().pmproSocialLoginHtml;

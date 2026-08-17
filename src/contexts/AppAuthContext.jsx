@@ -6,9 +6,10 @@ import {
   loginMember,
   logoutMember,
   registerMember,
-  requestPasswordReset,
   updateMemberProfile,
 } from '@/lib/memberApi';
+import { setAuthToken } from '@/lib/apiClient';
+import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import { normalizeAccountInfo } from '@/lib/memberProfile';
 
 export const AuthContext = createContext(undefined);
@@ -16,12 +17,14 @@ export const AuthContext = createContext(undefined);
 export const AuthProvider = ({ children }) => {
   const { toast } = useToast();
   const authRequestRef = useRef(0);
+  const initialAuthRef = useRef(getAppRuntimeConfig().initialAuth || null);
+  const initialAuth = initialAuthRef.current;
 
-  const [user, setUser] = useState(null);
-  const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [authReady, setAuthReady] = useState(false);
+  const [user, setUser] = useState(() => initialAuth?.user ?? null);
+  const [session, setSession] = useState(() => initialAuth?.session ?? (initialAuth?.user ? { user: initialAuth.user } : null));
+  const [profile, setProfile] = useState(() => initialAuth?.profile ?? null);
+  const [loading, setLoading] = useState(() => !initialAuth?.user);
+  const [authReady, setAuthReady] = useState(() => Boolean(initialAuth?.user));
 
   const applyAuthState = useCallback((data) => {
     const nextUser = data?.user ?? null;
@@ -37,9 +40,12 @@ export const AuthProvider = ({ children }) => {
 
   const isLatestAuthRequest = useCallback((requestId) => authRequestRef.current === requestId, []);
 
-  const refreshProfile = useCallback(async () => {
+  const refreshProfile = useCallback(async (options = {}) => {
+    const showLoading = options?.showLoading !== false;
     const requestId = beginAuthRequest();
-    setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+    }
     try {
       const data = await getCurrentMember();
       if (!isLatestAuthRequest(requestId)) {
@@ -55,9 +61,11 @@ export const AuthProvider = ({ children }) => {
 
       const isLoggedOutState =
         error.status === 401 ||
-        (error.status === 403 && error?.payload?.code === 'rest_cookie_invalid_nonce');
+        (error.status === 403 && error?.payload?.code === 'rest_cookie_invalid_nonce') ||
+        error.name === 'AbortError';
 
       if (isLoggedOutState) {
+        setAuthToken(null);
         applyAuthState(null);
         return { data: null, error: null };
       }
@@ -78,7 +86,7 @@ export const AuthProvider = ({ children }) => {
   }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   useEffect(() => {
-    refreshProfile();
+    refreshProfile({ showLoading: !initialAuthRef.current?.user });
   }, [refreshProfile]);
 
   const signUp = useCallback(async (email, password, options) => {
@@ -142,7 +150,7 @@ export const AuthProvider = ({ children }) => {
           ? 'Your account was created. Please verify your email before logging in.'
           : 'Your account was created successfully.',
       });
-      return { error: null };
+      return { user: data?.user ?? null, error: null };
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -163,7 +171,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const data = await loginMember(email, password);
       if (!isLatestAuthRequest(requestId)) {
-        return { error: null };
+        return { user: null, error: null };
       }
 
       applyAuthState(data);
@@ -183,11 +191,11 @@ export const AuthProvider = ({ children }) => {
           title: 'Sign in Failed',
           description:
             error?.status === 401
-              ? 'Password is Incorrect.'
+              ? 'Incorrect email or password. Please try again.'
               : (error.message || 'We could not sign you in right now.'),
         });
       }
-      return { error };
+      return { user: null, error };
     } finally {
       if (isLatestAuthRequest(requestId)) {
         setLoading(false);
@@ -211,9 +219,7 @@ export const AuthProvider = ({ children }) => {
         return { error: null };
       }
 
-      const isAlreadyLoggedOut =
-        error?.status === 401 ||
-        (error?.status === 403 && error?.payload?.code === 'rest_cookie_invalid_nonce');
+      const isAlreadyLoggedOut = error?.status === 401;
 
       if (isAlreadyLoggedOut) {
         applyAuthState(null);
@@ -266,9 +272,6 @@ export const AuthProvider = ({ children }) => {
                 ...updates.benefits_info,
               }
             : (data.profile?.benefits_info ?? profile?.benefits_info ?? null),
-          grant_applications: Array.isArray(updates?.grant_applications)
-            ? updates.grant_applications
-            : (data.profile?.grant_applications ?? profile?.grant_applications ?? []),
         };
         setProfile(mergedProfile);
       } else {
@@ -280,38 +283,6 @@ export const AuthProvider = ({ children }) => {
       return { error };
     }
   }, [profile, refreshProfile, toast, user]);
-
-  const resetPassword = useCallback(async (email) => {
-    const requestId = beginAuthRequest();
-    setLoading(true);
-    try {
-      await requestPasswordReset(email);
-      if (!isLatestAuthRequest(requestId)) {
-        return { error: null };
-      }
-
-      toast({
-        title: 'Check your email',
-        description: 'A password reset link has been sent to your email address.',
-      });
-      return { error: null };
-    } catch (error) {
-      if (!isLatestAuthRequest(requestId)) {
-        return { error: null };
-      }
-
-      toast({
-        variant: 'destructive',
-        title: 'Password Reset Failed',
-        description: error.message,
-      });
-      return { error };
-    } finally {
-      if (isLatestAuthRequest(requestId)) {
-        setLoading(false);
-      }
-    }
-  }, [beginAuthRequest, isLatestAuthRequest, toast]);
 
   const changePassword = useCallback(async (currentPassword, newPassword, confirmPassword) => {
     const requestId = beginAuthRequest();
@@ -365,10 +336,9 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signOut,
     updateProfile,
-    resetPassword,
     changePassword,
     refreshProfile,
-  }), [user, session, profile, loading, authReady, signUp, signUpWithProfile, signIn, signOut, updateProfile, resetPassword, changePassword, refreshProfile]);
+  }), [user, session, profile, loading, authReady, signUp, signUpWithProfile, signIn, signOut, updateProfile, changePassword, refreshProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

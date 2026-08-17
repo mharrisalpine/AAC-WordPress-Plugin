@@ -1,17 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { LockKeyhole, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
-import { getPortalUiSettings } from '@/lib/portalSettings';
-import { getPmproSocialLoginHtml } from '@/lib/backendConfig';
-import grandTetonHero from '@/assets/grand-teton-hero.jpg';
-const DEFAULT_LOGIN_HERO_VIDEO_URL =
-  'https://player.vimeo.com/video/1125305190?background=1&autoplay=1&muted=1&loop=1&autopause=0&controls=0&title=0&byline=0&portrait=0';
+import { JOIN_PAGE_URL, getPortalUiSettings } from '@/lib/portalSettings';
+import { getPmproSocialLoginHtml, getPortalPageUrl, getWordPressLostPasswordUrl } from '@/lib/backendConfig';
+import joinHeroStaticImage from '@/assets/join-hero-static-image.jpg';
+
 const LOGIN_HERO_TITLE = 'United\nWe Climb.';
 
 const getPortalRedirectTarget = (locationSearch) => {
@@ -56,16 +55,27 @@ const cancelNativeSubmit = (event) => {
   event?.nativeEvent?.stopImmediatePropagation?.();
 };
 
+const getMemberProfileRedirectUrl = () => {
+  if (typeof window === 'undefined') {
+    return '/profile';
+  }
+
+  const portalPageUrl = getPortalPageUrl();
+  if (portalPageUrl) {
+    return `${portalPageUrl}/#/profile`;
+  }
+
+  return `${window.location.origin}/member-profile/#/profile`;
+};
+
 const LoginPage = () => {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { user, signIn, resetPassword, loading } = useAuth();
+  const { user, signIn, loading } = useAuth();
   const portalUiSettings = getPortalUiSettings();
   const portalContent = portalUiSettings.content;
   const portalDesign = portalUiSettings.design;
-  const loginHeroVideoUrl = DEFAULT_LOGIN_HERO_VIDEO_URL;
-  const loginBackgroundImageUrl = grandTetonHero;
-  const loginOverlayOpacity = loginHeroVideoUrl ? 0.2 : 1;
+  const loginBackgroundImageUrl = portalDesign.loginBackgroundImageUrl || joinHeroStaticImage;
+  const loginOverlayOpacity = 1;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -73,25 +83,14 @@ const LoginPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-  const [passwordModalMessage, setPasswordModalMessage] = useState('Password is Incorrect.');
+  const [passwordModalMessage, setPasswordModalMessage] = useState('Incorrect email or password. Please try again.');
   const passwordInputRef = useRef(null);
   const submitLockRef = useRef(false);
   const redirectTarget = getPortalRedirectTarget(location.search);
   const purchaseSuccess = new URLSearchParams(location.search).get('purchase_success') === '1';
   const pmproSocialLoginHtml = getPmproSocialLoginHtml();
 
-  useEffect(() => {
-    if (user && !purchaseSuccess) {
-      if (redirectTarget) {
-        window.location.assign(redirectTarget);
-        return;
-      }
-
-      navigate('/profile', { replace: true });
-    }
-  }, [navigate, purchaseSuccess, redirectTarget, user]);
-
-  const handleSubmit = async (event) => {
+ const handleSubmit = async (event) => {
     cancelNativeSubmit(event);
     if (submitLockRef.current || submitting || loading) {
       return;
@@ -102,17 +101,14 @@ const LoginPage = () => {
     setAuthMessage('');
     try {
       if (forgotMode) {
-        const { error } = await resetPassword(email.trim());
-        if (error) {
-          setAuthMessage(error.message || 'We could not send the reset link.');
-        }
+        window.location.assign(getWordPressLostPasswordUrl());
         return;
       }
 
-      const { error } = await signIn(email.trim(), password, { suppressToast: true });
+      const { user: signedInUser, error } = await signIn(email.trim(), password, { suppressToast: true });
       if (error) {
         const nextMessage = error.status === 401
-          ? 'Password is Incorrect.'
+          ? 'Incorrect email or password. Please try again.'
           : (error.message || 'We could not sign you in right now.');
 
         if (error.status === 401) {
@@ -135,7 +131,12 @@ const LoginPage = () => {
         return;
       }
 
-      navigate('/profile', { replace: true });
+      if (signedInUser?.adminUrl) {
+        window.location.assign(signedInUser.adminUrl);
+        return;
+      }
+
+      window.location.assign(getMemberProfileRedirectUrl());
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
@@ -164,7 +165,7 @@ const LoginPage = () => {
   const handleFieldKeyDown = (event) => {
     if (event.key === 'Enter') {
       cancelNativeSubmit(event);
-      event.currentTarget?.form?.requestSubmit?.();
+      void handleSubmit(event);
     }
   };
 
@@ -180,7 +181,7 @@ const LoginPage = () => {
         {passwordModalOpen ? (
           <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm">
             <div className="w-full max-w-md border border-white/18 bg-black/68 p-6 text-white shadow-[0_32px_80px_rgba(0,0,0,0.52)] backdrop-blur-md">
-              <h2 className="text-2xl font-semibold text-[#f8c235]">Incorrect Password</h2>
+              <h2 className="text-2xl font-semibold text-[#f8c235]">Incorrect Email or Password</h2>
               <p className="mt-3 text-base leading-7 text-white/78">
                 {passwordModalMessage}
               </p>
@@ -201,26 +202,12 @@ const LoginPage = () => {
             </div>
           </div>
         ) : null}
-        {loginHeroVideoUrl ? (
-          <div className="absolute inset-0">
-            <iframe
-              title="AAC login hero video"
-              src={loginHeroVideoUrl}
-              className="pointer-events-none absolute left-1/2 top-1/2 h-[120%] w-[120%] min-w-[1280px] -translate-x-1/2 -translate-y-1/2"
-              frameBorder="0"
-              allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
-              referrerPolicy="strict-origin-when-cross-origin"
-              allowFullScreen
-            />
-          </div>
-        ) : (
-          <img
-            src={loginBackgroundImageUrl}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        )}
+        <img
+          src={loginBackgroundImageUrl}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
         <div className="absolute inset-0" style={{ background: portalDesign.loginOverlay, opacity: loginOverlayOpacity }} />
         <div className="relative mx-auto flex min-h-screen max-w-6xl items-center px-4 pb-10 pt-[calc(var(--aac-portal-header-height)+1.5rem)] sm:px-6 sm:pb-14 sm:pt-[calc(var(--aac-portal-header-height)+2rem)] lg:px-8">
           <div className="grid w-full gap-8 lg:grid-cols-[0.95fr,0.75fr] lg:items-center">
@@ -240,12 +227,12 @@ const LoginPage = () => {
                   {portalContent.login_hero_description}
                 </p>
                 <div className="mt-6">
-                  <Link
-                    to="/join"
+                  <a
+                    href={JOIN_PAGE_URL}
                     className="inline-flex h-12 items-center justify-center border border-[#8f1515] bg-[#8f1515] px-6 text-sm font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#6f1010] hover:border-[#6f1010]"
                   >
                     Join Now
-                  </Link>
+                  </a>
                 </div>
               </div>
             </div>
@@ -296,7 +283,7 @@ const LoginPage = () => {
             <form
               className="space-y-5"
               data-aac-login-form="true"
-              onSubmit={handleSubmit}
+              onSubmit={cancelNativeSubmit}
               noValidate
             >
               <div>
@@ -348,29 +335,30 @@ const LoginPage = () => {
               </div>
 
               <Button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 disabled={busy}
-                className="mt-8 h-12 w-full rounded-none text-base"
+                className="mt-8 h-12 w-full rounded-none text-base font-semibold text-white"
                 style={{
                   backgroundColor: portalDesign.secondaryActionBackground,
-                  color: portalDesign.secondaryActionText,
+                  color: '#ffffff',
                 }}
               >
                 {busy ? 'Please wait…' : forgotMode ? 'Send reset link' : portalContent.login_submit_label}
               </Button>
-
-              {!forgotMode && pmproSocialLoginHtml ? (
-                <div className="mt-5 border-t border-white/12 pt-5">
-                  <p className="mb-3 text-center text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/68">
-                    Or continue with
-                  </p>
-                  <div
-                    className="aac-login-social text-black [&_.pmpro_btn]:h-11 [&_.pmpro_btn]:rounded-none [&_.pmpro_btn]:border [&_.pmpro_btn]:border-[#0c0a09]/12 [&_.pmpro_btn]:bg-white [&_.pmpro_btn]:px-4 [&_.pmpro_btn]:text-sm [&_.pmpro_btn]:font-semibold [&_.pmpro_btn]:text-[#030000] [&_.pmpro_btn:hover]:bg-stone-100 [&_.pmpro_login_wrap]:m-0 [&_.pmpro_login_wrap]:p-0 [&_.pmpro_login_wrap>hr]:hidden [&_.pmpro_social_login]:m-0 [&_.pmpro_social_login]:p-0"
-                    dangerouslySetInnerHTML={{ __html: pmproSocialLoginHtml }}
-                  />
-                </div>
-              ) : null}
             </form>
+
+            {!forgotMode && pmproSocialLoginHtml ? (
+              <div className="mt-5 border-t border-white/12 pt-5">
+                <p className="mb-3 text-center text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-white/68">
+                  Or continue with
+                </p>
+                <div
+                  className="aac-login-social text-black [&_.pmpro_btn]:h-11 [&_.pmpro_btn]:rounded-none [&_.pmpro_btn]:border [&_.pmpro_btn]:border-[#0c0a09]/12 [&_.pmpro_btn]:bg-white [&_.pmpro_btn]:px-4 [&_.pmpro_btn]:text-sm [&_.pmpro_btn]:font-semibold [&_.pmpro_btn]:text-[#030000] [&_.pmpro_btn:hover]:bg-stone-100 [&_.pmpro_login_wrap]:m-0 [&_.pmpro_login_wrap]:p-0 [&_.pmpro_login_wrap>hr]:hidden [&_.pmpro_social_login]:m-0 [&_.pmpro_social_login]:p-0"
+                  dangerouslySetInnerHTML={{ __html: pmproSocialLoginHtml }}
+                />
+              </div>
+            ) : null}
           </motion.div>
           </div>
         </div>

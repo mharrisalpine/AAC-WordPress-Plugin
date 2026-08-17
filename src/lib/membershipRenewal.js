@@ -1,7 +1,7 @@
 /**
  * Prompt non-auto-renewing members when expiration is within this many days (or already past).
  */
-export const RENEWAL_PROMPT_DAYS = 30;
+export const RENEWAL_PROMPT_DAYS = 90;
 
 export function getDaysUntilMembershipDate(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') {
@@ -34,6 +34,11 @@ export function shouldPromptMembershipVerification(profile) {
     return false;
   }
 
+  const status = String(profile?.profile_info?.status || '').toLowerCase();
+  if (status === 'active' && days < 0) {
+    return false;
+  }
+
   return days <= RENEWAL_PROMPT_DAYS;
 }
 
@@ -46,6 +51,11 @@ export function getExpirationWarningDetails(profile) {
   const expirationDate = profile?.profile_info?.expiration_date;
   const daysUntilExpiration = getDaysUntilMembershipDate(expirationDate);
   if (daysUntilExpiration === null || daysUntilExpiration > RENEWAL_PROMPT_DAYS) {
+    return null;
+  }
+
+  const status = String(profile?.profile_info?.status || '').toLowerCase();
+  if (status === 'active' && daysUntilExpiration < 0) {
     return null;
   }
 

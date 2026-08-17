@@ -17,7 +17,7 @@ const DiscountModal = ({ partner, onClose }) => {
     }
   };
 
-  const handleVisitStore = async () => {
+  const handleVisitWebsite = async () => {
     if (partner?.url) {
       await openExternalUrl(partner.url);
     }
@@ -83,11 +83,11 @@ const DiscountModal = ({ partner, onClose }) => {
             </div>
 
             <Button
-              onClick={handleVisitStore}
+              onClick={handleVisitWebsite}
               className="w-full bg-[#B71C1C] hover:bg-[#D32F2F] text-white h-12 text-lg"
             >
               <ExternalLink className="w-5 h-5 mr-2" />
-              Visit Store
+              Visit Website
             </Button>
           </motion.div>
         </motion.div>
