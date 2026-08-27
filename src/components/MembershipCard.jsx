@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, CheckSquare2, FileText, Flag, GraduationCap } from 'lucide-react';
+import { CheckCircle2, CheckSquare2, FileText, Flag, GraduationCap, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmationLetterDialog from '@/components/ConfirmationLetterDialog';
 import { getFullName, normalizeAccountInfo, normalizeMembershipDiscountType } from '@/lib/memberProfile';
@@ -110,6 +110,13 @@ const MembershipCard = ({ profile }) => {
   const discountBadge = discountType ? DISCOUNT_BADGE_CONTENT[discountType] : null;
   const DiscountBadgeIcon = discountBadge?.Icon;
   const membershipTierLabel = getTierDisplayLabel(profileInfo?.tier, 'Free');
+  const familyMembership = profile?.family_membership || {};
+  const connectedAccounts = Array.isArray(profile?.connected_accounts) ? profile.connected_accounts : [];
+  const isFamilyPlan = Boolean(
+    familyMembership.mode === 'family' ||
+    profile?.linked_parent_account ||
+    connectedAccounts.length > 0,
+  );
   const memberSinceLabel = formatMemberCardYear(profileInfo?.joined_date);
   const validThruLabel = formatValidThru(profileInfo);
   const hasAutoRenewal = Boolean(accountInfo.auto_renew || profile?.membership_actions?.current_subscription_id);
@@ -169,20 +176,20 @@ const MembershipCard = ({ profile }) => {
                 className="h-10 w-auto max-w-[13rem] object-contain sm:h-12"
               />
             </div>
-            <div className="aac-membership-card-badges flex shrink-0 items-center gap-2">
+            <div className="aac-membership-card-badges flex max-w-[62%] shrink-0 flex-wrap items-center justify-end gap-2">
               <span
                 className={cn(
-                  'inline-flex items-center gap-2 border px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.22em]',
-                  isMemberActive ? 'border-emerald-400/45 text-emerald-200' : 'border-white/28 text-white/60',
+                  'inline-flex items-center gap-2 border-2 px-3.5 py-2.5 text-[0.72rem] font-bold uppercase tracking-[0.2em]',
+                  isMemberActive ? 'border-emerald-400 text-emerald-200' : 'border-white/38 text-white/70',
                 )}
               >
-                {isMemberActive ? <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.2} /> : null}
+                {isMemberActive ? <CheckCircle2 className="h-4 w-4" strokeWidth={2.4} /> : null}
                 {status}
               </span>
               <span
                 className={cn(
-                  'hidden rounded-none border px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.28em] sm:inline-flex',
-                  isMemberActive ? 'border-[#d23a32] text-[#ff594f]' : 'border-white/28 text-white/60',
+                  'hidden rounded-none border-2 px-3.5 py-2.5 text-[0.72rem] font-bold uppercase tracking-[0.22em] sm:inline-flex',
+                  isMemberActive ? 'border-[#ff4b43] text-[#ff6b63]' : 'border-white/38 text-white/70',
                 )}
               >
                 {membershipTierLabel}
@@ -193,6 +200,12 @@ const MembershipCard = ({ profile }) => {
                   {discountBadge.label}
                 </span>
               ) : null}
+              {isFamilyPlan ? (
+                <span className="inline-flex items-center gap-2 border border-white/18 px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-white/68">
+                  <Users className="h-3.5 w-3.5 text-[#d23a32]" strokeWidth={2.1} />
+                  Family
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -201,10 +214,10 @@ const MembershipCard = ({ profile }) => {
               <p className="text-[0.66rem] font-medium uppercase tracking-[0.36em] text-[#ff8a80] sm:text-xs">
                 {membershipTierLabel} Member
               </p>
-              <h2 className="aac-membership-card-name mt-3 truncate font-serif text-3xl leading-none tracking-normal text-[#f7f1e8] sm:text-5xl lg:text-6xl">
+              <h2 className="aac-membership-card-name mt-3 font-serif text-3xl leading-[1.08] tracking-normal text-white sm:text-5xl lg:text-6xl">
                 {memberName}
               </h2>
-              <p className="mt-4 font-mono text-sm tracking-[0.18em] text-white/52 sm:text-lg">
+              <p className="aac-membership-card-number mt-6 font-mono text-sm tracking-[0.18em] text-white/52 sm:text-lg">
                 No. {memberNumber}
               </p>
             </div>
@@ -215,7 +228,7 @@ const MembershipCard = ({ profile }) => {
               <div>
                 <p className="font-mono text-[0.66rem] uppercase tracking-[0.3em] text-white/46 sm:text-xs">Valid Thru</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <p className="font-mono text-xl tracking-[0.06em] text-[#f7f1e8] sm:text-2xl">{validThruLabel}</p>
+                  <p className="font-mono text-xl tracking-[0.06em] text-white sm:text-2xl">{validThruLabel}</p>
                   {hasAutoRenewal ? (
                     <span className="inline-flex items-center gap-1.5 border border-emerald-400/35 bg-emerald-500/10 px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-emerald-200">
                       <CheckSquare2 className="h-3.5 w-3.5 text-emerald-300" strokeWidth={2.4} />
@@ -226,7 +239,7 @@ const MembershipCard = ({ profile }) => {
               </div>
               <div className="text-right">
                 <p className="font-mono text-[0.66rem] uppercase tracking-[0.3em] text-white/46 sm:text-xs">Member Since</p>
-                <p className="mt-2 font-mono text-xl tracking-[0.06em] text-[#f7f1e8] sm:text-2xl">{memberSinceLabel}</p>
+                <p className="mt-2 font-mono text-xl tracking-[0.06em] text-white sm:text-2xl">{memberSinceLabel}</p>
               </div>
             </div>
           </div>
