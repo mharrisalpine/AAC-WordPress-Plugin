@@ -1,6 +1,6 @@
 import { getAppRuntimeConfig } from '@/lib/backendConfig';
 
-export const JOIN_PAGE_URL = 'https://wondrous-marshallleeharris.wpcomstaging.com/membership/#/join';
+export const JOIN_PAGE_URL = '/signup/';
 
 // These defaults are the app's emergency backpack: they keep the frontend usable
 // outside WordPress and catch missing runtime settings before the UI face-plants.
@@ -159,7 +159,6 @@ const DEFAULT_SETTINGS = {
       Leader: [
         'Support for AAC Advocacy, Education, & Member Services',
         'AAC T-shirt',
-        'Discounts: Gear, Gym, & Guide Services',
         'AAC Library',
         'Rescue Coverage',
         'Medical Expense Coverage',
@@ -169,7 +168,6 @@ const DEFAULT_SETTINGS = {
       Advocate: [
         'Support for AAC Advocacy, Education, & Member Services',
         'AAC T-shirt',
-        'Discounts: Gear, Gym, & Guide Services',
         'AAC Library',
         'Rescue Coverage',
         'Medical Expense Coverage',

@@ -8,12 +8,15 @@ final class AAC_Member_Portal_Import_Manager {
 	const PAGE_SLUG = 'aac-member-portal-import-manager';
 	const SCHEMA_VERSION = '1.0.0';
 	const SCHEMA_OPTION = 'aac_member_portal_import_manager_schema_version';
+	const PROFILE_META_REPAIR_VERSION = '1.0.0';
+	const PROFILE_META_REPAIR_OPTION = 'aac_member_portal_import_profile_meta_repair_version';
 	const DEFAULT_SYNC_LIMIT = 20;
 	const MAX_SYNC_LIMIT = 50;
 
 	public function __construct() {
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('init', [$this, 'maybe_install_schema']);
+		add_action('init', [$this, 'maybe_repair_imported_profile_metadata'], 20);
 		add_action('admin_post_aac_member_portal_import_upload', [$this, 'handle_upload']);
 		add_action('admin_post_aac_member_portal_import_sync', [$this, 'handle_sync']);
 		add_action('admin_post_aac_member_portal_import_clear', [$this, 'handle_clear']);
@@ -32,6 +35,31 @@ final class AAC_Member_Portal_Import_Manager {
 		}
 
 		self::install_schema();
+	}
+
+	public function maybe_repair_imported_profile_metadata() {
+		if (get_option(self::PROFILE_META_REPAIR_OPTION) === self::PROFILE_META_REPAIR_VERSION) {
+			return;
+		}
+
+		$user_ids = get_users([
+			'meta_key' => 'aac_import_source',
+			'meta_value' => 'member_import_manager',
+			'fields' => 'ids',
+			'number' => -1,
+		]);
+
+		foreach ((array) $user_ids as $user_id) {
+			$raw_row = get_user_meta((int) $user_id, 'aac_imported_member_row', true);
+			$row = json_decode((string) $raw_row, true);
+			if (!is_array($row) || empty($row)) {
+				continue;
+			}
+
+			$this->update_user_meta_from_row((int) $user_id, $row, false);
+		}
+
+		update_option(self::PROFILE_META_REPAIR_OPTION, self::PROFILE_META_REPAIR_VERSION, false);
 	}
 
 	public static function install_schema() {
@@ -1282,7 +1310,7 @@ final class AAC_Member_Portal_Import_Manager {
 		return wp_insert_user($user_data);
 	}
 
-	private function update_user_meta_from_row($user_id, $row) {
+	private function update_user_meta_from_row($user_id, $row, $record_import_metadata = true) {
 		$meta_map = [
 			'aac_member_id' => ['aac_member_id', 'member_id', 'membership_number'],
 			'aac_member_since_year' => ['aac_member_since_year', 'member_since_year', 'member_since'],
@@ -1291,15 +1319,27 @@ final class AAC_Member_Portal_Import_Manager {
 			'pmpro_stripe_customerid' => ['pmpro_stripe_customerid', 'stripe_customer_id', 'customer_id'],
 			'aac_imported_stripe_subscription_id' => ['membership_subscription_transaction_id', 'stripe_subscription_id', 'subscription_id'],
 			'aac_imported_payment_transaction_id' => ['membership_payment_transaction_id', 'stripe_payment_transaction_id', 'payment_transaction_id'],
+			'aac_membership_discount_type' => ['aac_membership_discount_type', 'aac_discount_type', 'discount_type'],
 			'aac_discount_type' => ['aac_discount_type', 'discount_type'],
-			'aac_student_university' => ['aac_student_university', 'university_school', 'school', 'university'],
+			'student_university' => ['student_university', 'aac_student_university', 'university_school', 'school', 'university'],
+			'university_school' => ['university_school', 'student_university', 'aac_student_university', 'school', 'university'],
+			'aac_student_university' => ['aac_student_university', 'university_school', 'student_university', 'school', 'university'],
+			'graduation_date' => ['graduation_date', 'aac_student_graduation_date'],
+			'student_graduation_date' => ['graduation_date', 'aac_student_graduation_date'],
 			'aac_student_graduation_date' => ['aac_student_graduation_date', 'graduation_date'],
+			'service_component' => ['service_component', 'aac_service_component'],
+			'military_service_component' => ['service_component', 'aac_service_component'],
 			'aac_service_component' => ['aac_service_component', 'service_component'],
-			'tshirt_size' => ['tshirt_size', 't_shirt_size', 'shirt_size'],
+			't_shirt' => ['t_shirt', 'tshirt_size', 't_shirt_size', 'shirt_size'],
+			'tshirt_size' => ['tshirt_size', 't_shirt_size', 't_shirt', 'shirt_size'],
+			'aaj_preference' => ['aaj_preference', 'aac_publication_aaj'],
+			'anac_preference' => ['anac_preference', 'accidents_preference', 'aac_publication_accidents'],
+			'american_climbing_journal_preference' => ['american_climbing_journal_preference', 'acj_preference', 'aac_publication_acj'],
+			'guidebook_preferences' => ['guidebook_preferences', 'guidebook_preference', 'aac_publication_guidebook'],
 			'aac_publication_aaj' => ['aac_publication_aaj', 'aaj_preference'],
-			'aac_publication_accidents' => ['aac_publication_accidents', 'accidents_preference'],
-			'aac_publication_guidebook' => ['aac_publication_guidebook', 'guidebook_preference'],
-			'aac_publication_acj' => ['aac_publication_acj', 'acj_preference'],
+			'aac_publication_accidents' => ['aac_publication_accidents', 'accidents_preference', 'anac_preference'],
+			'aac_publication_guidebook' => ['aac_publication_guidebook', 'guidebook_preference', 'guidebook_preferences'],
+			'aac_publication_acj' => ['aac_publication_acj', 'acj_preference', 'american_climbing_journal_preference'],
 				'pmpro_sphone' => ['pmpro_sphone', 'sphone', 'bphone', 'phone', 'phone_number'],
 				'pmpro_saddress1' => ['pmpro_saddress1', 'saddress1', 'baddress1', 'address1', 'address'],
 				'pmpro_saddress2' => ['pmpro_saddress2', 'saddress2', 'baddress2', 'address2'],
@@ -1310,6 +1350,11 @@ final class AAC_Member_Portal_Import_Manager {
 			'birthdate' => ['birthdate', 'birthday', 'date_of_birth'],
 			'aac_emergency_contact_name' => ['aac_emergency_contact_name', 'emergency_contact_name'],
 			'aac_emergency_contact_phone' => ['aac_emergency_contact_phone', 'emergency_contact_phone'],
+			'emergency_contact_first_name' => ['emergency_contact_first_name', 'emergency_first_name'],
+			'emergency_contact_last_name' => ['emergency_contact_last_name', 'emergency_last_name'],
+			'emergency_contact_phone' => ['emergency_contact_phone', 'aac_emergency_contact_phone'],
+			'emergency_contact_email' => ['emergency_contact_email'],
+			'emergency_contact_relationship' => ['emergency_contact_relationship'],
 			'aac_family_account_role' => ['aac_family_account_role', 'family_role', 'row_type'],
 			'aac_linked_parent_member_id' => ['aac_linked_parent_member_id', 'parent_member_id', 'parent_aac_member_id'],
 			'aac_linked_parent_email' => ['aac_linked_parent_email', 'parent_email', 'parent_user_email'],
@@ -1324,9 +1369,59 @@ final class AAC_Member_Portal_Import_Manager {
 			update_user_meta($user_id, $meta_key, sanitize_text_field($value));
 		}
 
-		update_user_meta($user_id, 'aac_import_source', 'member_import_manager');
-		update_user_meta($user_id, 'aac_imported_member_row', wp_json_encode($row));
-		update_user_meta($user_id, 'aac_imported_at', current_time('mysql'));
+		$this->update_account_info_from_row($user_id, $row);
+
+		if ($record_import_metadata) {
+			update_user_meta($user_id, 'aac_import_source', 'member_import_manager');
+			update_user_meta($user_id, 'aac_imported_member_row', wp_json_encode($row));
+			update_user_meta($user_id, 'aac_imported_at', current_time('mysql'));
+		}
+	}
+
+	private function update_account_info_from_row($user_id, $row) {
+		$account_info = get_user_meta($user_id, 'aac_account_info', true);
+		$account_info = is_array($account_info) ? $account_info : [];
+		$field_map = [
+			'first_name' => ['first_name', 'firstname', 'billing_first_name'],
+			'last_name' => ['last_name', 'lastname', 'billing_last_name'],
+			'email' => ['user_email', 'email'],
+			'phone' => ['phone', 'phone_number', 'pmpro_sphone'],
+			'birthdate' => ['birthdate', 'birthday', 'date_of_birth'],
+			'street' => ['address1', 'address', 'pmpro_saddress1'],
+			'address2' => ['address2', 'pmpro_saddress2'],
+			'city' => ['city', 'pmpro_scity'],
+			'state' => ['state', 'pmpro_sstate'],
+			'zip' => ['zip', 'zipcode', 'postal_code', 'pmpro_szipcode'],
+			'country' => ['country', 'pmpro_scountry'],
+			'size' => ['t_shirt', 'tshirt_size', 't_shirt_size', 'shirt_size'],
+			'aaj_pref' => ['aaj_preference', 'aac_publication_aaj'],
+			'anac_pref' => ['anac_preference', 'accidents_preference', 'aac_publication_accidents'],
+			'acj_pref' => ['american_climbing_journal_preference', 'acj_preference', 'aac_publication_acj'],
+			'guidebook_pref' => ['guidebook_preferences', 'guidebook_preference', 'aac_publication_guidebook'],
+			'membership_discount_type' => ['aac_membership_discount_type', 'discount_type', 'aac_discount_type'],
+			'emergency_contact_first_name' => ['emergency_contact_first_name', 'emergency_first_name'],
+			'emergency_contact_last_name' => ['emergency_contact_last_name', 'emergency_last_name'],
+			'emergency_contact_phone' => ['emergency_contact_phone', 'aac_emergency_contact_phone'],
+			'emergency_contact_email' => ['emergency_contact_email'],
+			'emergency_contact_relationship' => ['emergency_contact_relationship'],
+			'student_university' => ['student_university', 'university_school', 'aac_student_university', 'school', 'university'],
+			'graduation_date' => ['graduation_date', 'aac_student_graduation_date'],
+			'service_component' => ['service_component', 'aac_service_component'],
+		];
+
+		foreach ($field_map as $account_key => $keys) {
+			$value = $this->row_value($row, $keys);
+			if ($value !== '') {
+				$account_info[$account_key] = sanitize_text_field($value);
+			}
+		}
+
+		$auto_renew = $this->row_value($row, ['auto_renew']);
+		if ($auto_renew !== '') {
+			$account_info['auto_renew'] = in_array(strtolower((string) $auto_renew), ['1', 'true', 'yes', 'on'], true);
+		}
+
+		update_user_meta($user_id, 'aac_account_info', $account_info);
 	}
 
 	private function apply_pmpro_membership($user_id, $row, $level_id) {

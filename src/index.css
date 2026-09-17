@@ -117,6 +117,10 @@ body.aac-join-scroll-locked .topo-lines > main {
   padding-bottom: clamp(7rem, 10vw, 9rem);
 }
 
+body.aac-signup-header-managed .aac-join-layout {
+  padding-top: calc(var(--aac-signup-header-clearance, 0px) + clamp(1.5rem, 2.5vw, 2.5rem));
+}
+
 .aac-join-sidebar,
 .aac-join-main {
   backface-visibility: hidden;
@@ -190,6 +194,28 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.02em;
 }
 
+:is(#root, #aac-member-portal-root) .aac-membership-tier-card__price-value {
+  font-family: futura-pt-bold, futura-pt, Futura, 'Futura PT', 'Century Gothic', 'Trebuchet MS', 'Gill Sans', ui-sans-serif, sans-serif !important;
+  font-weight: 700 !important;
+}
+
+:is(#root, #aac-member-portal-root) .aac-redeem-family-invite-button {
+  border: 1px solid #000000 !important;
+}
+
+:is(#root, #aac-member-portal-root) .aac-billing-membership-details,
+:is(#root, #aac-member-portal-root) .aac-transaction-register-entry {
+  border: 1px solid #000000 !important;
+}
+
+:is(#root, #aac-member-portal-root) .aac-membership-tier-card {
+  border: 1px solid #000000 !important;
+}
+
+:is(#root, #aac-member-portal-root) .aac-membership-tier-card[aria-checked="true"] {
+  border: 3px solid #ffc72c !important;
+}
+
 .card-gradient {
   background: #ffffff;
   box-shadow: 0 22px 60px rgba(16, 10, 7, 0.08);
@@ -236,7 +262,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 [data-aac-login-surface="true"] {
-  background: rgba(0, 0, 0, 0.58) !important;
+  background: #000000 !important;
   border-color: rgba(255, 255, 255, 0.18) !important;
   color: #ffffff !important;
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.52) !important;
@@ -250,6 +276,10 @@ h1, h2, h3, h4, h5, h6 {
 [data-aac-login-surface="true"] p[class*="tracking-"],
 [data-aac-login-surface="true"] button[type="button"]:not([data-aac-button="true"]) {
   color: #f8c235 !important;
+}
+
+[data-aac-login-surface="true"] button[type="button"][data-aac-password-visibility="true"] {
+  color: #000000 !important;
 }
 
 .portal-sidebar-surface {
@@ -316,7 +346,7 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: center;
   gap: 0.75rem;
   width: 100%;
-  max-width: 96rem;
+  max-width: none;
   margin: 0 auto;
   overflow-x: auto;
   padding: 0 1rem;
@@ -328,7 +358,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .portal-horizontal-nav .portal-sidebar-nav {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   flex-direction: row;
   align-items: center;
@@ -349,7 +379,13 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  min-width: max-content;
+  min-width: 0;
+  width: 100%;
+}
+
+.portal-horizontal-nav .portal-sidebar-nav li {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .portal-horizontal-nav .portal-sidebar-section-title {
@@ -359,7 +395,8 @@ h1, h2, h3, h4, h5, h6 {
 .portal-horizontal-nav .portal-sidebar-link {
   justify-content: center;
   min-height: 3.25rem;
-  min-width: 12.75rem;
+  min-width: 0;
+  width: 100%;
   border: 0;
   padding: 0.95rem 1.5rem;
   font-size: 0.98rem;
@@ -372,6 +409,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .portal-sidebar-signout--horizontal {
+  flex: 0 0 auto;
   border-left: 0;
   padding-left: 0.75rem;
 }
@@ -496,9 +534,9 @@ h1, h2, h3, h4, h5, h6 {
 .portal-horizontal-nav .portal-sidebar-link--active:hover,
 .portal-horizontal-nav .portal-sidebar-link--active:focus,
 .portal-horizontal-nav .portal-sidebar-link--active:active {
-  background: #b71c1c;
-  border-color: transparent;
-  color: #ffffff !important;
+  background: #ffffff;
+  border-bottom: 3px solid #b71c1c !important;
+  color: #16130f !important;
 }
 
 .portal-horizontal-nav .portal-sidebar-link svg,
@@ -632,6 +670,18 @@ h1, h2, h3, h4, h5, h6 {
   animation: memorialPulse 2.8s ease-out infinite;
 }
 
+/* Keep identity typography separated when the host theme resets heading and paragraph spacing. */
+#aac-member-portal-root .aac-membership-card-name,
+#root .aac-membership-card-name {
+  line-height: 1.08 !important;
+  overflow: visible !important;
+}
+
+#aac-member-portal-root .aac-membership-card-number,
+#root .aac-membership-card-number {
+  margin-top: 1.5rem !important;
+}
+
 @keyframes memorialPulse {
   0% {
     opacity: 0.8;
@@ -647,295 +697,6 @@ h1, h2, h3, h4, h5, h6 {
     opacity: 0;
     transform: scale(1.12);
   }
-}
-
-/* Cordillera-inspired styling for non-profile, non-login, non-signup pages. */
-.aac-cordillera-theme {
-  --aac-cordillera-bone: #f1ece3;
-  --aac-cordillera-bone-soft: #faf8f3;
-  --aac-cordillera-bone-deep: #e5dece;
-  --aac-cordillera-char: #14160f;
-  --aac-cordillera-char-soft: #1e211a;
-  --aac-cordillera-slate: #4a5048;
-  --aac-cordillera-forest: #1f2d24;
-  --aac-cordillera-rust: #b8552e;
-  --aac-cordillera-rust-deep: #8b3d1f;
-  --aac-cordillera-sun: #d9b26f;
-  --aac-cordillera-line: rgba(20, 22, 15, 0.14);
-  --aac-cordillera-line-soft: rgba(20, 22, 15, 0.07);
-  --aac-cordillera-display: "Barlow Condensed", futura-pt-condensed, futura-pt-bold, "Arial Narrow", sans-serif;
-  --aac-cordillera-body: "Newsreader", Georgia, "Times New Roman", serif;
-  --aac-cordillera-sans: "DM Sans", futura-pt, system-ui, sans-serif;
-  --aac-cordillera-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
-  background:
-    linear-gradient(rgba(20, 22, 15, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(20, 22, 15, 0.035) 1px, transparent 1px),
-    var(--aac-cordillera-bone);
-  background-size: 36px 36px, 36px 36px, auto;
-  color: var(--aac-cordillera-char);
-  font-family: var(--aac-cordillera-body);
-  letter-spacing: 0;
-}
-
-.aac-cordillera-theme .portal-main-surface,
-.aac-cordillera-theme.topo-lines,
-.aac-cordillera-theme.member-app-surface {
-  background:
-    radial-gradient(circle at 16% 10%, rgba(31, 45, 36, 0.08), transparent 22%),
-    linear-gradient(rgba(20, 22, 15, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(20, 22, 15, 0.025) 1px, transparent 1px),
-    var(--aac-cordillera-bone);
-  background-size: auto, 44px 44px, 44px 44px, auto;
-}
-
-.aac-cordillera-theme .portal-main-surface {
-  padding-top: clamp(1.5rem, 3vw, 3rem);
-}
-
-.aac-cordillera-theme .mx-auto.max-w-7xl {
-  max-width: 90rem;
-}
-
-.aac-cordillera-theme h1,
-.aac-cordillera-theme h2,
-.aac-cordillera-theme h3,
-.aac-cordillera-theme h4,
-.aac-cordillera-theme h5,
-.aac-cordillera-theme h6 {
-  font-family: var(--aac-cordillera-display) !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.01em !important;
-  line-height: 0.95 !important;
-  text-transform: uppercase;
-}
-
-.aac-cordillera-theme h1 {
-  font-size: clamp(3.4rem, 7vw, 8rem) !important;
-}
-
-.aac-cordillera-theme h2 {
-  font-size: clamp(2.6rem, 4.8vw, 5.6rem) !important;
-}
-
-.aac-cordillera-theme h3 {
-  font-size: clamp(1.85rem, 2.7vw, 3rem) !important;
-}
-
-.aac-cordillera-theme p,
-.aac-cordillera-theme li,
-.aac-cordillera-theme dd,
-.aac-cordillera-theme td,
-.aac-cordillera-theme textarea {
-  font-family: var(--aac-cordillera-body);
-  letter-spacing: 0;
-}
-
-.aac-cordillera-theme a,
-.aac-cordillera-theme button,
-.aac-cordillera-theme label,
-.aac-cordillera-theme input,
-.aac-cordillera-theme select,
-.aac-cordillera-theme .text-xs,
-.aac-cordillera-theme [class*="tracking-"] {
-  font-family: var(--aac-cordillera-mono) !important;
-}
-
-.aac-cordillera-theme [class*="rounded"] {
-  border-radius: 0 !important;
-}
-
-.aac-cordillera-theme [class*="shadow"] {
-  box-shadow: none !important;
-}
-
-.aac-cordillera-theme .bg-white,
-.aac-cordillera-theme .card-gradient,
-.aac-cordillera-theme .glass-card,
-.aac-cordillera-theme .paper-panel {
-  background-color: var(--aac-cordillera-bone-soft) !important;
-  background-image: none !important;
-}
-
-.aac-cordillera-theme .bg-stone-100,
-.aac-cordillera-theme .bg-stone-200,
-.aac-cordillera-theme [class*="bg-[#f8f4eb]"] {
-  background-color: var(--aac-cordillera-bone-deep) !important;
-}
-
-.aac-cordillera-theme .bg-black,
-.aac-cordillera-theme [class*="bg-[#0d0a09]"],
-.aac-cordillera-theme [class*="bg-[#030000]"],
-.aac-cordillera-theme .bg-stone-900 {
-  background-color: var(--aac-cordillera-char) !important;
-}
-
-.aac-cordillera-theme .text-black,
-.aac-cordillera-theme .text-stone-950,
-.aac-cordillera-theme .text-stone-900,
-.aac-cordillera-theme .text-stone-800,
-.aac-cordillera-theme .text-stone-700 {
-  color: var(--aac-cordillera-char) !important;
-}
-
-.aac-cordillera-theme .text-stone-600,
-.aac-cordillera-theme .text-stone-500,
-.aac-cordillera-theme .text-black\/75,
-.aac-cordillera-theme .text-black\/72,
-.aac-cordillera-theme .text-black\/68,
-.aac-cordillera-theme .text-black\/65,
-.aac-cordillera-theme .text-black\/55 {
-  color: var(--aac-cordillera-slate) !important;
-}
-
-.aac-cordillera-theme .text-white,
-.aac-cordillera-theme .text-white\/72,
-.aac-cordillera-theme .text-white\/84,
-.aac-cordillera-theme .text-white\/88 {
-  color: var(--aac-cordillera-bone-soft) !important;
-}
-
-.aac-cordillera-theme [class*="text-[#8f1515]"],
-.aac-cordillera-theme [class*="text-[#b71c1c]"],
-.aac-cordillera-theme .text-red-700,
-.aac-cordillera-theme .text-red-800 {
-  color: var(--aac-cordillera-rust) !important;
-}
-
-.aac-cordillera-theme .border,
-.aac-cordillera-theme [class*="border-stone"],
-.aac-cordillera-theme [class*="border-[#d9d9d9]"] {
-  border-color: var(--aac-cordillera-line) !important;
-}
-
-.aac-cordillera-theme [class*="border-[#b71c1c]"],
-.aac-cordillera-theme [class*="border-[#8f1515]"],
-.aac-cordillera-theme .border-b-2,
-.aac-cordillera-theme .border-b-\[3px\],
-.aac-cordillera-theme .border-y-2,
-.aac-cordillera-theme .border-y-\[3px\] {
-  border-color: var(--aac-cordillera-rust) !important;
-}
-
-.aac-cordillera-theme .border-b-2,
-.aac-cordillera-theme .border-b-\[3px\] {
-  border-bottom-width: 1px !important;
-}
-
-.aac-cordillera-theme .border-y-2,
-.aac-cordillera-theme .border-y-\[3px\] {
-  border-top-width: 1px !important;
-  border-bottom-width: 1px !important;
-}
-
-.aac-cordillera-theme section,
-.aac-cordillera-theme article {
-  border-radius: 0 !important;
-}
-
-.aac-cordillera-theme article,
-.aac-cordillera-theme details,
-.aac-cordillera-theme .paper-panel,
-.aac-cordillera-theme .card-gradient {
-  border-color: var(--aac-cordillera-line) !important;
-}
-
-.aac-cordillera-theme article:hover,
-.aac-cordillera-theme details:hover {
-  border-color: var(--aac-cordillera-char) !important;
-}
-
-.aac-cordillera-theme section > [class*="border-b"],
-.aac-cordillera-theme div > [class*="border-b"] {
-  border-color: var(--aac-cordillera-rust) !important;
-}
-
-.aac-cordillera-theme img {
-  filter: saturate(0.88) contrast(1.04);
-}
-
-.aac-cordillera-theme article img,
-.aac-cordillera-theme [class*="aspect-"] img {
-  transition: filter 260ms ease, transform 260ms ease;
-}
-
-.aac-cordillera-theme article:hover img,
-.aac-cordillera-theme button:hover img,
-.aac-cordillera-theme a:hover img {
-  filter: saturate(0.8) contrast(1.08) brightness(0.94);
-}
-
-.aac-cordillera-theme a:not(.portal-sidebar-link),
-.aac-cordillera-theme button:not(.portal-sidebar-link) {
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-}
-
-.aac-cordillera-theme [class*="bg-[#8f1515]"],
-.aac-cordillera-theme [class*="bg-[#b71c1c]"],
-.aac-cordillera-theme [class*="hover:bg-[#8f1515]"]:hover,
-.aac-cordillera-theme [class*="hover:bg-[#6f1010]"]:hover,
-.aac-cordillera-theme button[class*="bg-[#b71c1c]"],
-.aac-cordillera-theme button[class*="bg-[#8f1515]"],
-.aac-cordillera-theme a[class*="bg-[#b71c1c]"],
-.aac-cordillera-theme a[class*="bg-[#8f1515]"] {
-  background-color: var(--aac-cordillera-rust) !important;
-  color: var(--aac-cordillera-bone-soft) !important;
-}
-
-.aac-cordillera-theme [class*="bg-[#f8c235]"],
-.aac-cordillera-theme [class*="hover:bg-[#ddb01d]"]:hover {
-  background-color: var(--aac-cordillera-sun) !important;
-  color: var(--aac-cordillera-char) !important;
-}
-
-.aac-cordillera-theme button[class*="border"],
-.aac-cordillera-theme a[class*="border"] {
-  border-color: var(--aac-cordillera-line) !important;
-}
-
-.aac-cordillera-theme button[class*="border-[#8f1515]"],
-.aac-cordillera-theme button[class*="border-[#b71c1c]"],
-.aac-cordillera-theme a[class*="border-[#8f1515]"],
-.aac-cordillera-theme a[class*="border-[#b71c1c]"] {
-  border-color: var(--aac-cordillera-rust) !important;
-}
-
-.aac-cordillera-theme button[class*="border"]:hover,
-.aac-cordillera-theme a[class*="border"]:hover {
-  border-color: var(--aac-cordillera-char) !important;
-}
-
-.aac-cordillera-theme input,
-.aac-cordillera-theme select,
-.aac-cordillera-theme textarea {
-  border: 0 !important;
-  border-bottom: 1px solid var(--aac-cordillera-char) !important;
-  background: transparent !important;
-  color: var(--aac-cordillera-char) !important;
-  box-shadow: none !important;
-}
-
-.aac-cordillera-theme input:focus,
-.aac-cordillera-theme select:focus,
-.aac-cordillera-theme textarea:focus {
-  border-bottom-color: var(--aac-cordillera-rust) !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-}
-
-.aac-cordillera-theme label,
-.aac-cordillera-theme [class*="uppercase"][class*="tracking"] {
-  color: var(--aac-cordillera-slate) !important;
-  font-size: 0.68rem;
-}
-
-.aac-cordillera-theme .portal-sidebar-surface {
-  background-color: var(--aac-cordillera-char);
-  --portal-sidebar-accent: var(--aac-cordillera-sun);
-}
-
-.aac-cordillera-theme .portal-sidebar-link--active {
-  border-color: var(--aac-cordillera-rust) !important;
 }
 
 /* Keep profile section rules visible when the host WordPress theme resets borders. */
@@ -960,6 +721,45 @@ h1, h2, h3, h4, h5, h6 {
   border-color: #b71c1c !important;
 }
 
+#aac-member-portal-root .aac-publication-toggle {
+  appearance: none !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  flex: 0 0 64px !important;
+  width: 64px !important;
+  min-width: 64px !important;
+  max-width: 64px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  padding: 0 !important;
+  border-width: 1px !important;
+  border-radius: 999px !important;
+}
+
+#aac-member-portal-root .aac-publication-toggle__thumb {
+  position: absolute !important;
+  box-sizing: border-box !important;
+  top: 50% !important;
+  left: 3px !important;
+  right: auto !important;
+  width: 24px !important;
+  height: 24px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: white !important;
+  transform: translateY(-50%) !important;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+#aac-member-portal-root .aac-publication-toggle[aria-checked="true"] .aac-publication-toggle__thumb {
+  left: auto !important;
+  right: 3px !important;
+}
+
 #aac-member-portal-root .aac-auto-renew-toggle {
   box-sizing: border-box !important;
   width: 64px !important;
@@ -977,6 +777,13 @@ h1, h2, h3, h4, h5, h6 {
   height: 22px !important;
 }
 
+#aac-member-portal-root .aac-auto-renew-toggle:disabled {
+  background-color: #d6d3d1 !important;
+  border-color: #a8a29e !important;
+  cursor: not-allowed !important;
+  opacity: 0.65 !important;
+}
+
 #aac-member-portal-root .aac-auto-renew-toggle__thumb.translate-x-8 {
   transform: translateX(32px) !important;
 }
@@ -985,8 +792,43 @@ h1, h2, h3, h4, h5, h6 {
   transform: translateX(0) !important;
 }
 
+#aac-member-portal-root .aac-membership-transaction-section {
+  padding-top: 1.25rem !important;
+}
+
 #aac-member-portal-root .aac-benefit-gallery-card {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  white-space: normal !important;
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.10) !important;
+}
+
+#aac-member-portal-root .aac-brand-discount-heading,
+#aac-member-portal-root .aac-brand-discount-heading h3,
+#aac-member-portal-root .aac-brand-discount-percentage {
+  text-align: center !important;
+}
+
+#aac-member-portal-root .aac-brand-discount-percentage {
+  font-size: 1.875rem !important;
+  line-height: 1.2 !important;
+  font-weight: 700 !important;
+  letter-spacing: normal !important;
+  overflow-wrap: anywhere;
+}
+
+#aac-member-portal-root .aac-benefit-gallery-content {
+  flex: 1 0 auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-wrap: anywhere;
+}
+
+#aac-member-portal-root .aac-benefit-gallery-content p {
+  max-height: none !important;
+  overflow: visible !important;
 }
 
 #aac-member-portal-root .aac-benefit-gallery-media {
@@ -1000,11 +842,6 @@ h1, h2, h3, h4, h5, h6 {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;
-}
-
-.aac-cordillera-theme .aac-temp-auth-corner a,
-.aac-cordillera-theme .aac-temp-auth-corner button {
-  font-family: var(--aac-cordillera-mono) !important;
 }
 
 @media (min-width: 1024px) {
@@ -1035,16 +872,6 @@ h1, h2, h3, h4, h5, h6 {
 
   .aac-signup-step-button {
     min-height: clamp(4rem, 7vh, 5.25rem);
-  }
-}
-
-@media (max-width: 768px) {
-  .aac-cordillera-theme h1 {
-    font-size: clamp(3rem, 18vw, 5.6rem) !important;
-  }
-
-  .aac-cordillera-theme h2 {
-    font-size: clamp(2.2rem, 14vw, 4rem) !important;
   }
 }
 
@@ -1194,7 +1021,7 @@ h1, h2, h3, h4, h5, h6 {
     text-overflow: clip !important;
     white-space: normal !important;
     font-size: clamp(2rem, 11vw, 2.8rem) !important;
-    line-height: 0.95 !important;
+    line-height: 1.08 !important;
   }
 
   .aac-membership-card-identity p {

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
-import { CheckCircle2, Link2, Users } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Link2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +23,6 @@ const LinkedAccountsPage = () => {
   const { user, profile } = useAuth();
   const portalUiSettings = getPortalUiSettings();
   const portalContent = portalUiSettings.content;
-  const portalDesign = portalUiSettings.design;
   const [inviteCode, setInviteCode] = useState(() => getInviteCodeFromSearch(location.search));
   const [inviteData, setInviteData] = useState(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
@@ -114,7 +113,7 @@ const LinkedAccountsPage = () => {
         <title>{portalContent.linked_accounts_page_title} - American Alpine Club</title>
         <meta name="description" content="Redeem a family invite code and connect a linked AAC household account." />
       </Helmet>
-      <div className="bg-white py-6">
+      <div className="bg-white px-4 py-6 sm:px-7">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
@@ -122,16 +121,19 @@ const LinkedAccountsPage = () => {
           className="mx-auto max-w-4xl space-y-6 bg-white"
         >
           <section className="bg-white py-6">
-            <div className="flex items-start gap-3 border-b-2 border-[#b71c1c] pb-4">
+            <div className="flex flex-wrap items-start gap-3 border-b-2 border-[#b71c1c] pb-4">
               <div className="pt-1 text-[#b71c1c]">
                 <Users className="h-5 w-5" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1 basis-64">
                 <h1 className="text-2xl font-bold text-stone-900">{portalContent.linked_accounts_page_title}</h1>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-stone-600">
                   {portalContent.linked_accounts_page_description}
                 </p>
               </div>
+              <Button asChild className="shrink-0 border border-black bg-[#ffc72c] text-black hover:bg-[#f2bc20]">
+                <Link to="/join"><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />Back to Signup</Link>
+              </Button>
             </div>
 
             <form onSubmit={handleLookupSubmit} className="mt-6 border-b-2 border-[#b71c1c] pb-6">
@@ -156,11 +158,7 @@ const LinkedAccountsPage = () => {
                 <Button
                   type="submit"
                   disabled={busy}
-                  className="h-11 rounded-none"
-                  style={{
-                    backgroundColor: portalDesign.primaryActionBackground,
-                    color: portalDesign.primaryActionText,
-                  }}
+                  className="h-11 rounded-none border border-[#f8c235] bg-[#f8c235] font-semibold text-black hover:bg-[#dda914]"
                 >
                   {loadingInvite ? 'Checking…' : portalContent.linked_accounts_lookup_button_label}
                 </Button>

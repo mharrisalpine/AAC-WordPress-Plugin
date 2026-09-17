@@ -7,24 +7,31 @@ if (!defined('ABSPATH')) {
 class AAC_Member_Portal_Member_Database {
 	const PAGE_SLUG = 'aac-member-portal-member-database';
 	const EXPORT_PAGE_SLUG = 'aac-member-portal-member-database-export';
-	const SCHEMA_VERSION = '1.0.4';
+	const SCHEMA_VERSION = '1.1.0';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
 	const EXPORT_FIELDS_OPTION = 'aac_member_portal_member_database_export_fields';
+	private $pending_member_syncs = [];
+	private $is_flushing_member_syncs = false;
 
 	public function __construct() {
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('init', [$this, 'maybe_install_schema']);
 		add_action('admin_post_aac_member_portal_export_member_database', [$this, 'handle_export_member_database']);
 		add_action('admin_post_aac_member_portal_save_member_export_fields', [$this, 'handle_save_member_export_fields']);
-		add_action('profile_update', [$this, 'sync_member_by_user_id'], 30, 1);
-		add_action('personal_options_update', [$this, 'sync_member_by_user_id'], 100, 1);
-		add_action('edit_user_profile_update', [$this, 'sync_member_by_user_id'], 100, 1);
-		add_action('aac_member_portal_member_registered', [$this, 'sync_member_by_user_id'], 30, 1);
-		add_action('aac_member_portal_profile_updated', [$this, 'sync_member_by_user_id'], 30, 1);
-		add_action('pmpro_after_checkout', [$this, 'sync_member_after_checkout'], 40, 2);
-		add_action('pmpro_after_change_membership_level', [$this, 'sync_member_after_level_change'], 40, 2);
+		add_action('profile_update', [$this, 'queue_member_sync'], 30, 1);
+		add_action('personal_options_update', [$this, 'queue_member_sync'], 100, 1);
+		add_action('edit_user_profile_update', [$this, 'queue_member_sync'], 100, 1);
+		add_action('aac_member_portal_member_registered', [$this, 'queue_member_sync'], 30, 1);
+		add_action('aac_member_portal_profile_updated', [$this, 'queue_member_sync'], 30, 1);
+		add_action('aac_member_portal_family_account_linked', [$this, 'queue_family_member_syncs'], 30, 2);
+		add_action('added_user_meta', [$this, 'queue_member_sync_after_meta_change'], 100, 4);
+		add_action('updated_user_meta', [$this, 'queue_member_sync_after_meta_change'], 100, 4);
+		add_action('deleted_user_meta', [$this, 'queue_member_sync_after_meta_change'], 100, 4);
+		add_action('pmpro_after_checkout', [$this, 'queue_member_sync_after_checkout'], 40, 2);
+		add_action('pmpro_after_change_membership_level', [$this, 'queue_member_sync_after_level_change'], 40, 2);
+		add_action('pmpro_updated_order', [$this, 'queue_member_sync_after_order_update'], 40, 1);
+		add_action('shutdown', [$this, 'flush_queued_member_syncs'], 20);
 		add_action('deleted_user', [$this, 'delete_member_by_user_id'], 30, 1);
-		add_action('admin_init', [$this, 'prune_orphaned_members']);
 	}
 
 	public function delete_member_by_user_id($user_id) {
@@ -56,6 +63,130 @@ class AAC_Member_Portal_Member_Database {
 		foreach ((array) $orphaned_user_ids as $user_id) {
 			$this->delete_member_by_user_id($user_id);
 		}
+	}
+
+	public function queue_member_sync($user_id) {
+		$user_id = absint($user_id);
+		if ($user_id > 0) {
+			$this->pending_member_syncs[$user_id] = true;
+		}
+	}
+
+	public function queue_member_sync_after_checkout($user_id, $order = null) {
+		$this->queue_member_sync($user_id);
+	}
+
+	public function queue_member_sync_after_level_change($level_id, $user_id = 0) {
+		$this->queue_member_sync($user_id);
+	}
+
+	public function queue_member_sync_after_order_update($order) {
+		$user_id = 0;
+		if (is_object($order)) {
+			$user_id = absint($order->user_id ?? 0);
+		} elseif (is_array($order)) {
+			$user_id = absint($order['user_id'] ?? 0);
+		} else {
+			$order_id = absint($order);
+			if ($order_id > 0 && class_exists('MemberOrder')) {
+				$member_order = new MemberOrder($order_id);
+				$user_id = absint($member_order->user_id ?? 0);
+			}
+		}
+
+		$this->queue_member_sync($user_id);
+	}
+
+	public function queue_family_member_syncs($parent_user_id, $child_user_id) {
+		$this->queue_member_sync($parent_user_id);
+		$this->queue_member_sync($child_user_id);
+	}
+
+	public function queue_member_sync_after_meta_change($meta_id, $user_id, $meta_key, $meta_value = null) {
+		if ($this->is_member_profile_meta_key((string) $meta_key)) {
+			$this->queue_member_sync($user_id);
+		}
+	}
+
+	public function flush_queued_member_syncs() {
+		if ($this->is_flushing_member_syncs || empty($this->pending_member_syncs)) {
+			return;
+		}
+
+		$this->is_flushing_member_syncs = true;
+		$user_ids = array_map('intval', array_keys($this->pending_member_syncs));
+		$this->pending_member_syncs = [];
+
+		foreach ($user_ids as $user_id) {
+			$this->sync_member($user_id);
+		}
+
+		$this->is_flushing_member_syncs = false;
+	}
+
+	private function is_member_profile_meta_key($meta_key) {
+		static $watched_meta_keys = [
+			'aac_account_info',
+			'aac_profile_info',
+			'aac_benefits_info',
+			'aac_member_id',
+			'aac_membership_discount_type',
+			'aac_magazine_addons',
+			'aac_magazine_subscription_labels',
+			'aac_has_alpinist_subscription',
+			'aac_has_backcountry_subscription',
+			'aac_connected_accounts',
+			'aac_partner_family_config',
+			'aac_partner_family_mode',
+			'aac_partner_family_additional_adult',
+			'aac_partner_family_dependents',
+			'aac_family_account_role',
+			'aac_linked_parent_user_id',
+			'aac_linked_account_slot_id',
+			'aac_linked_account_invite_code',
+			'aac_linked_account_type',
+			'aac_linked_account_label',
+			'aac_family_membership_access_until',
+			'aac_family_membership_pending_removal',
+			'aac_pending_membership_downgrade',
+			'aac_group_account_group_id',
+			'aac_group_account_child_level_id',
+			'aac_group_account_checkout_code',
+			'aac_group_account_synced_at',
+			'first_name',
+			'last_name',
+			'pmpro_sfirstname',
+			'pmpro_slastname',
+			'pmpro_sphone',
+			'pmpro_saddress1',
+			'pmpro_saddress2',
+			'pmpro_scity',
+			'pmpro_sstate',
+			'pmpro_szipcode',
+			'pmpro_scountry',
+			'pmpro_stripe_customerid',
+			'bphone',
+			'baddress1',
+			'baddress2',
+			'bcity',
+			'bstate',
+			'bzipcode',
+			'bcountry',
+			't_shirt',
+			'birthdate',
+			'aaj_preference',
+			'anac_preference',
+			'american_climbing_journal_preference',
+			'guidebook_preferences',
+			'student_university',
+			'university_or_school',
+			'student_university_id',
+			'graduation_date',
+			'service_component',
+			'service_branch',
+		];
+
+		return in_array($meta_key, $watched_meta_keys, true);
 	}
 
 	public static function activate() {
@@ -102,10 +233,15 @@ class AAC_Member_Portal_Member_Database {
 				expiration_date varchar(20) NOT NULL DEFAULT '',
 				raw_profile longtext NULL,
 				mirrored_at datetime NOT NULL,
+				source_modified_at datetime NULL DEFAULT NULL,
+				source_hash char(64) NOT NULL DEFAULT '',
+				source_version bigint(20) unsigned NOT NULL DEFAULT 0,
 				PRIMARY KEY  (id),
 				UNIQUE KEY user_id (user_id),
 				KEY membership_level (membership_level),
-				KEY account_role (account_role)
+				KEY account_role (account_role),
+				KEY mirror_changes (mirrored_at, id),
+				KEY source_changes (source_modified_at, id)
 			) {$charset_collate};
 		");
 
@@ -118,9 +254,14 @@ class AAC_Member_Portal_Member_Database {
 				source_date varchar(32) NOT NULL DEFAULT '',
 				raw_record longtext NULL,
 				mirrored_at datetime NOT NULL,
+				source_modified_at datetime NULL DEFAULT NULL,
+				source_hash char(64) NOT NULL DEFAULT '',
+				source_version bigint(20) unsigned NOT NULL DEFAULT 0,
 				PRIMARY KEY  (id),
 				UNIQUE KEY user_source (user_id, source_record_id),
-				KEY source_status (source_status)
+				KEY source_status (source_status),
+				KEY mirror_changes (mirrored_at, id),
+				KEY source_changes (source_modified_at, id)
 			) {$charset_collate};
 		");
 
@@ -133,9 +274,14 @@ class AAC_Member_Portal_Member_Database {
 				source_date varchar(32) NOT NULL DEFAULT '',
 				raw_record longtext NULL,
 				mirrored_at datetime NOT NULL,
+				source_modified_at datetime NULL DEFAULT NULL,
+				source_hash char(64) NOT NULL DEFAULT '',
+				source_version bigint(20) unsigned NOT NULL DEFAULT 0,
 				PRIMARY KEY  (id),
 				UNIQUE KEY user_source (user_id, source_record_id),
-				KEY source_status (source_status)
+				KEY source_status (source_status),
+				KEY mirror_changes (mirrored_at, id),
+				KEY source_changes (source_modified_at, id)
 			) {$charset_collate};
 		");
 
@@ -148,9 +294,14 @@ class AAC_Member_Portal_Member_Database {
 				source_date varchar(32) NOT NULL DEFAULT '',
 				raw_record longtext NULL,
 				mirrored_at datetime NOT NULL,
+				source_modified_at datetime NULL DEFAULT NULL,
+				source_hash char(64) NOT NULL DEFAULT '',
+				source_version bigint(20) unsigned NOT NULL DEFAULT 0,
 				PRIMARY KEY  (id),
 				UNIQUE KEY user_source (user_id, source_record_id),
-				KEY source_status (source_status)
+				KEY source_status (source_status),
+				KEY mirror_changes (mirrored_at, id),
+				KEY source_changes (source_modified_at, id)
 			) {$charset_collate};
 		");
 
@@ -213,18 +364,6 @@ class AAC_Member_Portal_Member_Database {
 		<?php
 	}
 
-	public function sync_member_by_user_id($user_id) {
-		$this->sync_member((int) $user_id);
-	}
-
-	public function sync_member_after_checkout($user_id, $morder = null) {
-		$this->sync_member((int) $user_id);
-	}
-
-	public function sync_member_after_level_change($level_id, $user_id = 0) {
-		$this->sync_member((int) $user_id);
-	}
-
 	public function sync_member($user_id) {
 		global $wpdb;
 
@@ -256,29 +395,62 @@ class AAC_Member_Portal_Member_Database {
 			$parent_user_id = (int) $linked_parent['user_id'];
 		}
 
-		$mirrored_at = current_time('mysql');
-		$wpdb->replace(
-			self::profiles_table(),
-			[
-				'user_id' => $user_id,
-				'parent_user_id' => $parent_user_id,
-				'account_role' => $account_role,
-				'email' => sanitize_email($account_info['email'] ?? $user->user_email),
-				'display_name' => sanitize_text_field($account_info['name'] ?? $user->display_name),
-				'member_id' => sanitize_text_field($profile_info['member_id'] ?? ''),
-				'membership_level' => sanitize_text_field($profile_info['tier'] ?? ''),
-				'membership_status' => sanitize_text_field($profile_info['status'] ?? ''),
-				'renewal_date' => sanitize_text_field($profile_info['renewal_date'] ?? ''),
-				'expiration_date' => sanitize_text_field($profile_info['expiration_date'] ?? ''),
-				'raw_profile' => wp_json_encode($profile),
-				'mirrored_at' => $mirrored_at,
-			],
-			['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
-		);
+		$profile_data = [
+			'user_id' => $user_id,
+			'parent_user_id' => $parent_user_id,
+			'account_role' => $account_role,
+			'email' => sanitize_email($account_info['email'] ?? $user->user_email),
+			'display_name' => sanitize_text_field($account_info['name'] ?? $user->display_name),
+			'member_id' => sanitize_text_field($profile_info['member_id'] ?? ''),
+			'membership_level' => sanitize_text_field($profile_info['tier'] ?? ''),
+			'membership_status' => sanitize_text_field($profile_info['status'] ?? ''),
+			'renewal_date' => sanitize_text_field($profile_info['renewal_date'] ?? ''),
+			'expiration_date' => sanitize_text_field($profile_info['expiration_date'] ?? ''),
+			'raw_profile' => wp_json_encode($profile),
+		];
+		$profile_hash = $this->build_source_hash($profile_data);
+		$existing_profile = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT id, source_hash, source_version FROM ' . self::profiles_table() . ' WHERE user_id = %d LIMIT 1',
+				$user_id
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
 
-		$this->mirror_pmpro_rows($user_id, 'pmpro_memberships_users', self::history_table(), 'status', ['startdate', 'modified', 'date']);
-		$this->mirror_pmpro_rows($user_id, 'pmpro_subscriptions', self::subscriptions_table(), 'status', ['next_payment_date', 'cycle_enddate', 'startdate', 'modified']);
-		$this->mirror_pmpro_rows($user_id, 'pmpro_membership_orders', self::transactions_table(), 'status', ['timestamp']);
+		if (!is_array($existing_profile) || !hash_equals((string) ($existing_profile['source_hash'] ?? ''), $profile_hash)) {
+			$changed_at = current_time('mysql');
+			$source_version = max(0, absint($existing_profile['source_version'] ?? 0)) + 1;
+			$profile_data['mirrored_at'] = $changed_at;
+			$profile_data['source_modified_at'] = $changed_at;
+			$profile_data['source_hash'] = $profile_hash;
+			$profile_data['source_version'] = $source_version;
+
+			if (is_array($existing_profile)) {
+				$profile_row_id = absint($existing_profile['id'] ?? 0);
+				$write_result = $wpdb->update(
+					self::profiles_table(),
+					$profile_data,
+					['id' => $profile_row_id],
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
+					['%d']
+				);
+			} else {
+				$write_result = $wpdb->insert(
+					self::profiles_table(),
+					$profile_data,
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d']
+				);
+				$profile_row_id = absint($wpdb->insert_id);
+			}
+
+			if ($write_result !== false && $profile_row_id > 0) {
+				$this->announce_mirror_change('profiles', self::profiles_table(), $profile_row_id, $user_id, $source_version, $changed_at, $profile_hash);
+			}
+		}
+
+		$this->mirror_pmpro_rows($user_id, 'pmpro_memberships_users', self::history_table(), 'membership_history', 'status', ['startdate', 'modified', 'date']);
+		$this->mirror_pmpro_rows($user_id, 'pmpro_subscriptions', self::subscriptions_table(), 'subscriptions', 'status', ['next_payment_date', 'cycle_enddate', 'startdate', 'modified']);
+		$this->mirror_pmpro_rows($user_id, 'pmpro_membership_orders', self::transactions_table(), 'transactions', 'status', ['timestamp']);
 
 		return true;
 	}
@@ -298,36 +470,40 @@ class AAC_Member_Portal_Member_Database {
 		return is_array($row) ? $row : [];
 	}
 
-	private function mirror_pmpro_rows($user_id, $wpdb_property, $mirror_table, $status_column = 'status', $date_candidates = []) {
+	private function mirror_pmpro_rows($user_id, $wpdb_property, $mirror_table, $record_type, $status_column = 'status', $date_candidates = []) {
 		global $wpdb;
 
-		if (!$wpdb || empty($wpdb->{$wpdb_property})) {
-			$wpdb->delete($mirror_table, ['user_id' => $user_id], ['%d']);
+		if (!$wpdb) {
 			return;
 		}
 
-		$source_table = $wpdb->{$wpdb_property};
-		// We wipe and rebuild the mirrored rows for a user on each sync. It is not
-		// the fanciest move in the world, but it is wonderfully hard to lie to and
-		// keeps stale PMPro rows from haunting the reports.
-		$rows = $wpdb->get_results(
-			$wpdb->prepare("SELECT * FROM {$source_table} WHERE user_id = %d ORDER BY id DESC", $user_id),
+		$existing_rows = $wpdb->get_results(
+			$wpdb->prepare("SELECT id, source_record_id, source_hash, source_version FROM {$mirror_table} WHERE user_id = %d", $user_id),
 			ARRAY_A
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
-
-		$wpdb->delete($mirror_table, ['user_id' => $user_id], ['%d']);
-
-		if (!is_array($rows) || !$rows) {
-			return;
+		$existing_by_source_id = [];
+		foreach ((array) $existing_rows as $existing_row) {
+			$existing_by_source_id[(string) absint($existing_row['source_record_id'] ?? 0)] = $existing_row;
 		}
 
-		$mirrored_at = current_time('mysql');
-		foreach ($rows as $row) {
+		$rows = [];
+		if (!empty($wpdb->{$wpdb_property})) {
+			$source_table = $wpdb->{$wpdb_property};
+			$rows = $wpdb->get_results(
+				$wpdb->prepare("SELECT * FROM {$source_table} WHERE user_id = %d ORDER BY id DESC", $user_id),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
+		}
+
+		$seen_source_ids = [];
+		foreach ((array) $rows as $row) {
 			if (!is_array($row)) {
 				continue;
 			}
 
 			$source_record_id = absint($row['id'] ?? 0);
+			$source_key = (string) $source_record_id;
+			$seen_source_ids[$source_key] = true;
 			$source_status = sanitize_text_field((string) ($row[$status_column] ?? ''));
 			$source_date = '';
 			foreach ($date_candidates as $candidate) {
@@ -337,19 +513,106 @@ class AAC_Member_Portal_Member_Database {
 				}
 			}
 
-			$wpdb->insert(
-				$mirror_table,
-				[
-					'user_id' => $user_id,
-					'source_record_id' => $source_record_id,
-					'source_status' => $source_status,
-					'source_date' => $source_date,
-					'raw_record' => wp_json_encode($row),
-					'mirrored_at' => $mirrored_at,
-				],
-				['%d', '%d', '%s', '%s', '%s', '%s']
-			);
+			$source_hash = $this->build_source_hash($row);
+			$existing_row = $existing_by_source_id[$source_key] ?? null;
+			if (is_array($existing_row) && hash_equals((string) ($existing_row['source_hash'] ?? ''), $source_hash)) {
+				continue;
+			}
+
+			$changed_at = current_time('mysql');
+			$source_version = max(0, absint($existing_row['source_version'] ?? 0)) + 1;
+			$mirror_data = [
+				'user_id' => $user_id,
+				'source_record_id' => $source_record_id,
+				'source_status' => $source_status,
+				'source_date' => $source_date,
+				'raw_record' => wp_json_encode($row),
+				'mirrored_at' => $changed_at,
+				'source_modified_at' => $changed_at,
+				'source_hash' => $source_hash,
+				'source_version' => $source_version,
+			];
+
+			if (is_array($existing_row)) {
+				$mirror_row_id = absint($existing_row['id'] ?? 0);
+				$write_result = $wpdb->update(
+					$mirror_table,
+					$mirror_data,
+					['id' => $mirror_row_id],
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
+					['%d']
+				);
+			} else {
+				$write_result = $wpdb->insert(
+					$mirror_table,
+					$mirror_data,
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d']
+				);
+				$mirror_row_id = absint($wpdb->insert_id);
+			}
+
+			if ($write_result !== false && $mirror_row_id > 0) {
+				$this->announce_mirror_change($record_type, $mirror_table, $mirror_row_id, $user_id, $source_version, $changed_at, $source_hash);
+			}
 		}
+
+		foreach ($existing_by_source_id as $source_key => $existing_row) {
+			if (isset($seen_source_ids[$source_key])) {
+				continue;
+			}
+
+			$mirror_row_id = absint($existing_row['id'] ?? 0);
+			if ($mirror_row_id <= 0) {
+				continue;
+			}
+
+			$deleted = $wpdb->delete($mirror_table, ['id' => $mirror_row_id], ['%d']);
+			if ($deleted) {
+				do_action('aac_member_portal_mirror_record_deleted', $record_type, $mirror_table, $mirror_row_id, $user_id, absint($source_key));
+				do_action('aac_npc_sf_source_record_changed', $mirror_table, $mirror_row_id, $user_id, 'delete', current_time('mysql'));
+			}
+		}
+	}
+
+	private function announce_mirror_change($record_type, $mirror_table, $mirror_row_id, $user_id, $source_version, $changed_at, $source_hash) {
+		do_action(
+			'aac_member_portal_mirror_record_changed',
+			$record_type,
+			$mirror_table,
+			$mirror_row_id,
+			$user_id,
+			$source_version,
+			$changed_at,
+			$source_hash
+		);
+		do_action('aac_npc_sf_source_record_changed', $mirror_table, $mirror_row_id, $user_id, 'upsert', $changed_at);
+	}
+
+	private function build_source_hash($value) {
+		$normalized = $this->normalize_source_hash_value($value);
+		$json = wp_json_encode($normalized, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+		return hash('sha256', is_string($json) ? $json : serialize($normalized));
+	}
+
+	private function normalize_source_hash_value($value) {
+		if (is_object($value)) {
+			$value = get_object_vars($value);
+		}
+
+		if (!is_array($value)) {
+			return $value;
+		}
+
+		$normalized = [];
+		foreach ($value as $key => $item) {
+			$normalized[$key] = $this->normalize_source_hash_value($item);
+		}
+
+		if ($this->is_assoc($normalized)) {
+			ksort($normalized);
+		}
+
+		return $normalized;
 	}
 
 	public function handle_export_member_database() {
@@ -360,9 +623,6 @@ class AAC_Member_Portal_Member_Database {
 		check_admin_referer('aac_member_portal_export_member_database');
 
 		$user_ids = $this->get_member_export_user_ids();
-		foreach ($user_ids as $user_id) {
-			$this->sync_member((int) $user_id);
-		}
 
 		$filename = 'aac-member-database-export-' . gmdate('Y-m-d-His') . '.csv';
 		nocache_headers();
@@ -449,9 +709,9 @@ class AAC_Member_Portal_Member_Database {
 				<h2 style="margin-top:0;">Selected Member CSV</h2>
 				<p>
 					The next export will include <strong><?php echo esc_html((string) $selected_count); ?></strong> of
-					<strong><?php echo esc_html((string) $total_count); ?></strong> available fields. The export syncs the member
-					database mirror before download and streams the CSV directly to your browser. It includes PII, so store and share
-					the file carefully.
+					<strong><?php echo esc_html((string) $total_count); ?></strong> available fields. The export reads the existing
+					change-driven mirror without rebuilding every member, then streams the CSV directly to your browser. It includes
+					PII, so store and share the file carefully.
 				</p>
 				<p style="margin-top:18px;">
 					<a class="button button-primary button-hero" href="<?php echo esc_url($export_url); ?>">
@@ -827,6 +1087,9 @@ class AAC_Member_Portal_Member_Database {
 			'family_membership_mode',
 			'family_additional_adult',
 			'family_dependent_count',
+			'group_account_id',
+			'group_account_code',
+			'group_account_seat_count',
 			'aac_group_account_group_id',
 			'aac_group_account_checkout_code',
 			'aac_group_account_child_level_id',
@@ -901,6 +1164,9 @@ class AAC_Member_Portal_Member_Database {
 		$user_meta = $this->get_user_meta_export_values($user_id);
 		$group_summary = AAC_Member_Portal_Group_Accounts::is_available()
 			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_parent($user_id)
+			: null;
+		$group_account = AAC_Member_Portal_Group_Accounts::is_available()
+			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_user($user_id)
 			: null;
 		$pmpro_group_rows = $this->get_pmpro_group_account_rows($user_id);
 		$parent_user_id = absint($user_meta['aac_linked_parent_user_id'] ?? ($profile_row['parent_user_id'] ?? 0));
@@ -988,6 +1254,9 @@ class AAC_Member_Portal_Member_Database {
 			'family_membership_mode' => (string) ($family_membership['mode'] ?? ''),
 			'family_additional_adult' => !empty($family_membership['additional_adult']) ? 'true' : 'false',
 			'family_dependent_count' => isset($family_membership['dependent_count']) ? (string) $family_membership['dependent_count'] : '',
+			'group_account_id' => $group_account ? (string) ($group_account['id'] ?? '') : '',
+			'group_account_code' => $group_account ? (string) ($group_account['checkout_code'] ?? '') : '',
+			'group_account_seat_count' => $group_account ? (string) ($group_account['total_seats'] ?? '') : '',
 			'aac_group_account_group_id' => (string) ($user_meta['aac_group_account_group_id'] ?? ''),
 			'aac_group_account_checkout_code' => (string) ($user_meta['aac_group_account_checkout_code'] ?? ''),
 			'aac_group_account_child_level_id' => (string) ($user_meta['aac_group_account_child_level_id'] ?? ''),
@@ -1183,7 +1452,7 @@ class AAC_Member_Portal_Member_Database {
 					style="margin-left:8px;"
 					href="<?php echo esc_url(wp_nonce_url($this->build_admin_url(['member_id' => $member_id, 'tab' => $tab, 's' => $search, 'paged' => $paged, 'aac_sync_all' => 1]), 'aac_member_db_sync_all')); ?>"
 				>
-					Sync All Members
+						Run Manual Full Backfill / Repair
 				</a>
 				<a
 					class="button button-primary"
@@ -1196,7 +1465,7 @@ class AAC_Member_Portal_Member_Database {
 
 			<?php if ($sync_all_count !== null) : ?>
 				<div class="notice notice-success inline" style="margin:0 0 16px;">
-					<p><?php echo esc_html(sprintf('Synced %d members into the AAC Portal database mirror.', $sync_all_count)); ?></p>
+					<p><?php echo esc_html(sprintf('Checked %d members during the manual backfill. Only new or changed records were written.', $sync_all_count)); ?></p>
 				</div>
 			<?php endif; ?>
 
@@ -1214,7 +1483,7 @@ class AAC_Member_Portal_Member_Database {
 				</div>
 
 				<?php if (!$member_list['rows']) : ?>
-					<p style="margin-top:16px;">No mirrored members found. Use “Sync All Members” to build the AAC Portal database mirror.</p>
+						<p style="margin-top:16px;">No mirrored members found. New and changed member events populate this table automatically; use the manual full backfill only for initial setup or repair.</p>
 				<?php else : ?>
 					<div style="overflow:auto;margin-top:20px;">
 						<table class="widefat striped">
@@ -1376,6 +1645,11 @@ class AAC_Member_Portal_Member_Database {
 		$profile = $this->decode_profile_row($profile_row);
 		$account_info = $profile['account_info'];
 		$profile_info = $profile['profile_info'];
+		$stored_group_account = is_array($profile['group_account'] ?? null) ? $profile['group_account'] : [];
+		$live_group_account = class_exists('AAC_Member_Portal_Group_Accounts')
+			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_user((int) ($profile_row['user_id'] ?? 0))
+			: null;
+		$group_account = is_array($live_group_account) ? $live_group_account : $stored_group_account;
 		?>
 		<table class="widefat striped">
 			<tbody>
@@ -1405,6 +1679,18 @@ class AAC_Member_Portal_Member_Database {
 				<tr><th>Expiration Date</th><td><?php echo esc_html($profile_row['expiration_date']); ?></td></tr>
 				<tr><th>Account Role</th><td><?php echo esc_html($profile_row['account_role'] ?: 'Standard'); ?></td></tr>
 				<tr><th>Mirrored At</th><td><?php echo esc_html($profile_row['mirrored_at']); ?></td></tr>
+			</tbody>
+		</table>
+
+		<h3 style="margin-top:24px;">Group Account</h3>
+		<table class="widefat striped">
+			<tbody>
+				<tr><th style="width:240px;">Group ID</th><td><?php echo esc_html((string) ($group_account['id'] ?? '')); ?></td></tr>
+				<tr><th>Group Code</th><td><code><?php echo esc_html((string) ($group_account['checkout_code'] ?? '')); ?></code></td></tr>
+				<tr><th>Seat Count</th><td><?php echo esc_html((string) ($group_account['total_seats'] ?? '')); ?></td></tr>
+				<tr><th>Active Associated Accounts</th><td><?php echo esc_html((string) ($group_account['active_members'] ?? '')); ?></td></tr>
+				<tr><th>Group Account Role</th><td><?php echo esc_html((string) ($group_account['account_role'] ?? '')); ?></td></tr>
+				<tr><th>Parent User ID</th><td><?php echo esc_html((string) ($group_account['parent_user_id'] ?? '')); ?></td></tr>
 			</tbody>
 		</table>
 		<?php
@@ -1658,6 +1944,8 @@ class AAC_Member_Portal_Member_Database {
 	}
 
 	private function sync_all_members() {
+		$this->prune_orphaned_members();
+
 		$user_query = new WP_User_Query([
 			'number' => -1,
 			'fields' => 'ID',

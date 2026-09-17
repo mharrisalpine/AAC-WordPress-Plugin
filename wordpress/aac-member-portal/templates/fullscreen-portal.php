@@ -60,15 +60,39 @@ $is_confirmation_page = $current_url === untrailingslashit($confirmation_url) ||
 $is_account_page = ($current_url === untrailingslashit($account_url) || ($account_path && $account_path === $request_path)) && !$is_billing_page && !$is_orders_page && !$is_cancel_page && !$is_checkout_page && !$is_confirmation_page;
 $is_managed_pmpro_page = $is_account_page || $is_billing_page || $is_orders_page || $is_cancel_page || $is_checkout_page || $is_confirmation_page;
 $is_embed_request = isset($_GET['aac_embed']) && sanitize_text_field(wp_unslash($_GET['aac_embed'])) === '1';
+$is_logged_in_member_checkout = is_user_logged_in()
+	&& isset($_GET['aac_member_checkout'])
+	&& sanitize_text_field(wp_unslash($_GET['aac_member_checkout'])) === '1';
+$requested_checkout_level_id = 0;
+if (isset($_GET['pmpro_level'])) {
+	$requested_checkout_level_id = absint(wp_unslash($_GET['pmpro_level']));
+} elseif (isset($_GET['level'])) {
+	$requested_checkout_level_id = absint(wp_unslash($_GET['level']));
+}
+$requested_checkout_level = $requested_checkout_level_id > 0 && function_exists('pmpro_getLevel')
+	? pmpro_getLevel($requested_checkout_level_id)
+	: null;
+$requested_checkout_level_name = is_object($requested_checkout_level) && !empty($requested_checkout_level->name)
+	? sanitize_text_field((string) $requested_checkout_level->name)
+	: '';
+$skip_publication_preferences = isset($_GET['aac_skip_publications']) && sanitize_text_field(wp_unslash($_GET['aac_skip_publications'])) === '1';
 $is_embedded_checkout = $is_checkout_page && $is_embed_request;
 $is_embedded_confirmation = $is_confirmation_page && $is_embed_request;
-$is_embedded_pmpro_page = $is_embedded_checkout || $is_embedded_confirmation;
+$is_embedded_billing = $is_billing_page && $is_embed_request;
+$is_embedded_pmpro_page = $is_embedded_checkout || $is_embedded_confirmation || $is_embedded_billing;
+if ($is_embedded_pmpro_page) {
+	// The parent member app owns the surrounding chrome. Never render a second
+	// WordPress toolbar inside its checkout iframe, including for administrators.
+	show_admin_bar(false);
+	remove_action('wp_footer', 'wp_admin_bar_render', 1000);
+	remove_action('wp_body_open', 'wp_admin_bar_render', 0);
+}
 $public_shell_slugs = ['benefits'];
 $is_public_shell_page = $post instanceof WP_Post && in_array($post->post_name, $public_shell_slugs, true);
 $is_logged_in = is_user_logged_in();
 $public_home_url = $portal_url . '#/home';
 $public_login_url = $portal_url . '#/login';
-$public_post_purchase_login_url = $portal_url . '#/login?purchase_success=1';
+$public_post_purchase_login_url = $portal_url . '#/profile?purchase_success=1';
 $public_profile_url = $portal_url . '#/profile';
 $public_donate_url = $portal_url . '#/donate';
 $portal_ui_settings = $portal_plugin instanceof AAC_Member_Portal_Plugin ? $portal_plugin->get_portal_ui_settings() : [];
@@ -106,6 +130,7 @@ if (!function_exists('aac_member_portal_sidebar_icon_svg')) {
 			'book' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18.5A2.5 2.5 0 0 1 5.5 16H12v5H5.5A2.5 2.5 0 0 1 3 18.5Z"/><path d="M21 18.5a2.5 2.5 0 0 0-2.5-2.5H12v5h6.5A2.5 2.5 0 0 0 21 18.5Z"/><path d="M5.5 16V5a2 2 0 0 1 2-2H12v13H5.5Z"/><path d="M18.5 16V5a2 2 0 0 0-2-2H12v13h6.5Z"/></svg>',
 			'users' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
 			'mail' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
+			'log-out' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></svg>',
 		];
 
 		return $icons[$icon] ?? $icons['user'];
@@ -119,6 +144,7 @@ $top_nav = $portal_plugin instanceof AAC_Member_Portal_Plugin
 $portal_sections = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	? $portal_plugin->get_template_sidebar_sections($portal_url)
 	: [];
+$managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login');
 $sidebar_overlay_start = max(0.72, (float) ($portal_design_settings['sidebar_overlay_start'] ?? 0));
 $sidebar_overlay_end = max(0.82, (float) ($portal_design_settings['sidebar_overlay_end'] ?? 0));
 
@@ -150,17 +176,19 @@ $current_renewal_date = is_array($current_primary_membership) ? ($current_primar
 $current_expiration_date = is_array($current_primary_membership) ? ($current_primary_membership['expiration_date'] ?? '') : '';
 $current_pending_downgrade = is_array($current_membership_actions['pending_downgrade'] ?? null) ? $current_membership_actions['pending_downgrade'] : null;
 $is_account_section = $is_account_page || $is_billing_page || $is_orders_page;
-$page_title = $is_account_section ? 'Membership Account' : ($is_cancel_page ? 'Membership Cancellation' : ($is_confirmation_page ? 'Membership Confirmation' : ($is_checkout_page ? 'Membership Checkout' : get_the_title($post))));
-$page_kicker = $is_account_section ? 'Account Overview' : ($is_cancel_page ? 'Membership Options' : ($is_confirmation_page ? 'Confirmation' : ($is_checkout_page ? 'Secure Checkout' : 'Member Portal')));
-$page_description = $is_account_section
+$page_title = $is_billing_page ? 'Billing' : ($is_account_section ? 'Membership Account' : ($is_cancel_page ? 'Membership Cancellation' : ($is_confirmation_page ? 'Membership Confirmation' : ($is_checkout_page ? 'Membership Checkout' : get_the_title($post)))));
+$page_kicker = $is_billing_page ? 'Member Account' : ($is_account_section ? 'Account Overview' : ($is_cancel_page ? 'Membership Options' : ($is_confirmation_page ? 'Confirmation' : ($is_checkout_page ? 'Secure Checkout' : 'Member Portal'))));
+$page_description = $is_billing_page
+	? 'Update the billing address and payment method used for your membership renewal.'
+	: ($is_account_section
 	? 'Review your current membership, billing summary, renewal timing, and recent account activity in the same AAC portal shell.'
 	: ($is_cancel_page
 		? 'Review cancellation options for your membership without leaving the AAC portal shell.'
 		: ($is_confirmation_page
 			? 'Review your most recent membership receipt in the same AAC portal shell with quick access back to your profile and account.'
 			: ($is_checkout_page
-				? 'Complete membership checkout in the same AAC portal shell with quick access back to your profile and account.'
-				: 'Access your AAC member tools in a dedicated full-page portal experience.')));
+				? ''
+				: 'Access your AAC member tools in a dedicated full-page portal experience.'))));
 $checkout_profile_defaults = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	? $portal_plugin->get_pmpro_checkout_profile_defaults()
 	: [
@@ -211,8 +239,51 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 		body.aac-member-portal-embed {
 			background: transparent;
+			color: #16130f;
+			font-family: futura-pt, Futura, 'Futura PT', 'Century Gothic', 'Trebuchet MS', 'Gill Sans', ui-sans-serif, sans-serif;
+			font-size: 16px;
+			line-height: 1.5;
 			min-height: 0;
 			overflow: hidden;
+		}
+
+		html:has(body.aac-member-portal-embed) {
+			margin-top: 0 !important;
+		}
+
+		body.aac-member-portal-embed #wpadminbar {
+			display: none !important;
+		}
+
+		body.aac-member-portal-embed .aac-managed-card--embed h1,
+		body.aac-member-portal-embed .aac-managed-card--embed h2,
+		body.aac-member-portal-embed .aac-managed-card--embed h3,
+		body.aac-member-portal-embed .aac-managed-card--embed .pmpro_form_heading,
+		body.aac-member-portal-embed .aac-managed-card--embed .pmpro_font-large {
+			font-family: futura-pt-bold, futura-pt, Futura, 'Futura PT', 'Century Gothic', 'Trebuchet MS', 'Gill Sans', ui-sans-serif, sans-serif !important;
+			font-size: clamp(1.35rem, 2.4vw, 2rem) !important;
+			font-weight: 700 !important;
+			letter-spacing: 0.01em !important;
+			line-height: 1.15 !important;
+			text-transform: none !important;
+		}
+
+		body.aac-member-portal-embed .aac-managed-card--embed p,
+		body.aac-member-portal-embed .aac-managed-card--embed label,
+		body.aac-member-portal-embed .aac-managed-card--embed input,
+		body.aac-member-portal-embed .aac-managed-card--embed select,
+		body.aac-member-portal-embed .aac-managed-card--embed textarea,
+		body.aac-member-portal-embed .aac-managed-card--embed button {
+			font-family: futura-pt, Futura, 'Futura PT', 'Century Gothic', 'Trebuchet MS', 'Gill Sans', ui-sans-serif, sans-serif !important;
+		}
+
+		body.aac-member-portal-embed #pmpro_form_fieldset-discount-fields.aac-embed-conditional-visible {
+			display: block !important;
+			visibility: visible !important;
+		}
+
+		body.aac-member-portal-embed #pmpro_form_fieldset-partner-family.aac-embed-conditional-visible {
+			display: block !important;
 		}
 
 		#aac-member-portal-root {
@@ -514,7 +585,11 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			border-bottom: 1px solid rgba(3, 0, 0, 0.12);
 			background: #ffffff;
 			color: #16130f;
-			padding: 1rem;
+			display: flex;
+			align-items: stretch;
+			justify-content: stretch;
+			gap: 0.75rem;
+			padding: 0 1rem;
 			box-sizing: border-box;
 			box-shadow: none;
 			z-index: 4;
@@ -539,10 +614,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			flex-wrap: nowrap;
 			align-items: center;
 			justify-content: center;
-			gap: 0.75rem;
+			gap: 1.5rem;
 			list-style: none;
 			margin: 0;
-			padding: 0;
+			padding: 1.5rem;
 		}
 
 		.aac-managed-sidebar,
@@ -556,10 +631,19 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}
 
 		.aac-managed-sidebar__section {
-			display: inline-flex;
+			display: flex;
+			flex: 1 1 auto;
+			width: 100%;
+			min-width: 0;
 			align-items: center;
-			justify-content: center;
+			justify-content: stretch;
 			vertical-align: top;
+		}
+
+		.aac-managed-sidebar__section ul {
+			flex: 1 1 100%;
+			width: 100%;
+			min-width: 0;
 		}
 
 		.aac-managed-sidebar a {
@@ -569,12 +653,14 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			justify-content: center;
 			position: relative;
 			min-height: 3.25rem;
-			min-width: 12.75rem;
-			padding: 0.95rem 1.5rem;
+			min-width: 0;
+			padding: 0.875rem 1rem;
 			border: 0;
+			border-bottom: 3px solid transparent;
 			background: #ffffff;
 			color: #16130f;
-			font-size: 0.98rem;
+			font-family: futura-pt, sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+			font-size: 1.05rem;
 			font-weight: 500;
 			text-align: center;
 			text-decoration: none;
@@ -583,7 +669,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}
 
 		.aac-managed-sidebar a:hover {
-			background: #fff5f5;
+			background: #ffffff;
 			color: #8f1515;
 		}
 
@@ -623,12 +709,75 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}
 
 		.aac-managed-sidebar a[aria-current="page"] .aac-managed-sidebar__icon {
-			color: #ffffff;
+			color: #16130f;
 		}
 
 		.aac-managed-sidebar a[aria-current="page"] {
-			background: #b71c1c;
-			color: #ffffff;
+			border-bottom-color: #b71c1c;
+			background: #ffffff;
+			color: #16130f;
+		}
+
+		.aac-managed-sidebar li {
+			display: flex;
+			flex: 1 1 0;
+			min-width: 0;
+		}
+
+		.aac-managed-sidebar li a {
+			width: 100%;
+		}
+
+		.aac-managed-sidebar__signout {
+			display: flex;
+			flex: 0 0 auto;
+			align-items: center;
+			min-width: 10.5rem;
+		}
+
+		.aac-managed-sidebar__signout a {
+			width: 100%;
+		}
+
+		/* Match the horizontal navigation used by the React member profile. */
+		.aac-managed-sidebar,
+		.aac-managed-sidebar ul,
+		.aac-managed-sidebar li {
+			list-style: none !important;
+		}
+
+		.aac-managed-sidebar ul {
+			margin: 0 !important;
+			padding: 0 !important;
+		}
+
+		.aac-managed-sidebar a,
+		.aac-managed-sidebar a:visited,
+		.aac-managed-sidebar a:focus,
+		.aac-managed-sidebar a:active {
+			border: 0 !important;
+			border-bottom: 3px solid transparent !important;
+			background: #ffffff !important;
+			color: #16130f !important;
+			font-family: futura-pt, Futura, 'Futura PT', sans-serif !important;
+			font-size: 1.05rem !important;
+			font-weight: 500 !important;
+		}
+
+		.aac-managed-sidebar a:hover {
+			background: #fff5f5 !important;
+			color: #8f1515 !important;
+		}
+
+		.aac-managed-sidebar a[aria-current="page"] {
+			border-bottom-color: #b71c1c !important;
+			background: #ffffff !important;
+			color: #16130f !important;
+		}
+
+		.aac-managed-sidebar__icon,
+		.aac-managed-sidebar__icon svg {
+			color: currentColor !important;
 		}
 
 		.aac-managed-main {
@@ -666,6 +815,20 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			margin: 0.75rem 0 0;
 			font-size: clamp(2rem, 4vw, 2.75rem);
 			line-height: 1.1;
+		}
+
+		body.pmpro-checkout .aac-managed-main {
+			padding-top: 1.25rem;
+			padding-bottom: 2rem;
+		}
+
+		body.pmpro-checkout .aac-managed-hero {
+			padding-bottom: 0.85rem;
+			border-bottom: 0;
+		}
+
+		body.pmpro-checkout .aac-managed-hero > p:not(.aac-managed-hero__kicker) {
+			display: none;
 		}
 
 		.aac-managed-hero p {
@@ -913,9 +1076,12 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}
 
 		body.pmpro-billing .aac-managed-card .pmpro_section + .pmpro_section,
-		body.pmpro-billing .aac-managed-card .pmpro_card + .pmpro_card,
-		body.pmpro-billing .aac-managed-card .pmpro_actions_nav {
+		body.pmpro-billing .aac-managed-card .pmpro_card + .pmpro_card {
 			margin-top: 1rem;
+		}
+
+		body.pmpro-billing .aac-managed-card .pmpro_actions_nav {
+			display: none !important;
 		}
 
 		body.pmpro-billing .aac-managed-card .pmpro_section_title,
@@ -965,7 +1131,59 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			min-height: auto !important;
 		}
 
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form {
+			display: flex;
+			flex-direction: column;
+			gap: 1.5rem;
+			font-family: inherit;
+		}
+
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form > fieldset,
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form > .pmpro_card {
+			width: 100%;
+			margin: 0 !important;
+			border: 1px solid #d7d2ca;
+			border-radius: 0;
+			background: #fff;
+			padding: 1.5rem !important;
+		}
+
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_form_heading,
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_card_title,
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form legend {
+			font-family: inherit;
+			font-size: 1.35rem;
+			font-weight: 700;
+			line-height: 1.2;
+			color: #111;
+		}
+
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_form_fields {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 1rem 1.25rem;
+		}
+
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_form_field,
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_card_fields,
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form #pmpro_payment_method_fields {
+			width: 100%;
+			max-width: none;
+		}
+
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form #pmpro_payment_information_fields,
+		body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_form_submit {
+			grid-column: 1 / -1;
+		}
+
+		@media (max-width: 720px) {
+			body.pmpro-billing .aac-managed-card form.aac-billing-update-form .pmpro_form_fields {
+				grid-template-columns: minmax(0, 1fr);
+			}
+		}
+
 		body.pmpro-checkout .aac-managed-card {
+			margin-top: 0.75rem;
 			border: 0 !important;
 			background: transparent !important;
 			box-shadow: none !important;
@@ -1016,7 +1234,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 		body.pmpro-checkout .aac-student-university-field input,
 		body.pmpro-checkout input[name="student_university"],
-		body.pmpro-checkout input[name="university_or_school"],
+		body.pmpro-checkout input[name^="university_or_school"],
 		body.pmpro-checkout #t_shirt_div select,
 		body.pmpro-checkout select[name="t_shirt"],
 		body.pmpro-checkout select[id="t_shirt"],
@@ -1058,6 +1276,15 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 		body.pmpro-checkout .aac-student-university-field {
 			position: relative;
+			z-index: 2147483645 !important;
+			overflow: visible !important;
+		}
+
+		body.pmpro-checkout [data-aac-checkout-discount-details],
+		body.pmpro-checkout .aac-contact-discount-detail-row {
+			position: relative;
+			z-index: 2147483644 !important;
+			overflow: visible !important;
 		}
 
 		body.pmpro-checkout .aac-student-university-dropdown {
@@ -1208,16 +1435,27 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}
 
 		body.pmpro-checkout .aac-managed-card #pmpro_pricing_fields {
-			margin-bottom: 1.1rem;
-			padding-bottom: 1.1rem;
-			border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+			display: block !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_pricing_fields #other_discount_code_p {
+			display: none !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_pricing_fields #other_discount_code_fields {
+			display: block !important;
+			margin-top: 1rem !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card .pmpro_payment-discount-code {
+			display: none !important;
 		}
 
 		body.pmpro-checkout .aac-managed-card .pmpro_form_fieldset + .pmpro_form_fieldset,
 		body.pmpro-checkout .aac-managed-card #pmpro_pricing_fields + .pmpro_form_fieldset {
-			margin-top: 0.95rem;
-			padding-top: 0.95rem;
-			border-top: 1px solid rgba(0, 0, 0, 0.08);
+			margin-top: 0.65rem;
+			padding-top: 0.65rem;
+			border-top: 0;
 		}
 
 		body.pmpro-checkout .aac-managed-card .pmpro_form_heading,
@@ -1247,7 +1485,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_form_fields {
 			gap: 0.45rem;
 			background: #fff;
-			border: 1px solid rgba(12, 10, 9, 0.1);
+			border: 1px solid #111;
 			border-radius: 0;
 			box-shadow: none;
 			color: #1c1917;
@@ -1257,6 +1495,12 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_payment-request-button .pmpro_form_heading {
 			margin-top: 0;
 			margin-bottom: 0.45rem;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_card_fields,
+		body.pmpro-checkout .aac-managed-card #pmpro_payment_information_fields .pmpro_form_fields {
+			border: 0 !important;
+			box-shadow: none !important;
 		}
 
 		body.pmpro-checkout .aac-managed-card #pmpro_social_login {
@@ -1402,10 +1646,45 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 		body.pmpro-checkout .aac-managed-card .aac-managed-two-up {
 			display: grid;
-			grid-template-columns: repeat(2, minmax(0, 1fr));
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 			gap: 0.85rem 1rem;
 			width: 100%;
 			align-items: start;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up > .pmpro_form_field,
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up input,
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up select,
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up .select2,
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up .select2-container {
+			box-sizing: border-box !important;
+			width: 100% !important;
+			max-width: none !important;
+			min-width: 0 !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up input,
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up select,
+		body.pmpro-checkout .aac-managed-card .aac-managed-two-up .select2-selection {
+			min-height: 3.25rem !important;
+			margin-top: 0 !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card .pmpro_cols-2 > .pmpro_form_field > .pmpro_form_input {
+			margin-top: 0 !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-promo-code-section,
+		body.pmpro-checkout .aac-managed-card .aac-promo-code-section .pmpro_card_actions,
+		body.pmpro-checkout .aac-managed-card .aac-promo-code-section #other_discount_code_fields,
+		body.pmpro-checkout .aac-managed-card .aac-promo-code-section .pmpro_form_fields-inline {
+			background: #ffffff !important;
+			background-image: none !important;
+			box-shadow: none !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-promo-code-section .pmpro_form_input {
+			margin-top: 0 !important;
 		}
 
 		body.pmpro-checkout .aac-managed-card .pmpro_cols-2 > * {
@@ -1508,8 +1787,38 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			color: #166534;
 		}
 
+		body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="available"]::before {
+			content: "\2713";
+			display: inline-grid;
+			width: 1.15rem;
+			height: 1.15rem;
+			margin-right: 0.4rem;
+			place-items: center;
+			border-radius: 999px;
+			background: #166534;
+			color: #fff;
+			font-size: 0.78rem;
+			font-weight: 700;
+			line-height: 1;
+		}
+
 		body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="unavailable"] {
 			color: #8f1515;
+		}
+
+		body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="unavailable"]::before {
+			content: "!";
+			display: inline-grid;
+			width: 1.15rem;
+			height: 1.15rem;
+			margin-right: 0.4rem;
+			place-items: center;
+			border-radius: 999px;
+			background: #8f1515;
+			color: #fff;
+			font-size: 0.78rem;
+			font-weight: 700;
+			line-height: 1;
 		}
 
 		body.pmpro-checkout .aac-managed-card .aac-email-availability[data-state="checking"],
@@ -2045,9 +2354,55 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			display: none !important;
 		}
 
+		body.aac-skip-publication-preferences .aac-server-member-preferences,
+		body.aac-skip-publication-preferences #pmpro_form_fieldset-publication-preferences,
+		body.aac-skip-publication-preferences #pmpro_form_fieldset-member-preferences,
+		body.aac-skip-publication-preferences #pmpro_form_fieldset-more-information {
+			display: none !important;
+		}
+
 		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password,
 		body.pmpro-checkout .aac-managed-card .aac-password-input-wrap {
 			position: relative;
+		}
+
+		/* Keep the public account row deterministic even before checkout JS runs. */
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields > .pmpro_card > .pmpro_card_content > .pmpro_form_fields {
+			display: grid !important;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.85rem 1rem;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields > .pmpro_card > .pmpro_card_content > .pmpro_form_fields > .pmpro_cols-2 {
+			display: contents !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field-username,
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field:has(#password2),
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field:has(#bconfirmemail) {
+			display: none !important;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field:has(#bemail) {
+			order: 1;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field:has(#password) {
+			order: 2;
+		}
+
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field:has(#bemail),
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .pmpro_form_field:has(#password),
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .aac-password-input-wrap {
+			width: 100% !important;
+			min-width: 0;
+		}
+
+		/* PMPro adds spacing to its password-toggle wrapper. The email control's
+		 * spacing belongs to the field itself, so retaining that wrapper margin
+		 * drops the password box below the email box in the full signup layout. */
+		body.pmpro-checkout .aac-managed-card #pmpro_user_fields .aac-password-input-wrap {
+			margin-top: 0 !important;
 		}
 
 		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_input-password,
@@ -2056,13 +2411,35 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			padding-right: 7.75rem !important;
 		}
 
-		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_field-password-toggle {
+		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_field-password-toggle,
+		body.pmpro-checkout .aac-managed-card .aac-password-input-wrap > .aac-password-toggle {
 			position: absolute;
 			right: 0.75rem;
 			top: 50%;
 			bottom: auto;
 			transform: translateY(-50%);
 			margin: 0;
+			z-index: 2;
+		}
+
+		/* PMPro 3.8 wraps the password input and reveal button together. */
+		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_field-password-toggle:has(input) {
+			display: block;
+			position: relative;
+			right: auto;
+			top: auto;
+			bottom: auto;
+			transform: none;
+			width: 100%;
+			margin: 0;
+		}
+
+		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_form_field-password-toggle:has(input) .pmpro_btn-password-toggle {
+			position: absolute;
+			right: 0.75rem;
+			top: 50%;
+			transform: translateY(-50%);
+			z-index: 2;
 		}
 
 		body.pmpro-checkout .aac-managed-card .pmpro_form_field-password .pmpro_btn-password-toggle,
@@ -2089,6 +2466,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}
 
 		@media (max-width: 900px) {
+			body.pmpro-checkout .aac-managed-card #pmpro_user_fields > .pmpro_card > .pmpro_card_content > .pmpro_form_fields {
+				grid-template-columns: 1fr;
+			}
+
 			body.pmpro-checkout .aac-managed-card .pmpro_form_fields.pmpro_cols-2 {
 				grid-template-columns: 1fr;
 			}
@@ -2379,7 +2760,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			padding: 1rem;
 			border: 1px solid rgba(12, 10, 9, 0.08);
 			border-radius: 1rem;
-			background: rgba(255, 255, 255, 0.7);
+			background: #ffffff !important;
+			background-image: none !important;
 			display: grid;
 			gap: 0.75rem;
 		}
@@ -3260,6 +3642,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		margin: 0 0 1.25rem;
 	}
 
+	body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard__steps {
+		display: none !important;
+	}
+
 		body:not(.aac-member-portal-embed)[data-aac-checkout-wizard="true"] .aac-checkout-wizard__steps {
 			display: grid;
 		}
@@ -3382,6 +3768,58 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			margin-top: 1.35rem;
 		}
 
+		html:has(body.aac-member-checkout),
+		body.aac-member-checkout,
+		body.aac-member-checkout #page,
+		body.aac-member-checkout .site,
+		body.aac-member-checkout .site-content,
+		body.aac-member-checkout .entry-content,
+		body.aac-member-checkout .aac-managed-shell,
+		body.aac-member-checkout .aac-managed-layout,
+		body.aac-member-checkout .aac-managed-main,
+		body.aac-member-checkout .aac-managed-main__inner,
+		body.aac-member-checkout .aac-managed-card,
+		body.aac-member-checkout .pmpro,
+		body.aac-member-checkout form.pmpro_form,
+		body.aac-member-checkout .aac-checkout-wizard,
+		body.aac-member-checkout .aac-checkout-wizard__panels,
+		body.aac-member-checkout .aac-checkout-wizard__panel:not([hidden]) {
+			height: auto !important;
+			min-height: 0 !important;
+			max-height: none !important;
+			overflow: visible !important;
+		}
+
+		body.aac-member-checkout {
+			overflow-y: auto !important;
+		}
+
+		body.aac-member-checkout[data-aac-checkout-wizard="true"] .aac-checkout-wizard__nav {
+			position: relative;
+			z-index: 100;
+			clear: both;
+			width: 100%;
+			min-height: 3.5rem;
+			margin: 1.5rem 0 0 !important;
+			padding: 0.75rem 0 0.25rem;
+			background: #fff;
+		}
+
+		body.aac-member-checkout[data-aac-checkout-wizard="true"] .aac-checkout-wizard__next {
+			display: inline-flex !important;
+			align-items: center;
+			justify-content: center;
+			min-width: 10rem;
+			min-height: 3.25rem;
+			border: 1px solid #050505 !important;
+			background: #ffc72c !important;
+			color: #050505 !important;
+		}
+
+		body.aac-member-checkout[data-aac-checkout-wizard="true"] .aac-checkout-wizard__next[hidden] {
+			display: none !important;
+		}
+
 		body[data-aac-checkout-wizard="true"] .aac-checkout-wizard__nav .aac-checkout-wizard__back {
 			background: transparent !important;
 			border: 1px solid #d7cfbf !important;
@@ -3397,6 +3835,33 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		body[data-aac-checkout-wizard="true"] .aac-checkout-wizard .pmpro_form_submit {
 			justify-content: flex-start;
 			margin-top: 1rem;
+		}
+
+		/* Match the Wondrous join surface: black structure with AAC-yellow actions. */
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard__step[aria-current="step"] {
+			border-color: #050505;
+			background: #fff7d6;
+			color: #050505;
+		}
+
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard__step[data-complete="true"] .aac-checkout-wizard__step-mark,
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard__step[aria-current="step"] .aac-checkout-wizard__step-mark {
+			background: #ffc72c;
+			color: #050505;
+		}
+
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard__next,
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard .pmpro_form_submit input[type="submit"],
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard .pmpro_form_submit button {
+			border-color: #050505 !important;
+			background: #ffc72c !important;
+			color: #050505 !important;
+		}
+
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard__next:hover,
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard .pmpro_form_submit input[type="submit"]:hover,
+		body.aac-member-portal-embed[data-aac-checkout-wizard="true"] .aac-checkout-wizard .pmpro_form_submit button:hover {
+			background: #e7ad00 !important;
 		}
 
 		@media (max-width: 760px) {
@@ -3797,7 +4262,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 	</style>
 <?php wp_head(); ?>
 </head>
-<body <?php body_class($is_embedded_pmpro_page ? 'aac-member-portal-embed' : (($is_portal_page && !$is_managed_pmpro_page) ? 'aac-member-portal-fullscreen' : ($is_public_shell_page ? 'aac-member-portal-fullscreen aac-member-portal-public-shell aac-public-page--' . sanitize_html_class($post->post_name) : 'aac-member-portal-fullscreen aac-member-portal-managed-shell'))); ?>>
+<body <?php body_class(($is_embedded_pmpro_page ? 'aac-member-portal-embed' : (($is_portal_page && !$is_managed_pmpro_page) ? 'aac-member-portal-fullscreen' : ($is_public_shell_page ? 'aac-member-portal-fullscreen aac-member-portal-public-shell aac-public-page--' . sanitize_html_class($post->post_name) : 'aac-member-portal-fullscreen aac-member-portal-managed-shell'))) . ($skip_publication_preferences ? ' aac-skip-publication-preferences' : '') . ($is_logged_in_member_checkout ? ' aac-member-checkout' : '')); ?>>
 <?php wp_body_open(); ?>
 <?php if ($is_portal_page && !$is_managed_pmpro_page) : ?>
 	<?php
@@ -3814,6 +4279,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			ob_start();
 			the_content();
 			$fullscreen_content = ob_get_clean();
+			// Some PMPro/page-builder combinations leave the checkout shortcode
+			// untouched when this minimal template bypasses the theme template.
+			// Run the shortcode pass explicitly inside the isolated embed.
+			$fullscreen_content = do_shortcode($fullscreen_content);
 			if (isset($portal_plugin) && $portal_plugin instanceof AAC_Member_Portal_Plugin) {
 				$fullscreen_content = $portal_plugin->normalize_pmpro_checkout_publication_markup($fullscreen_content);
 			}
@@ -3824,6 +4293,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 	<script>
 		(function () {
 			const messageType = 'aac-pmpro-checkout-height';
+			let lastPostedHeight = 0;
+			let pendingHeightFrame = 0;
 			const redirectTarget = <?php echo wp_json_encode($public_post_purchase_login_url); ?>;
 			const shouldRedirectToPortal = <?php echo $is_embedded_confirmation ? 'true' : 'false'; ?>;
 			const contentRoot =
@@ -3843,15 +4314,25 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				const activePanelRect = activePanel?.getBoundingClientRect();
 				const wizardNavRect = document.querySelector('.aac-checkout-wizard__nav')?.getBoundingClientRect();
 				const height = Math.ceil(Math.max(
-					rect.height,
+					wizardRect ? 0 : rect.height,
 					wizardRect ? wizardRect.bottom - rect.top : 0,
 					activePanelRect ? activePanelRect.bottom - rect.top : 0,
-					wizardNavRect ? wizardNavRect.bottom - rect.top : 0
+					wizardNavRect ? wizardNavRect.bottom - rect.top : 0,
+					460
 				));
 
-				if (window.parent && window.parent !== window) {
-					window.parent.postMessage({ type: messageType, height }, window.location.origin);
+				if (!window.parent || window.parent === window || Math.abs(height - lastPostedHeight) < 2) {
+					return;
 				}
+
+				lastPostedHeight = height;
+				if (pendingHeightFrame) {
+					window.cancelAnimationFrame(pendingHeightFrame);
+				}
+				pendingHeightFrame = window.requestAnimationFrame(() => {
+					pendingHeightFrame = 0;
+					window.parent.postMessage({ type: messageType, height }, window.location.origin);
+				});
 			};
 
 			const redirectParentToPortal = () => {
@@ -3871,18 +4352,147 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				window.location.assign(redirectTarget);
 			};
 
-			window.addEventListener('load', postHeight);
-			window.addEventListener('resize', postHeight);
-
-			if (typeof ResizeObserver !== 'undefined') {
-				const observer = new ResizeObserver(postHeight);
-				if (document.body) {
-					observer.observe(document.body);
+			const initializeStaticCheckout = () => {
+				if (!<?php echo $is_embedded_checkout ? 'true' : 'false'; ?>) {
+					return;
 				}
-			}
 
+				const form = document.querySelector('form.pmpro_form');
+				if (!form || form.dataset.aacStaticCheckout === 'true') {
+					return;
+				}
+
+				form.dataset.aacStaticCheckout = 'true';
+				form.querySelectorAll('.pmpro_form_field-password').forEach((field) => {
+					const input = field.querySelector('input[type="password"], input.pmpro_form_input-password');
+					const toggle = field.querySelector('.pmpro_form_field-password-toggle');
+					if (!input || !toggle || input.parentElement?.classList.contains('aac-password-input-wrap')) {
+						return;
+					}
+					const passwordWrap = document.createElement('div');
+					passwordWrap.className = 'aac-password-input-wrap';
+					input.parentNode.insertBefore(passwordWrap, input);
+					passwordWrap.appendChild(input);
+					passwordWrap.appendChild(toggle);
+				});
+				const billingFieldset = document.getElementById('pmpro_billing_address_fields');
+				const moreInformationFieldset = document.getElementById('pmpro_form_fieldset-more-information');
+				const pricingFieldset = document.getElementById('pmpro_pricing_fields');
+				const paymentFieldset = document.getElementById('pmpro_payment_information_fields');
+
+				if (billingFieldset) {
+					const billingHeading = billingFieldset.querySelector('.pmpro_form_heading, .pmpro_card_title');
+					if (billingHeading) {
+						billingHeading.textContent = 'Member Information';
+					}
+					const billingFields = billingFieldset.querySelector('.pmpro_form_fields') || billingFieldset;
+					const moreInformationFields = moreInformationFieldset?.querySelector('.pmpro_form_fields');
+					if (moreInformationFields && billingFields) {
+						Array.from(moreInformationFields.children).forEach((field) => billingFields.appendChild(field));
+						moreInformationFieldset.remove();
+					}
+				}
+
+				if (pricingFieldset) {
+					const pricingHeading = pricingFieldset.querySelector('.pmpro_form_heading, .pmpro_card_title');
+					if (pricingHeading) {
+						pricingHeading.textContent = 'Order Summary';
+					}
+					const promoLabel = pricingFieldset.querySelector('label[for="pmpro_other_discount_code"]');
+					if (promoLabel) {
+						promoLabel.textContent = 'Promo Code';
+					}
+					if (paymentFieldset?.parentNode === pricingFieldset.parentNode) {
+						paymentFieldset.parentNode.insertBefore(pricingFieldset, paymentFieldset);
+					}
+				}
+				const checkoutContextFields = <?php echo wp_json_encode(
+					$is_logged_in_member_checkout
+						? [['aac_embed', '1'], ['aac_member_checkout', '1'], ['aac_wizard', '0']]
+						: [['aac_embed', '1'], ['aac_signup', '1']]
+				); ?>;
+				checkoutContextFields.forEach(([name, value]) => {
+					if (!form.querySelector(`input[name="${name}"]`)) {
+						const input = document.createElement('input');
+						input.type = 'hidden';
+						input.name = name;
+						input.value = value;
+						form.appendChild(input);
+					}
+				});
+				const discountInputs = Array.from(form.querySelectorAll('input[name="aac_membership_discount"], input[data-aac-family-shortcut="true"]'));
+				const detailFieldset = document.getElementById('pmpro_form_fieldset-discount-fields');
+				const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
+				const familyMode = document.getElementById('aac_partner_family_mode');
+				const familyDetails = form.querySelector('[data-aac-partner-family-details]');
+
+				const fieldContainers = {
+					student: ['graduation_date_div', 'university_or_school_div', 'student_university_div'],
+					military: ['service_component_div', 'military_service_component_div', 'service_branch_div'],
+				};
+
+				const syncConditionalFields = () => {
+					const selected = discountInputs.find((input) => input.checked)?.value || '';
+					const showStudent = selected === 'student';
+					const showMilitary = selected === 'military';
+					const showFamily = selected === 'family';
+
+					if (detailFieldset) {
+						detailFieldset.classList.toggle('aac-embed-conditional-visible', showStudent || showMilitary);
+						detailFieldset.hidden = !(showStudent || showMilitary);
+					}
+
+					Object.entries(fieldContainers).forEach(([type, ids]) => {
+						const visible = type === 'student' ? showStudent : showMilitary;
+						ids.forEach((id) => {
+							const field = document.getElementById(id);
+							if (field) {
+								field.hidden = !visible;
+								field.style.display = visible ? '' : 'none';
+							}
+						});
+					});
+
+					if (familyMode) {
+						familyMode.value = showFamily ? 'family' : 'individual';
+					}
+					if (familyFieldset) {
+						familyFieldset.classList.toggle('aac-embed-conditional-visible', showFamily);
+						familyFieldset.hidden = !showFamily;
+					}
+					if (familyDetails) {
+						familyDetails.hidden = !showFamily;
+						familyDetails.style.display = showFamily ? '' : 'none';
+					}
+
+					window.setTimeout(postHeight, 0);
+					window.setTimeout(postHeight, 120);
+				};
+
+				discountInputs.forEach((input) => {
+					input.addEventListener('change', () => {
+						if (input.checked) {
+							discountInputs.forEach((other) => {
+								if (other !== input) other.checked = false;
+							});
+						}
+						syncConditionalFields();
+					});
+				});
+
+				syncConditionalFields();
+			};
+
+			window.addEventListener('load', () => {
+				initializeStaticCheckout();
+				postHeight();
+			}, { once: true });
+			if (document.readyState !== 'loading') {
+				initializeStaticCheckout();
+			}
 			setTimeout(postHeight, 150);
 			setTimeout(postHeight, 600);
+			setTimeout(postHeight, 1500);
 
 			if (shouldRedirectToPortal) {
 				setTimeout(redirectParentToPortal, 250);
@@ -3918,7 +4528,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 						<ul>
 							<?php foreach ($section['items'] as $item) : ?>
 								<li>
-									<a href="<?php echo esc_url($item['href']); ?>"<?php echo !empty($item['active']) ? ' aria-current="page"' : ''; ?>>
+									<?php $item_is_active = !empty($item['active']) || (($is_billing_page || $is_checkout_page) && strtolower(trim((string) ($item['label'] ?? ''))) === 'billing'); ?>
+									<a href="<?php echo esc_url($item['href']); ?>"<?php echo $item_is_active ? ' aria-current="page"' : ''; ?>>
 										<span class="aac-managed-sidebar__icon" aria-hidden="true"><?php echo aac_member_portal_sidebar_icon_svg($item['icon'] ?? 'user'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 										<span class="aac-managed-sidebar__label"><?php echo esc_html($item['label']); ?></span>
 									</a>
@@ -3927,6 +4538,12 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 						</ul>
 					</section>
 				<?php endforeach; ?>
+				<div class="aac-managed-sidebar__signout">
+					<a href="<?php echo esc_url($managed_logout_url); ?>">
+						<span class="aac-managed-sidebar__icon" aria-hidden="true"><?php echo aac_member_portal_sidebar_icon_svg('log-out'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+						<span class="aac-managed-sidebar__label">Sign Out</span>
+					</a>
+				</div>
 			</aside>
 
 			<main class="aac-managed-main">
@@ -3934,7 +4551,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					<section class="aac-managed-hero">
 						<p class="aac-managed-hero__kicker"><?php echo esc_html($page_kicker); ?></p>
 						<h1><?php echo esc_html($page_title); ?></h1>
-						<p><?php echo esc_html($page_description); ?></p>
+						<?php if (trim((string) $page_description) !== '') : ?>
+							<p><?php echo esc_html($page_description); ?></p>
+						<?php endif; ?>
+							<?php if (!$is_billing_page && !$is_checkout_page) : ?>
 							<div class="aac-managed-actions-row">
 								<a class="aac-managed-pill <?php echo $is_account_section ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($managed_account_url); ?>"><?php echo aac_member_portal_sidebar_icon_svg('user'); ?> <span>Account</span></a>
 								<?php if ($current_can_cancel_membership) : ?>
@@ -3942,6 +4562,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 								<?php endif; ?>
 								<a class="aac-managed-pill <?php echo $is_confirmation_page ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($confirmation_url); ?>"><?php echo aac_member_portal_sidebar_icon_svg('file-text'); ?> <span>Confirmation</span></a>
 						</div>
+							<?php endif; ?>
 					</section>
 
 					<?php if ($is_account_page && $current_member_id > 0 && $current_primary_membership) : ?>
@@ -4036,6 +4657,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		</div>
 	</div>
 <?php endif; ?>
+<?php if (!$is_embedded_pmpro_page) : ?>
 <script>
 	(function () {
 		const buildPreferredLoggedInName = () => {
@@ -4717,16 +5339,31 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			}
 		};
 
-		const getCurrentCheckoutLevelId = () => Number.parseInt(document.getElementById('pmpro_level')?.value || '0', 10) || 0;
+		const getCurrentCheckoutLevelId = () => {
+			const params = new URLSearchParams(window.location.search);
+			return Number.parseInt(
+				document.getElementById('pmpro_level')?.value
+					|| params.get('pmpro_level')
+					|| params.get('level')
+					|| '0',
+				10
+			) || 0;
+		};
+
+		const isMembershipUpgradeCheckout = () => {
+			const params = new URLSearchParams(window.location.search);
+			return params.get('aac_member_checkout') === '1' && params.get('aac_membership_action') === 'upgrade';
+		};
 
 		const getCurrentCheckoutLevelName = () => {
 			const levelId = getCurrentCheckoutLevelId();
 			const levels = window.pmpro?.all_levels || window.pmpro?.all_levels_formatted_text || {};
 			const preferredName =
 				levels[String(levelId)]?.name?.trim()
-				|| window.pmpropbc?.nocode_level?.name?.trim()
-				|| document.querySelector('.pmpro_level_name_text strong')?.textContent?.trim()
-				|| '';
+					|| window.pmpropbc?.nocode_level?.name?.trim()
+					|| document.querySelector('.pmpro_level_name_text strong')?.textContent?.trim()
+					|| <?php echo wp_json_encode($requested_checkout_level_name); ?>
+					|| '';
 			return preferredName && !/^membership$/i.test(preferredName) ? preferredName : 'Membership';
 		};
 
@@ -4934,6 +5571,28 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		};
 
 		const ensureTshirtPreferenceField = (targetContainer = null) => {
+			const configuredField =
+				document.getElementById('t_shirt_sizet_shirt_div') ||
+				document.querySelector('select[name="t_shirt_sizet_shirt"]')?.closest('.pmpro_form_field');
+			if (configuredField) {
+				const configuredControl = configuredField.querySelector('select, input:not([type="checkbox"]):not([type="radio"])');
+				const form = configuredField.closest('form') || document.getElementById('pmpro_form') || document.querySelector('form.pmpro_form');
+				const canonicalInput = ensureHiddenPreferenceInput(form, 't_shirt', configuredControl?.value || 'No T-shirt');
+				if (configuredControl && canonicalInput && configuredControl.dataset.aacTshirtSyncBound !== 'true') {
+					const syncConfiguredTshirtValue = () => {
+						canonicalInput.value = configuredControl.value;
+					};
+					configuredControl.addEventListener('input', syncConfiguredTshirtValue);
+					configuredControl.addEventListener('change', syncConfiguredTshirtValue);
+					form?.addEventListener('submit', syncConfiguredTshirtValue, true);
+					syncConfiguredTshirtValue();
+					window.setTimeout(syncConfiguredTshirtValue, 0);
+					window.setTimeout(syncConfiguredTshirtValue, 250);
+					configuredControl.dataset.aacTshirtSyncBound = 'true';
+				}
+				return configuredField;
+			}
+
 			const existingField =
 				document.getElementById('t_shirt_div') ||
 				document.getElementById('tshirt_div') ||
@@ -5014,7 +5673,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			if (!intro) {
 				intro = document.createElement('p');
 				intro.className = 'aac-member-preferences__intro';
-				intro.textContent = 'Choose how you would like to receive each AAC publication. Print keeps the mailed edition on your membership, while digital keeps the experience paperless.';
+				intro.textContent = 'Select a publication to receive a print copy. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.';
 			}
 
 			let cardsGrid = fieldset.querySelector('.aac-member-preferences__grid');
@@ -5243,6 +5902,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		};
 
 		const enhancePmproProfileInformation = () => {
+			if (!<?php echo $is_checkout_page ? 'true' : 'false'; ?>) {
+				return;
+			}
+
 			const socialLoginFieldset = document.getElementById('pmpro_social_login');
 			const socialLoginActions = document.getElementById('pmpro_card_actions-social_login');
 			const pricingFieldset = document.getElementById('pmpro_pricing_fields');
@@ -5318,6 +5981,14 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				const nativeDetailFields = nativeDetailFieldIds
 					.map((fieldId) => document.getElementById(fieldId))
 					.filter(Boolean);
+				const checkoutPhoneField =
+					document.getElementById('pmpro_sphone_div') ||
+					document.getElementById('bphone_div') ||
+					document.getElementById('phone_div') ||
+					document.querySelector('input[name="pmpro_sphone"], input[name="bphone"], input[name="phone"]')?.closest('.pmpro_form_field');
+				if (checkoutPhoneField && !nativeDetailFields.includes(checkoutPhoneField)) {
+					nativeDetailFields.push(checkoutPhoneField);
+				}
 			const markRequiredField = (fieldId) => {
 				const field = document.getElementById(fieldId);
 				if (!field) {
@@ -5493,7 +6164,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					nativeDetailsFieldset.dataset.aacNativeMemberInfo = 'true';
 					const buildNativeTwoUpRow = (fieldIds) => {
 						const fields = fieldIds
-							.map((fieldId) => document.getElementById(fieldId))
+							.map((fieldId) => typeof fieldId === 'string' ? document.getElementById(fieldId) : fieldId)
 							.filter(Boolean);
 						if (!fields.length) {
 							return;
@@ -5512,7 +6183,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 						['pmpro_saddress1_div', 'pmpro_saddress2_div'],
 						['pmpro_scountry_div', 'pmpro_scity_div'],
 						['pmpro_sstate_div', 'pmpro_szipcode_div'],
-						['pmpro_sphone_div', 't_shirt_div'],
+						[checkoutPhoneField, tshirtField],
 					].forEach(buildNativeTwoUpRow);
 
 					Array.from(nativeDetailsFields.querySelectorAll('.pmpro_cols-2')).forEach((row) => {
@@ -5808,10 +6479,6 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 						paymentLegend.remove();
 					}
 
-					if (discountFieldset && discountFieldset.parentNode === checkoutSectionParent) {
-						checkoutSectionParent.insertBefore(discountFieldset, paymentInformationFieldset);
-					}
-
 					if (familyFieldset && familyFieldset.parentNode === checkoutSectionParent) {
 						checkoutSectionParent.insertBefore(familyFieldset, paymentInformationFieldset);
 					}
@@ -5823,6 +6490,13 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 						donationFieldset.hidden = false;
 						donationFieldset.style.display = '';
 						checkoutSectionParent.insertBefore(donationFieldset, donationAnchor);
+					}
+
+					if (discountFieldset && discountFieldset.parentNode === checkoutSectionParent) {
+						const discountAnchor = checkoutSummary && checkoutSummary.parentNode === checkoutSectionParent
+							? checkoutSummary
+							: paymentInformationFieldset;
+						checkoutSectionParent.insertBefore(discountFieldset, discountAnchor);
 					}
 
 					if (checkoutSummary) {
@@ -5899,7 +6573,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				?? (Number.parseFloat(fieldset?.dataset?.aacMagazineBasePrice || '0') || 0);
 			const addonTotal = 0;
 			const updatedTotal = basePrice + addonTotal;
-			const summary = document.querySelector('[data-aac-magazine-summary]');
+			const summary = document.getElementById('pmpro_pricing_fields') || document.querySelector('[data-aac-magazine-summary]');
 			const currentLevelId = getCurrentCheckoutLevelId();
 			const membershipName = getCurrentCheckoutLevelName();
 			const familyModeValue = String(
@@ -5950,9 +6624,11 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				? getMembershipDiscountLabelForCode(selectedDiscountInput.dataset.aacMembershipDiscountCode)
 				: getMembershipDiscountLabelForCode(promoDiscountCode);
 			const promoDiscountLabel = membershipDiscountLabel || (promoDiscountCode ? `Promo code (${promoDiscountCode})` : 'Promo code discount');
-			const membershipSummaryLabel = showsProratedMembershipAmount
+			const membershipSummaryLabel = isMembershipUpgradeCheckout()
 				? `${buildMembershipLineItemLabel(membershipName)} (prorated amount due today)`
-				: getProratedMembershipSummaryLabel(membershipName);
+				: (showsProratedMembershipAmount
+				? `${buildMembershipLineItemLabel(membershipName)} (prorated amount due today)`
+				: getProratedMembershipSummaryLabel(membershipName));
 			const lineItems = [
 				{ label: membershipSummaryLabel, amount: membershipLineAmount },
 				...(promoDiscountAmount > 0 ? [{ label: promoDiscountLabel, amount: 0 - promoDiscountAmount, isDiscount: true }] : []),
@@ -6354,7 +7030,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 				const candidates = roots.flatMap((root) => Array.from(root.querySelectorAll('.pmpro_form_field')).filter((field) => {
 						const labelText = (field.querySelector('label')?.textContent || '').trim();
-						return field.querySelector('input[name="student_university"], input[id="student_university"], input[name="university_or_school"], input[id="university_or_school"], input[name="school_university"], input[id="school_university"], input[name="school_or_university"], input[id="school_or_university"], input[name="university_school"], input[id="university_school"]') || /university|school/i.test(labelText);
+					return field.querySelector('input[name="student_university"], input[id="student_university"], input[name^="university_or_school"], input[id^="university_or_school"], input[name="school_university"], input[id="school_university"], input[name="school_or_university"], input[id="school_or_university"], input[name="university_school"], input[id="university_school"]') || /university|school/i.test(labelText);
 					}));
 				const pmproField = candidates.find((field) => field.dataset.aacSyntheticStudentUniversityField !== 'true');
 				const syntheticField = candidates.find((field) => field.dataset.aacSyntheticStudentUniversityField === 'true');
@@ -6522,6 +7198,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 			let studentUniversityValueMap = new Map();
 			let studentUniversityRequestSequence = 0;
+			let studentUniversityDatasetPromise = null;
 
 			const searchStudentUniversities = (query) => {
 				const normalizedQuery = normalizeStudentUniversitySearch(query);
@@ -6529,14 +7206,19 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					return Promise.resolve([]);
 				}
 
-				const requestUrl = new URL(studentUniversitySearchEndpoint);
-				requestUrl.searchParams.set('q', query);
-				requestUrl.searchParams.set('limit', '30');
+				if (!studentUniversityDatasetPromise) {
+					const datasetUrl = new URL('/wp-content/plugins/aac-member-portal/includes/data/us-universities-scorecard-seed.json', window.location.origin);
+					studentUniversityDatasetPromise = fetch(datasetUrl.toString(), { credentials: 'same-origin' })
+						.then((response) => response.ok ? response.json() : Promise.reject(new Error('Unable to load universities')))
+						.then((payload) => Array.isArray(payload?.schools) ? payload.schools : [])
+						.catch(() => []);
+				}
 
-				return fetch(requestUrl.toString(), { credentials: 'same-origin' })
-					.then((response) => response.ok ? response.json() : Promise.reject(new Error('Unable to search universities')))
-					.then((payload) => Array.isArray(payload?.schools) ? payload.schools : [])
-					.catch(() => []);
+				const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+				return studentUniversityDatasetPromise.then((schools) => schools.filter((school) => {
+					const searchable = normalizeStudentUniversitySearch([school?.name, school?.city, school?.state].filter(Boolean).join(' '));
+					return searchable.includes(normalizedQuery) || terms.every((term) => searchable.includes(term));
+				}).slice(0, 30));
 			};
 
 			const normalizeStudentUniversitySearch = (value) => String(value || '')
@@ -6689,7 +7371,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			};
 
 			const hydrateStudentUniversityField = (field) => {
-				const input = field?.querySelector('input[name="university_or_school"], input[id="university_or_school"], input[name="student_university"], input[id="student_university"], input[name="school_university"], input[id="school_university"], input[name="school_or_university"], input[id="school_or_university"], input[name="university_school"], input[id="university_school"]');
+				const input = field?.querySelector('input[name^="university_or_school"], input[id^="university_or_school"], input[name="student_university"], input[id="student_university"], input[name="school_university"], input[id="school_university"], input[name="school_or_university"], input[id="school_or_university"], input[name="university_school"], input[id="university_school"]');
 				if (!input) {
 					return;
 				}
@@ -6753,7 +7435,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			};
 
 			const hydrateAllStudentUniversityFields = () => {
-				document.querySelectorAll('input[name="university_or_school"], input[id="university_or_school"], input[name="student_university"], input[id="student_university"], input[name="school_university"], input[id="school_university"], input[name="school_or_university"], input[id="school_or_university"], input[name="university_school"], input[id="university_school"]').forEach((input) => {
+				document.querySelectorAll('input[name^="university_or_school"], input[id^="university_or_school"], input[name="student_university"], input[id="student_university"], input[name="school_university"], input[id="school_university"], input[name="school_or_university"], input[id="school_or_university"], input[name="university_school"], input[id="university_school"]').forEach((input) => {
 					hydrateStudentUniversityField(input.closest('.pmpro_form_field') || input.parentElement);
 				});
 			};
@@ -6805,7 +7487,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					detailContainer.style.display = showDetailContainer ? '' : 'none';
 				}
 				if (showStudentUniversity) {
-					studentUniversityField?.querySelectorAll('input[name="university_or_school"], input[name="student_university"], input[name="school_university"], input[name="school_or_university"], input[name="university_school"]').forEach((input) => {
+					studentUniversityField?.querySelectorAll('input[name^="university_or_school"], input[name="student_university"], input[name="school_university"], input[name="school_or_university"], input[name="university_school"]').forEach((input) => {
 						input.required = true;
 					});
 				}
@@ -7154,6 +7836,18 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		};
 
 		const enhancePublicationPreferenceCards = () => {
+			const skipPublicationPreferences = new URLSearchParams(window.location.search).get('aac_skip_publications') === '1';
+			if (skipPublicationPreferences) {
+				document.querySelectorAll('.aac-server-member-preferences, #pmpro_form_fieldset-publication-preferences, #pmpro_form_fieldset-member-preferences, #pmpro_form_fieldset-more-information').forEach((surface) => {
+					surface.hidden = true;
+					surface.style.display = 'none';
+				});
+				document.querySelectorAll('[data-aac-publication-format-select], [data-aac-publication-format-hidden]').forEach((control) => {
+					control.value = 'Digital';
+				});
+				return;
+			}
+
 			const memberPreferencesFieldset =
 				document.getElementById('pmpro_form_fieldset-publication-preferences') ||
 				document.getElementById('pmpro_form_fieldset-member-preferences') ||
@@ -7632,10 +8326,6 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		};
 
 		const bindEmailAvailabilityCheck = () => {
-			if (currentUserEmail) {
-				return;
-			}
-
 			const emailInput = document.querySelector('input[name="bemail"]');
 			if (!emailInput || emailInput.dataset.aacEmailAvailabilityBound === 'true') {
 				return;
@@ -7651,6 +8341,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				statusNode = document.createElement('p');
 				statusNode.className = 'aac-email-availability';
 				statusNode.dataset.state = 'idle';
+				statusNode.setAttribute('role', 'status');
+				statusNode.setAttribute('aria-live', 'polite');
 				emailField.appendChild(statusNode);
 			}
 
@@ -7847,18 +8539,131 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			}
 		};
 
-		const enhanceCheckoutWizard = () => {
-			const params = new URLSearchParams(window.location.search);
-			if (params.get('aac_wizard') === '0') {
+		const enhanceBillingUpdateForm = () => {
+			if (!<?php echo $is_billing_page ? 'true' : 'false'; ?>) {
+				return;
+			}
+			document.body.classList.add('pmpro-billing');
+
+			const form = document.querySelector('form.pmpro_form');
+			if (!form) {
 				return;
 			}
 
-			const form = document.querySelector('form.pmpro_form');
-			if (!form || form.dataset.aacCheckoutWizardEnhanced === 'true') {
+			form.classList.add('aac-billing-update-form');
+			document.body.removeAttribute('data-aac-checkout-wizard');
+
+			const billingFieldset = document.getElementById('pmpro_billing_address_fields');
+			const paymentFieldset = document.getElementById('pmpro_payment_information_fields');
+			const billingHeading = billingFieldset?.querySelector('.pmpro_form_heading, .pmpro_card_title, legend');
+			if (billingHeading) {
+				billingHeading.textContent = 'Member Information';
+			}
+
+			[billingFieldset, paymentFieldset].forEach((fieldset) => {
+				if (!fieldset) return;
+				fieldset.hidden = false;
+				fieldset.style.removeProperty('display');
+			});
+
+			if (billingFieldset && paymentFieldset && billingFieldset.parentNode === paymentFieldset.parentNode) {
+				billingFieldset.insertAdjacentElement('afterend', paymentFieldset);
+			}
+		};
+
+		const enhanceCheckoutWizard = () => {
+			if (!<?php echo $is_checkout_page ? 'true' : 'false'; ?>) {
 				return;
+			}
+			const params = new URLSearchParams(window.location.search);
+			const isLoggedInMemberCheckout = params.get('aac_member_checkout') === '1';
+			document.body.classList.toggle('aac-skip-publication-preferences', params.get('aac_skip_publications') === '1');
+			const form = document.querySelector('form.pmpro_form');
+			if (!form || form.dataset.aacCheckoutWizardEnhanced === 'true' || form.querySelector('.aac-checkout-wizard')) {
+				return;
+			}
+			form.dataset.aacCheckoutWizardEnhanced = 'true';
+
+			if (isLoggedInMemberCheckout) {
+				[
+					document.getElementById('pmpro_user_fields'),
+					document.getElementById('pmpro_account_loggedin'),
+					document.getElementById('pmpro_form_fieldset-publication-preferences'),
+				].filter(Boolean).forEach((fieldset) => {
+					fieldset.hidden = true;
+					fieldset.style.setProperty('display', 'none', 'important');
+				});
+
+				const memberBillingFieldset = document.getElementById('pmpro_billing_address_fields');
+				if (memberBillingFieldset) {
+					memberBillingFieldset.hidden = false;
+					memberBillingFieldset.style.removeProperty('display');
+					const memberHeading = memberBillingFieldset.querySelector('.pmpro_form_heading, .pmpro_card_title, legend');
+					if (memberHeading) {
+						memberHeading.textContent = 'Member Information';
+					}
+					memberBillingFieldset.querySelectorAll('input, select, textarea').forEach((control) => {
+						control.disabled = false;
+						control.readOnly = false;
+						control.removeAttribute('readonly');
+					});
+				}
+
+				const nativeMemberFieldset = document.getElementById('aac_pmpro_native_member_information_fields');
+				const memberBillingFields = memberBillingFieldset?.querySelector('.pmpro_form_fields');
+				const phoneInput = form.querySelector('input[name="pmpro_sphone"], input[name="bphone"], input[name="phone"]');
+				const phoneField = phoneInput?.closest('.pmpro_form_field');
+				if (memberBillingFields && phoneField && !memberBillingFieldset.contains(phoneField)) {
+					let phoneRow = memberBillingFields.querySelector('[data-aac-member-checkout-phone-row]');
+					if (!phoneRow) {
+						phoneRow = document.createElement('div');
+						phoneRow.className = 'pmpro_cols-2 aac-managed-two-up';
+						phoneRow.dataset.aacMemberCheckoutPhoneRow = 'true';
+						memberBillingFields.appendChild(phoneRow);
+					}
+					phoneRow.appendChild(phoneField);
+					phoneField.hidden = false;
+					phoneField.style.removeProperty('display');
+					phoneInput.disabled = false;
+					phoneInput.readOnly = false;
+					phoneInput.removeAttribute('readonly');
+				}
+				if (nativeMemberFieldset) {
+					nativeMemberFieldset.querySelectorAll('.pmpro_form_field').forEach((field) => {
+						if (memberBillingFields && !memberBillingFieldset.contains(field)) {
+							memberBillingFields.appendChild(field);
+						}
+					});
+					nativeMemberFieldset.remove();
+				}
+
+				[
+					document.getElementById('aac_pmpro_native_member_information_fields'),
+					memberBillingFieldset,
+					document.getElementById('pmpro_form_fieldset-membership-discounts'),
+					document.getElementById('pmpro_form_fieldset-discount-fields'),
+					document.getElementById('pmpro_form_fieldset-partner-family'),
+					document.getElementById('pmpro_form_fieldset-donation'),
+					document.querySelector('.aac-promo-autorenew-row'),
+					document.querySelector('.aac-promo-code-section'),
+					document.getElementById('pmpro_pricing_fields'),
+					document.getElementById('pmpro_autorenewal_checkbox'),
+					document.getElementById('pmpro_payment_information_fields'),
+					form.querySelector('.pmpro_form_submit'),
+				].filter(Boolean).forEach((section) => {
+					if (section.matches('#pmpro_form_fieldset-discount-fields, #pmpro_form_fieldset-partner-family')) {
+						return;
+					}
+					section.hidden = false;
+					section.style.removeProperty('display');
+					section.removeAttribute('inert');
+				});
+
+				document.body.dataset.aacCheckoutLayout = 'member-upgrade-wizard';
 			}
 
 			document.body.dataset.aacCheckoutWizard = 'true';
+			delete document.body.dataset.aacCheckoutLayout;
 
 				const membershipDiscountFieldset = document.getElementById('pmpro_form_fieldset-membership-discounts');
 					if (membershipDiscountFieldset) {
@@ -7895,25 +8700,26 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			ensureCheckoutOrderSummary();
 			bindStudentUniversityFieldObserver();
 
-			const showPublicationStep = getCurrentCheckoutLevelId() > 1 && isCheckoutCountryUS();
+			const showPublicationStep = !isLoggedInMemberCheckout && params.get('aac_skip_publications') !== '1' && getCurrentCheckoutLevelId() > 1 && isCheckoutCountryUS();
 			const stepDefinitions = [
 				{
-					label: 'Account',
+					label: 'Account Information',
+					enabled: !isLoggedInMemberCheckout,
 					nodes: findNodes([
 						'#pmpro_user_fields',
 						'#pmpro_account_loggedin',
 					]),
 				},
 					{
-							label: 'Details',
+						label: isLoggedInMemberCheckout ? 'Details' : 'Member Information',
 							nodes: findNodes([
-									'[data-aac-native-member-info="true"]',
-									'#aac_pmpro_native_member_information_fields',
+									'#pmpro_billing_address_fields',
+									'[data-aac-native-member-info="true"]:not(#aac_pmpro_native_member_information_fields)',
 							]),
 						},
 				{
-					label: 'Publications',
-					enabled: showPublicationStep,
+					label: 'Publications Preferences',
+					enabled: !isLoggedInMemberCheckout,
 					nodes: findNodes([
 						'#pmpro_form_fieldset-publication-preferences',
 						'#pmpro_form_fieldset-member-preferences',
@@ -7922,16 +8728,18 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					]),
 				},
 					{
-							label: 'Payment',
+						label: isLoggedInMemberCheckout ? 'Payment' : 'Discounts, promo, and checkout',
 							nodes: findNodes([
 								'#pmpro_form_fieldset-membership-discounts',
+								'#pmpro_form_fieldset-discount-fields',
 								'[data-aac-checkout-discount-details]',
 								'#pmpro_form_fieldset-partner-family',
 								'#pmpro_form_fieldset-donation',
+								'.aac-promo-code-section',
+								'#pmpro_pricing_fields',
 								'[data-aac-magazine-summary]',
 								'#pmpro_autorenewal_checkbox',
 								'#pmpro_payment_information_fields',
-							'.pmpro_checkout_gateway',
 							'.pmpro_form_submit',
 					]),
 				},
@@ -7957,6 +8765,12 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			const progressFill = document.createElement('div');
 			progressFill.className = 'aac-checkout-wizard__progress-fill';
 			progress.appendChild(progressFill);
+			if (isLoggedInMemberCheckout) {
+				stepsNav.hidden = true;
+				stepsNav.style.display = 'none';
+				progress.hidden = true;
+				progress.style.display = 'none';
+			}
 
 				const panels = document.createElement('div');
 				panels.className = 'aac-checkout-wizard__panels';
@@ -8016,7 +8830,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			});
 
 			let currentStep = 0;
-			const isWizardEntryEnabled = (entry) => entry.label !== 'Publications' || (isCheckoutCountryUS() && getCurrentCheckoutLevelId() > 1);
+			const isWizardEntryEnabled = (entry) => entry?.label !== 'Publications Preferences' || showPublicationStep;
 			const getEnabledWizardEntries = () => panelsByIndex.filter(isWizardEntryEnabled);
 			const getNearestEnabledStepIndex = (targetIndex, direction = 1) => {
 				const boundedIndex = Math.max(0, Math.min(targetIndex, panelsByIndex.length - 1));
@@ -8055,10 +8869,29 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					return;
 				}
 
-				const isDetailsStep = panelsByIndex[currentStep]?.label === 'Details';
+				const isDetailsStep = ['Member Information', 'Details'].includes(panelsByIndex[currentStep]?.label);
 				const showTshirt = isDetailsStep && isCheckoutCountryUS() && getCurrentCheckoutLevelId() >= 2;
 				tshirtField.hidden = !showTshirt;
 				tshirtField.style.display = showTshirt ? '' : 'none';
+			};
+
+			const syncWizardNavClearance = () => {
+				const activePanel = panelsByIndex[currentStep]?.panel;
+				if (!activePanel) {
+					return;
+				}
+
+				nav.style.marginTop = '1.5rem';
+				const panelRect = activePanel.getBoundingClientRect();
+				const lowestVisibleBottom = Array.from(activePanel.querySelectorAll('*')).reduce((lowest, element) => {
+					if (element.hidden || window.getComputedStyle(element).display === 'none') {
+						return lowest;
+					}
+					const rect = element.getBoundingClientRect();
+					return rect.width > 0 && rect.height > 0 ? Math.max(lowest, rect.bottom) : lowest;
+				}, panelRect.bottom);
+				const overflowDistance = Math.max(0, lowestVisibleBottom - panelRect.bottom);
+				nav.style.marginTop = `${Math.ceil(24 + overflowDistance)}px`;
 			};
 
 			const postCheckoutHeight = () => {
@@ -8069,20 +8902,13 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 					const activePanelRect = panelsByIndex[currentStep]?.panel?.getBoundingClientRect();
 					const navRect = nav.getBoundingClientRect();
 					const submitRect = document.querySelector('.pmpro_form_submit')?.getBoundingClientRect();
-					const documentHeight = Math.max(
-						document.body?.scrollHeight || 0,
-						document.documentElement?.scrollHeight || 0,
-						document.body?.offsetHeight || 0,
-						document.documentElement?.offsetHeight || 0
-					);
 					const measuredHeight = Math.ceil(Math.max(
 						wizardRect.bottom - rootRect.top,
 						activePanelRect ? activePanelRect.bottom - rootRect.top : 0,
 						navRect.bottom - rootRect.top,
 						submitRect ? submitRect.bottom - rootRect.top : 0,
-						documentHeight,
 						460
-					));
+					) + 64);
 					window.parent?.postMessage({
 						type: 'aac-pmpro-checkout-height',
 						height: measuredHeight,
@@ -8093,8 +8919,11 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			};
 
 			const scheduleCheckoutHeight = () => {
-				[0, 80, 180, 360, 720, 1200, 2000].forEach((delay) => {
-					window.setTimeout(postCheckoutHeight, delay);
+				[0, 80, 180, 360, 720, 1200, 2000, 3200].forEach((delay) => {
+					window.setTimeout(() => {
+						syncWizardNavClearance();
+						postCheckoutHeight();
+					}, delay);
 				});
 			};
 
@@ -8359,6 +9188,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 				const lastEnabledEntry = enabledEntries[enabledEntries.length - 1];
 				const isLastStep = panelsByIndex[currentStep] === lastEnabledEntry;
+				if (isLastStep) {
+				}
 				backButton.hidden = currentStep === panelsByIndex.indexOf(enabledEntries[0]);
 				nextButton.hidden = isLastStep;
 				hint.textContent = isLastStep ? 'Review your order and complete payment.' : '';
@@ -8559,9 +9390,11 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 				const key = text.toLowerCase();
 				if (seenMessages.has(key)) {
-					message.hidden = true;
-					message.style.display = 'none';
-					message.dataset.aacDuplicatePmproMessage = 'true';
+					if (message.dataset.aacDuplicatePmproMessage !== 'true') {
+						message.hidden = true;
+						message.style.display = 'none';
+						message.dataset.aacDuplicatePmproMessage = 'true';
+					}
 					return;
 				}
 
@@ -8587,7 +9420,6 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			};
 
 			new MutationObserver(scheduleDedupe).observe(document.body, {
-				attributes: true,
 				childList: true,
 				characterData: true,
 				subtree: true,
@@ -8610,6 +9442,14 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			).forEach((node) => node.remove());
 		};
 
+		const moveMembershipDiscountsBeforeOrderSummary = () => {
+			const discounts = document.getElementById('pmpro_form_fieldset-membership-discounts');
+			const summary = document.querySelector('[data-aac-magazine-summary]');
+			if (discounts && summary?.parentNode && summary.previousElementSibling !== discounts) {
+				summary.parentNode.insertBefore(discounts, summary);
+			}
+		};
+
 		if (document.readyState === 'loading') {
 			document.addEventListener('DOMContentLoaded', () => {
 				removeCancelPageCheckoutSummary();
@@ -8630,6 +9470,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				syncMagazineAddonSummary();
 				syncPmproStateDropdown();
 				replacePmproLoggedInAccountUsername();
+				enhanceBillingUpdateForm();
 				enhanceCheckoutWizard();
 				bindManagedAutoRenewToggle();
 				removePmproMemberLinksSection();
@@ -8655,6 +9496,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			syncMagazineAddonSummary();
 			syncPmproStateDropdown();
 			replacePmproLoggedInAccountUsername();
+			enhanceBillingUpdateForm();
 			enhanceCheckoutWizard();
 			bindManagedAutoRenewToggle();
 			removePmproMemberLinksSection();
@@ -8679,12 +9521,32 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		window.addEventListener('load', syncMagazineAddonSummary);
 		window.addEventListener('load', syncPmproStateDropdown);
 		window.addEventListener('load', replacePmproLoggedInAccountUsername);
+		window.addEventListener('load', enhanceBillingUpdateForm);
 		window.addEventListener('load', enhanceCheckoutWizard);
 		window.addEventListener('load', bindManagedAutoRenewToggle);
 		window.addEventListener('load', removePmproMemberLinksSection);
 		window.addEventListener('load', bindPmproMessageDedupe);
+		window.addEventListener('load', moveMembershipDiscountsBeforeOrderSummary);
+		window.setTimeout(moveMembershipDiscountsBeforeOrderSummary, 250);
+		window.setTimeout(moveMembershipDiscountsBeforeOrderSummary, 1000);
 	}());
 </script>
+<script>
+	(function () {
+		const placeDiscounts = function () {
+			const discounts = document.getElementById('pmpro_form_fieldset-membership-discounts');
+			const summary = document.getElementById('pmpro_pricing_fields');
+			if (discounts && summary && summary.parentNode && summary.previousElementSibling !== discounts) {
+				summary.parentNode.insertBefore(discounts, summary);
+			}
+		};
+		document.addEventListener('DOMContentLoaded', placeDiscounts);
+		window.addEventListener('load', placeDiscounts);
+		window.setTimeout(placeDiscounts, 500);
+		window.setTimeout(placeDiscounts, 1500);
+	}());
+</script>
+<?php endif; ?>
 <?php wp_footer(); ?>
 </body>
 </html>

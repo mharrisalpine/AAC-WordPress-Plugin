@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown, ExternalLink, Plus, Tag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,7 @@ const DISCOUNT_CATEGORIES = [
   { id: 'expertvoice', label: 'ExpertVoice' },
   { id: 'climbing-guides', label: 'Climbing Guides' },
   { id: 'climbing-gyms', label: 'Climbing Gym Discounts' },
+  { id: 'lodging', label: 'Lodging' },
 ];
 const DISCOUNT_CATEGORY_IDS = DISCOUNT_CATEGORIES.map((category) => category.id);
 const DISCOUNT_BRAND_CATEGORY = 'discount-brands';
@@ -28,10 +29,93 @@ const EXPERTVOICE_BANNER_URL = 'https://americanalpine.wpenginepowered.com/wp-co
 const BRAND_HEADER_IMAGE_URL = 'https://images.unsplash.com/photo-1516592673884-4a382d1124c2?auto=format&fit=crop&w=1800&q=82';
 const GYM_HEADER_IMAGE_URL = 'https://images.unsplash.com/photo-1546016365-9b38a1b97164?auto=format&fit=crop&w=1600&q=80';
 const GUIDE_HEADER_IMAGE_URL = 'https://images.unsplash.com/photo-1522163182402-834f871fd851?auto=format&fit=crop&w=1600&q=80';
-const GUIDE_MEDIA_IMAGES = [
-  'https://images.unsplash.com/photo-1516592673884-4a382d1124c2?auto=format&fit=crop&w=900&q=80',
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
-  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=900&q=80',
+const LODGING_HEADER_IMAGE_URL = 'https://images.unsplash.com/photo-1518780664697-55e3ad937233?auto=format&fit=crop&w=1800&q=82';
+const LODGING_REGIONS = [
+  {
+    name: 'Alaska',
+    offers: [
+      { name: 'AAC Snowbird Hut', details: 'A first-come, first-served backcountry basecamp in the southern Talkeetna Mountains. The insulated and heated hut sits at 4,820 feet north of Palmer.', url: 'https://americanalpineclub.org/snowbird-hut' },
+    ],
+  },
+  {
+    name: 'California',
+    offers: [
+      { name: "Hans's Basecamp", discount: '15% off', details: 'Yosemite basecamp sleeping 10+ with access to the Rostrum, El Capitan Meadow, and Badger Pass.', url: 'http://www.hansbasecamp.com/' },
+    ],
+  },
+  {
+    name: 'Colorado',
+    offers: [
+      { name: 'A-Lodge', discount: '20% off', details: 'Save on private rooms, hostel stays, and car or tent camping at the Boulder and Lyons locations. Email info@americanalpineclub.org for the member code.', url: 'https://a-lodge.com/' },
+      { name: 'Colorado Mountain School Lodge', discount: 'CMS client rate', details: 'Stay in Estes Park near Rocky Mountain National Park. Call 1-800-836-4008 for reservations.', url: 'https://coloradomountainschool.com/about-colorado-mountain-school/lodging/' },
+      { name: 'The Inn at Raspberry Ridge', discount: '25% off', details: 'Four-bedroom inn in Marble, Colorado. The member rate lowers the published $90 nightly rate to $70. Contact raspberryridge@yahoo.com.', url: 'http://www.mcrchamber.org/lodging-cabins-camping/inn-raspberry-ridge' },
+    ],
+  },
+  {
+    name: 'New England',
+    offers: [
+      { name: 'AAC Campground in Rumney', details: 'AAC campground across from the main parking area and crags at Rumney Rocks, New Hampshire.', url: 'https://americanalpineclub.org/rumney-rattlesnake-campground' },
+      { name: 'Appalachian Mountain Club Facilities', discount: 'AMC member rates', details: 'Show an AAC membership card or proof-of-membership letter at AMC huts and lodges, including the High Mountain Huts in New Hampshire.', url: 'http://www.outdoors.org/' },
+      { name: 'Greenmont Farms', discount: '10% off', details: "Restored post-and-beam barn near Smugglers' Notch ice climbing in Vermont, available for individuals and groups.", url: 'http://greenmontfarms.com/pricing/' },
+      { name: 'The Notch Hostel', discount: '10% off', details: 'Shared and private rooms in North Woodstock, New Hampshire, convenient to Rumney, Cannon, and the White Mountains.', url: 'http://www.notchhostel.com/' },
+      { name: 'Tenney Mountain Basecamp', discount: '10% off', details: 'Private, family-friendly lodging about 10 minutes from Rumney Rocks. Book directly to avoid third-party platform fees and show proof of AAC membership.', url: 'https://www.vibebasecamps.com/' },
+    ],
+  },
+  {
+    name: 'New York',
+    offers: [
+      { name: 'AAC Campground in the Gunks', details: 'AAC campground within walking distance of the Shawangunk Ridge.', url: 'https://americanalpineclub.org/gunks-campground' },
+      { name: 'High Peaks Mountain Guides - Guides House', discount: '10% off peak stays', details: 'Discounted lodging varies by date, with additional midweek rates. Call for availability.', url: 'http://hpmountainguides.com/' },
+      { name: 'The Keene Farm', discount: 'ACC member rates', details: 'AAC members pay Alpine Club of Canada member rates: $20 for the hut or $10 for camping. Select ACC Member and include your AAC member number.', url: 'https://www.alpineclubofcanada.ca/huts/keene-farm/' },
+    ],
+  },
+  {
+    name: 'Oregon',
+    offers: [
+      { name: 'Mazama Lodge', discount: 'From $20/night', details: 'Show an AAC membership card or other proof of membership at the Mount Hood lodge.', url: 'http://mazamas.org/lodge/' },
+    ],
+  },
+  {
+    name: 'Tennessee',
+    offers: [
+      { name: 'The Crash Pad', discount: '10% off', details: 'Member lodging discount at the LEED Platinum hostel in Chattanooga. Present your AAC membership card.', url: 'http://www.crashpadchattanooga.com/' },
+    ],
+  },
+  {
+    name: 'Texas',
+    offers: [
+      { name: 'Hueco Rock Ranch', details: 'AAC lodging three miles from Hueco Tanks.', url: 'https://americanalpineclub.org/hueco-rock-ranch' },
+    ],
+  },
+  {
+    name: 'Utah',
+    offers: [
+      { name: 'Field Station Moab', discount: 'Up to 25% off', details: 'Savings on room rates plus discounted merchandise, food, and beverages. Email info@americanalpineclub.org for the booking code. Minimum stays and blackout dates may apply.', url: 'https://www.fieldstation.com/' },
+    ],
+  },
+  {
+    name: 'West Virginia',
+    offers: [
+      { name: 'AAC Campground in the New River Gorge', details: 'AAC campground on 40 acres in Fayetteville, adjacent to National Park land and within walking distance of popular crags.', url: 'https://americanalpineclub.org/new-river-gorge-campground' },
+      { name: 'Wexler Hut', discount: '20% off', details: 'Discounted hut lodging in Seneca Rocks. Call 304-567-2115 to reserve.', url: 'https://www.facebook.com/pages/The-Wexler-Hut-3045672115/1439916819599738?ref_type=bookmark' },
+    ],
+  },
+  {
+    name: 'Wyoming',
+    offers: [
+      { name: 'Bentwood Inn', discount: '10-15% off', details: '15% off October-May; 10% off June-September, holidays, and Presidents Day week.', url: 'http://www.bentwoodinn.com/' },
+      { name: 'The Alpine House', discount: '10-15% off', details: '15% off September-June; 10% off July-August and holidays.', url: 'http://alpinehouse.com/' },
+      { name: 'Double Diamond X Ranch', discount: '10% off', details: 'Member lodging discount near Cody and the region’s ice climbing.', url: 'http://www.ddxranchwyoming.com/' },
+      { name: "Grand Teton Climbers' Ranch", details: 'Affordable AAC lodging south of Jenny Lake in Grand Teton National Park.', url: 'https://americanalpineclub.org/grand-teton-climbers-ranch' },
+    ],
+  },
+  {
+    name: 'International',
+    offers: [
+      { name: 'Sorcerer Lodge - British Columbia', discount: '25% off', details: 'Discount for self-guided groups during shoulder seasons; helicopter transportation is not included. Call (250) 344-2804.', url: 'http://www.sorcererlodge.com/' },
+      { name: 'Refugio Cochamo - Chile', discount: 'Member rates', details: 'Bunk room: $15 nightly instead of $20. Camping: $4.50 per person nightly from January 15 through February, or $3 during low season.', url: 'http://www.cochamo.com/lodging/' },
+    ],
+  },
 ];
 const BENEFIT_GALLERY_ITEMS = [
   {
@@ -280,7 +364,7 @@ const resolveMembershipDiscountCodeText = (card, membershipTier) => {
   }
 };
 
-const DiscountCard = ({ card, index, membershipPercent, membershipCodeText, membershipTierLabel, isTierSpecific, portalDesign, portalContent, handleVisitOffer }) => {
+const DiscountCard = ({ card, index, membershipPercent, membershipCodeText, portalDesign, portalContent, handleVisitOffer }) => {
   const detailText = membershipCodeText || card.displayText;
 
   return (
@@ -308,13 +392,11 @@ const DiscountCard = ({ card, index, membershipPercent, membershipCodeText, memb
     </div>
 
     <div className="flex flex-1 flex-col px-3 py-3">
-      <div>
-        <p className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-[#8f1515]">Member Benefit</p>
-        <h3 className="mt-2 text-lg font-bold leading-tight text-black">{card.brand || 'AAC Partner'}</h3>
+      <div className="aac-brand-discount-heading text-center">
+        <h3 className="text-lg font-bold leading-tight text-black">{card.brand || 'AAC Partner'}</h3>
         {membershipPercent ? (
-          <p className="mt-1 text-sm font-bold uppercase tracking-[0.16em] text-[#8f1515]">
+          <p className="aac-brand-discount-percentage mt-2 text-3xl font-bold leading-tight text-[#8f1515]">
             {membershipPercent}
-            {isTierSpecific ? <span className="text-[0.68rem] text-black/45"> {membershipTierLabel}</span> : null}
           </p>
         ) : null}
       </div>
@@ -392,6 +474,48 @@ const ExpertVoiceSection = ({ handleVisitOffer }) => {
   );
 };
 
+const LodgingSection = ({ handleVisitOffer }) => (
+  <section className="space-y-6 bg-white">
+    <SectionHero
+      imageUrl={LODGING_HEADER_IMAGE_URL}
+      kicker="Member Lodging"
+      title="AAC lodging discounts"
+      description="Explore AAC campgrounds, huts, hostels, lodges, and partner accommodations across the United States and abroad. Offer details may change; confirm current rates and restrictions directly with the property when booking."
+    />
+
+    <div className="space-y-7">
+      {LODGING_REGIONS.map((region) => (
+        <div key={region.name}>
+          <h4 className="border-b-[3px] border-[#b71c1c] pb-2 text-2xl font-bold text-black">{region.name}</h4>
+          <div className="grid gap-x-8 md:grid-cols-2">
+            {region.offers.map((offer) => (
+              <article key={offer.name} className="border-b border-stone-300 py-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <h5 className="text-xl font-bold leading-tight text-black">{offer.name}</h5>
+                  {offer.discount ? (
+                    <span className="shrink-0 text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[#8f1515]">{offer.discount}</span>
+                  ) : null}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-black/70">{offer.details}</p>
+                {offer.url ? (
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex items-center border-b-2 border-[#b71c1c] pb-1 text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[#8f1515]"
+                    onClick={() => void handleVisitOffer(offer.url)}
+                  >
+                    Property details
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
 const ExpandableDirectorySection = ({ category, cards, membershipTier, handleVisitOffer }) => {
   const isGuide = category === 'climbing-guides';
   const directoryCards = useMemo(() => {
@@ -421,16 +545,6 @@ const ExpandableDirectorySection = ({ category, cards, membershipTier, handleVis
           imagePosition={isGuide ? 'center' : 'center'}
         />
       </div>
-
-      {isGuide ? (
-        <div className="grid gap-2 sm:grid-cols-3">
-          {GUIDE_MEDIA_IMAGES.map((imageUrl, index) => (
-            <div key={imageUrl} className="aspect-[1.55] overflow-hidden bg-stone-100">
-              <img src={imageUrl} alt="" className="h-full w-full object-cover" loading={index === 0 ? 'eager' : 'lazy'} />
-            </div>
-          ))}
-        </div>
-      ) : null}
 
       <div
         className={
@@ -479,7 +593,7 @@ const ExpandableDirectorySection = ({ category, cards, membershipTier, handleVis
   );
 };
 
-const BenefitsGallery = ({ items, onOpenDiscounts, onOpenBooksMedia, onOpenInternal, onOpenExternal }) => (
+const BenefitsGallery = ({ items, onOpenDiscounts, onOpenLodging, onOpenBooksMedia, onOpenInternal, onOpenExternal }) => (
   <div className="space-y-6 bg-white">
     <div className="border-b-[3px] border-[#b71c1c] pb-5">
       <p className="mb-2 text-[0.68rem] font-bold uppercase tracking-[0.24em] text-[#b71c1c]">
@@ -493,11 +607,16 @@ const BenefitsGallery = ({ items, onOpenDiscounts, onOpenBooksMedia, onOpenInter
 
     <div className="flex flex-wrap justify-center gap-5 bg-white">
       {items.map((item, index) => {
-        const clickable = item.id === 'discounts' || Boolean(item.url);
+        const clickable = item.id === 'discounts' || item.id === 'lodging' || Boolean(item.url);
         const CardTag = clickable ? 'button' : 'article';
         const handleClick = () => {
           if (item.id === 'discounts') {
             onOpenDiscounts();
+            return;
+          }
+
+          if (item.id === 'lodging') {
+            onOpenLodging();
             return;
           }
 
@@ -526,7 +645,7 @@ const BenefitsGallery = ({ items, onOpenDiscounts, onOpenBooksMedia, onOpenInter
             <CardTag
               type={clickable ? 'button' : undefined}
               onClick={clickable ? handleClick : undefined}
-              className={`aac-benefit-gallery-card flex h-full min-h-[31rem] w-full flex-col border border-stone-300 bg-white text-left text-black md:h-[34rem] xl:h-[36rem] ${
+              className={`aac-benefit-gallery-card flex h-auto min-w-0 w-full flex-col border border-stone-300 bg-white text-left text-black ${
                 clickable ? 'transition hover:-translate-y-0.5 hover:border-[#b71c1c] hover:shadow-[0_18px_36px_rgba(0,0,0,0.08)]' : ''
               }`}
             >
@@ -538,11 +657,11 @@ const BenefitsGallery = ({ items, onOpenDiscounts, onOpenBooksMedia, onOpenInter
                   loading={index === 0 ? 'eager' : 'lazy'}
                 />
               </div>
-              <div className="flex flex-1 flex-col gap-3 p-5">
+              <div className="aac-benefit-gallery-content flex flex-1 flex-col gap-3 p-5">
                 <h3 className="text-2xl font-bold leading-tight text-black">{item.title}</h3>
-                <p className="overflow-hidden text-sm leading-7 text-black/68 md:max-h-[11rem] xl:max-h-[12.25rem]">{item.description}</p>
+                <p className="text-sm leading-7 text-black/68">{item.description}</p>
                 {item.actionLabel ? (
-                  <span className="mt-auto inline-flex w-max items-center border-b-[3px] border-[#b71c1c] pb-1 text-[0.72rem] font-bold uppercase tracking-[0.14em] text-[#8f1515]">
+                  <span className="mt-auto inline-flex max-w-full self-start items-center border-b-[3px] border-[#b71c1c] pb-1 text-[0.72rem] font-bold uppercase tracking-[0.14em] text-[#8f1515]">
                     {item.actionLabel}
                     {item.url ? <ExternalLink className="ml-2 h-4 w-4" /> : null}
                   </span>
@@ -593,6 +712,12 @@ const DiscountsTab = ({ profile }) => {
   );
   const activeCategoryLabel = DISCOUNT_CATEGORIES.find((category) => category.id === activeCategory)?.label || 'Benefits';
 
+  useEffect(() => {
+    if (!showGallery) {
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+    }
+  }, [activeCategory, showGallery]);
+
   const handleVisitOffer = async (url) => {
     if (!url) {
       return;
@@ -613,6 +738,10 @@ const DiscountsTab = ({ profile }) => {
             items={benefitGalleryItems}
             onOpenDiscounts={() => {
               setActiveCategory(DISCOUNT_BRAND_CATEGORY);
+              setShowGallery(false);
+            }}
+            onOpenLodging={() => {
+              setActiveCategory('lodging');
               setShowGallery(false);
             }}
             onOpenBooksMedia={() => navigate('/publications')}
@@ -643,7 +772,7 @@ const DiscountsTab = ({ profile }) => {
         </div>
 
         {!isLocked ? (
-          <div className="mb-6 grid w-full grid-cols-1 gap-3 border-b border-stone-200 bg-white pb-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mb-6 grid w-full grid-cols-1 gap-3 border-b border-stone-200 bg-white pb-4 sm:grid-cols-2 xl:grid-cols-5">
             {DISCOUNT_CATEGORIES.map((category) => {
               const active = category.id === activeCategory;
               return (
@@ -680,6 +809,8 @@ const DiscountsTab = ({ profile }) => {
           </div>
         ) : activeCategory === 'expertvoice' ? (
           <ExpertVoiceSection handleVisitOffer={handleVisitOffer} />
+        ) : activeCategory === 'lodging' ? (
+          <LodgingSection handleVisitOffer={handleVisitOffer} />
         ) : activeCategory === 'climbing-guides' || activeCategory === 'climbing-gyms' ? (
           visibleCards.length ? (
             <ExpandableDirectorySection

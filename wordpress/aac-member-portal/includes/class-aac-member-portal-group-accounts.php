@@ -895,6 +895,26 @@ final class AAC_Member_Portal_Group_Accounts {
 		];
 	}
 
+	public static function get_group_summary_for_user($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return null;
+		}
+
+		$parent_user_id = absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
+		$is_child = $parent_user_id > 0 && $parent_user_id !== $user_id;
+		$group_owner_user_id = $is_child ? $parent_user_id : $user_id;
+		$summary = self::get_group_summary_for_parent($group_owner_user_id);
+		if (!$summary) {
+			return null;
+		}
+
+		return array_merge($summary, [
+			'parent_user_id' => $group_owner_user_id,
+			'account_role' => $is_child ? 'Child' : 'Parent',
+		]);
+	}
+
 	public static function get_connected_accounts_for_parent($parent_user_id, $repair_meta = true) {
 		if (!self::is_available()) {
 			return [];

@@ -1,13 +1,12 @@
 
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { toast } from '@/components/ui/use-toast';
 import PortalSidebar from '@/components/PortalSidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getExpirationWarningDetails, shouldPromptMembershipVerification } from '@/lib/membershipRenewal';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
@@ -53,19 +52,52 @@ function App() {
   const isLoginEmbed = runtimeConfig.embedMode === 'login';
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('profile');
+  const [siteHeaderClearance, setSiteHeaderClearance] = useState(0);
   const fullBleedContentRoutes = new Set([]);
   const isFullBleedContentRoute = fullBleedContentRoutes.has(location.pathname);
   const flushTopMemberRoutes = new Set(['/profile']);
   const isFlushTopMemberRoute = flushTopMemberRoutes.has(location.pathname);
-  const fullWidthContentRoutes = new Set(['/discounts', '/membership']);
+  const isCompactMembershipRoute = location.pathname === '/membership';
+  const fullWidthContentRoutes = new Set(['/discounts', '/membership', '/membership/upgrade']);
   const isFullWidthContentRoute = fullWidthContentRoutes.has(location.pathname);
   const publicOutletPaths = new Set(['/login', '/linked-accounts', '/home', '/join']);
   const showPublicOutlet = publicOutletPaths.has(location.pathname);
-  const { openMembershipAction } = useMembershipActions();
+  const needsPublicHeaderClearance = location.pathname === '/linked-accounts';
+  const navigate = useNavigate();
   const expirationWarning = getExpirationWarningDetails(profile);
 
   useLayoutEffect(() => {
-    if (location.pathname !== '/join') {
+    if (location.pathname === '/join') {
+      setSiteHeaderClearance(0);
+      return undefined;
+    }
+
+    let measureFrame = 0;
+    let delayedMeasure = 0;
+    const measureSiteHeader = () => {
+      window.cancelAnimationFrame(measureFrame);
+      measureFrame = window.requestAnimationFrame(() => {
+        const siteHeader = document.getElementById('site-header');
+        const nextClearance = siteHeader ? Math.max(0, Math.ceil(siteHeader.getBoundingClientRect().bottom)) : 0;
+        setSiteHeaderClearance(nextClearance);
+      });
+    };
+
+    measureSiteHeader();
+    delayedMeasure = window.setTimeout(measureSiteHeader, 500);
+    window.addEventListener('load', measureSiteHeader);
+    window.addEventListener('resize', measureSiteHeader);
+
+    return () => {
+      window.cancelAnimationFrame(measureFrame);
+      window.clearTimeout(delayedMeasure);
+      window.removeEventListener('load', measureSiteHeader);
+      window.removeEventListener('resize', measureSiteHeader);
+    };
+  }, [location.pathname]);
+
+  useLayoutEffect(() => {
+    if (!['/join', '/linked-accounts'].includes(location.pathname)) {
       return undefined;
     }
 
@@ -149,19 +181,23 @@ function App() {
     '/publications',
     '/rescue',
     '/membership',
+    '/membership/upgrade',
     '/contact',
     '/account',
   ]);
   const showProtectedLogin = !user && protectedMemberPaths.has(location.pathname);
   const shouldRenderPublicShell = (!user && !showProtectedLogin) || showPublicOutlet || showProtectedLogin;
-  const useCordilleraTheme = location.pathname === '/home' && !showProtectedLogin;
   const useDocumentScroll = location.pathname === '/join';
   if (shouldRenderPublicShell) {
     return (
-      <div className={`topo-lines flex min-h-screen flex-col ${useCordilleraTheme ? 'aac-cordillera-theme' : ''}`}>
+      <div className="topo-lines flex min-h-screen flex-col">
         <main
           className={useDocumentScroll ? 'min-w-0 overflow-visible' : 'min-h-0 min-w-0 flex-1 overflow-y-auto'}
-          style={{ paddingTop: '0px' }}
+          style={{
+            paddingTop: needsPublicHeaderClearance && siteHeaderClearance > 0
+              ? `calc(${siteHeaderClearance}px + clamp(1.5rem, 2.5vw, 2.5rem))`
+              : '0px',
+          }}
         >
           <PortalRouteErrorBoundary key={location.pathname}>
             {showProtectedLogin ? <LoginPage /> : showPublicOutlet ? <Outlet context={{ activeTab, setActiveTab }} /> : <HomePage />}
@@ -180,20 +216,22 @@ function App() {
       </Helmet>
       
       <div
-        className={`member-app-surface flex min-h-screen flex-col overflow-visible ${useCordilleraTheme ? 'aac-cordillera-theme' : ''}`}
+        className="member-app-surface flex min-h-screen flex-col overflow-visible"
         style={{
           '--aac-portal-header-height': '0px',
-          paddingTop: '0.75rem',
+          paddingTop: siteHeaderClearance > 0
+            ? `calc(${siteHeaderClearance}px + clamp(1.5rem, 2.5vw, 2.5rem))`
+            : '0.75rem',
         }}
       >
         <ExpirationBanner
           details={expirationWarning}
-          onRenew={() => void openMembershipAction('renew', { targetTier: profile?.profile_info?.tier || 'Partner' })}
+          onRenew={() => navigate('/membership/upgrade')}
         />
         <PortalSidebar />
         <div className="flex min-h-0 flex-1 flex-col overflow-visible">
           <main
-            className={`portal-main-surface mx-auto min-h-0 min-w-0 flex-1 overflow-visible ${isFullWidthContentRoute ? 'w-full max-w-none !px-[clamp(1.25rem,2.5vw,3rem)]' : ''} ${isFullBleedContentRoute ? 'px-0 py-0' : isFlushTopMemberRoute ? 'px-4 pb-6 pt-8 md:pb-8' : 'px-4 py-8 md:pb-8'}`}
+            className={`portal-main-surface mx-auto min-h-0 min-w-0 flex-1 overflow-visible ${isFullWidthContentRoute ? 'w-full max-w-none !px-[clamp(1.25rem,2.5vw,3rem)]' : ''} ${isFullBleedContentRoute ? 'px-0 py-0' : isCompactMembershipRoute ? 'px-4 pb-4 pt-3' : isFlushTopMemberRoute ? 'px-4 pb-6 pt-8 md:pb-8' : 'px-4 py-8 md:pb-8'}`}
             style={{ paddingBottom: isFullBleedContentRoute ? 'env(safe-area-inset-bottom, 0px)' : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
           >
             <div className={isFullWidthContentRoute ? 'w-full max-w-none' : 'mx-auto max-w-7xl'}>

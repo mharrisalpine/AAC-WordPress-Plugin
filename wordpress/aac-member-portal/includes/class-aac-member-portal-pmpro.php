@@ -104,6 +104,7 @@ class AAC_Member_Portal_PMPro {
 			'current_level_id' => null,
 			'current_subscription_id' => null,
 			'current_level_checkout_url' => '',
+			'autorenew_reactivation_url' => '',
 			'add_dependent_checkout_url' => '',
 			'pending_downgrade' => null,
 			'levels' => new stdClass(),
@@ -144,15 +145,36 @@ class AAC_Member_Portal_PMPro {
 				}
 			}
 
+			$member_checkout_args = [
+				'level' => $level_id,
+				'pmpro_level' => $level_id,
+				'aac_member_checkout' => '1',
+				'aac_membership_action' => $change_type,
+				'aac_wizard' => '0',
+			];
 			$levels[$name] = [
-				'checkout_url' => $change_type === 'downgrade_unavailable' ? '' : self::pmpro_page_url('checkout', ['level' => $level_id]),
+				'checkout_url' => $change_type === 'downgrade_unavailable' ? '' : self::pmpro_page_url('checkout', $member_checkout_args),
 				'level_id' => $level_id,
 				'action_type' => $change_type,
 				'effective_timing' => $change_type === 'downgrade_at_renewal' ? 'renewal' : 'immediate',
 			];
 		}
 
-		$current_level_checkout_url = $current_level_id ? self::pmpro_page_url('checkout', ['level' => $current_level_id]) : '';
+		$current_level_checkout_url = $current_level_id
+			? self::pmpro_page_url('checkout', [
+				'level' => $current_level_id,
+				'pmpro_level' => $current_level_id,
+				'aac_member_checkout' => '1',
+				'aac_membership_action' => 'renew',
+				'aac_extend_membership' => '1',
+				'aac_existing_enddate' => sanitize_text_field((string) (
+					($primary['valid_through_date'] ?? '')
+						?: (($primary['expiration_date'] ?? '') ?: ($primary['renewal_date'] ?? ''))
+				)),
+				'aac_wizard' => '0',
+			])
+			: '';
+		$autorenew_reactivation_url = '';
 		$add_dependent_checkout_url = $current_level_checkout_url !== ''
 			? add_query_arg('aac_add_dependent', '1', $current_level_checkout_url)
 			: '';
@@ -162,10 +184,11 @@ class AAC_Member_Portal_PMPro {
 			&& self::has_future_membership_term($primary)
 		) {
 			// This is the "turn auto-renew back on without charging twice" lane.
-			$current_level_checkout_url = add_query_arg('aac_reactivate_autorenew', '1', $current_level_checkout_url);
+			$autorenew_reactivation_url = remove_query_arg('aac_extend_membership', $current_level_checkout_url);
+			$autorenew_reactivation_url = add_query_arg('aac_reactivate_autorenew', '1', $autorenew_reactivation_url);
 		}
 
-		$billing_url = self::pmpro_page_url('billing');
+		$billing_url = '';
 		if ($current_subscription_id) {
 			$billing_order_reference = self::find_latest_billing_order_reference($user_id, (int) $current_level_id);
 			$billing_url = self::pmpro_page_url(
@@ -190,6 +213,7 @@ class AAC_Member_Portal_PMPro {
 			'current_level_id' => $current_level_id,
 			'current_subscription_id' => $current_subscription_id,
 			'current_level_checkout_url' => $current_level_checkout_url,
+			'autorenew_reactivation_url' => $autorenew_reactivation_url,
 			'add_dependent_checkout_url' => $add_dependent_checkout_url,
 			'pending_downgrade' => $pending_downgrade,
 			'levels' => (object) $levels,
@@ -495,12 +519,20 @@ class AAC_Member_Portal_PMPro {
 					continue;
 				}
 
-				$label = sanitize_text_field((string) ($item['label'] ?? ''));
-				if ($label === '') {
-					continue;
-				}
+					$label = sanitize_text_field((string) ($item['label'] ?? ''));
+					if ($label === '') {
+						continue;
+					}
 
-				$items[] = [
+					// Older prorated orders were stored with the generic fallback label
+					// "Promo discount" even though no promotional code was involved.
+					// Real PMPro codes are stored with their named "Promo code (...)"
+					// label, so only migrate the ambiguous legacy fallback here.
+					if (strcasecmp($label, 'Promo discount') === 0) {
+						$label = __('Prorated Amount', 'aac-member-portal');
+					}
+
+					$items[] = [
 					'label' => $label,
 					'amount' => round((float) ($item['amount'] ?? 0), 2),
 				];
@@ -888,6 +920,67 @@ class AAC_Member_Portal_PMPro {
 		return '';
 	}
 
+	/** Preview only: never creates an invoice, charges a card, or updates a subscription. */
+	public static function get_upcoming_payment($user_id) {
+		global $wpdb;
+		$unavailable = ['status' => 'unavailable'];
+		if (!self::is_available()) return $unavailable;
+		$primary = self::get_primary_membership($user_id);
+		if (empty($primary['level_id'])) return ['status' => 'hidden'];
+		$id = self::find_subscription_id($user_id, (int) $primary['level_id'], ['active', 'trialing']);
+		if (!$id) return ['status' => 'hidden'];
+		$row = $wpdb->get_row($wpdb->prepare(
+			"SELECT * FROM {$wpdb->pmpro_subscriptions} WHERE id = %d AND user_id = %d",
+			$id, $user_id
+		));
+		if (!$row || $row->gateway !== 'stripe' || !class_exists('PMProGateway_stripe')) return $unavailable;
+		if (($row->gateway_environment ?? '') !== get_option('pmpro_gateway_environment', 'sandbox')) return $unavailable;
+		try {
+			// Let PMPro configure its own Stripe credentials and API version.
+			new PMProGateway_stripe('stripe');
+			$subscription = \Stripe\Subscription::retrieve($row->subscription_transaction_id);
+			if (!in_array($subscription->status, ['active', 'trialing'], true)
+				|| !empty($subscription->cancel_at_period_end) || !empty($subscription->cancel_at)
+				|| !empty($subscription->pause_collection)
+				|| $subscription->collection_method !== 'charge_automatically') return ['status' => 'hidden'];
+			$customer = get_user_meta($user_id, 'pmpro_stripe_customerid', true);
+			if (!$customer || $subscription->customer !== $customer) return $unavailable;
+			$params = ['customer' => $customer];
+			$params[!empty($subscription->schedule) ? 'schedule' : 'subscription'] = !empty($subscription->schedule) ? $subscription->schedule : $subscription->id;
+			if (method_exists('Stripe\\Invoice', 'createPreview')) {
+				$invoice = \Stripe\Invoice::createPreview($params);
+			} elseif (method_exists('Stripe\\Invoice', 'upcoming')) {
+				$invoice = \Stripe\Invoice::upcoming($params);
+			} else {
+				return $unavailable;
+			}
+			$timestamp = (int) ($invoice->next_payment_attempt ?: $invoice->period_end);
+			if ($timestamp <= time() || !isset($invoice->amount_due) || empty($invoice->currency)) return $unavailable;
+			$level = $primary['tier'] ?? '';
+			// A schedule can change the product. Use the actual recurring line,
+			// rather than mislabel a future charge with today's membership tier.
+			if (!empty($subscription->schedule)) {
+				$level = '';
+				foreach ($invoice->lines->data as $line) {
+					if (($line->type ?? '') === 'subscription' || ($line->parent->type ?? '') === 'subscription_item_details') {
+						$level = $line->description ?? '';
+						break;
+					}
+				}
+			}
+			return [
+				'status' => 'ready',
+				'level' => sanitize_text_field($level) ?: 'Unavailable',
+				'amount_minor' => (int) $invoice->amount_due,
+				'currency' => strtoupper(sanitize_text_field($invoice->currency)),
+				'charge_date' => wp_date('Y-m-d', $timestamp),
+			];
+		} catch (\Throwable $error) {
+			// Never expose gateway errors, keys, or customer details to the client.
+			return $unavailable;
+		}
+	}
+
 	private static function find_subscription_id($user_id, $level_id = 0, $statuses = []) {
 		global $wpdb;
 
@@ -1034,7 +1127,7 @@ class AAC_Member_Portal_PMPro {
 			return '';
 		}
 
-		$timestamp = strtotime($value);
+		$timestamp = self::parse_membership_date_timestamp($value);
 		if ($timestamp === false) {
 			return '';
 		}
@@ -1072,7 +1165,7 @@ class AAC_Member_Portal_PMPro {
 			return '';
 		}
 
-		$timestamp = strtotime($value);
+		$timestamp = self::parse_membership_date_timestamp($value);
 		if ($timestamp === false) {
 			return '';
 		}
@@ -1091,12 +1184,26 @@ class AAC_Member_Portal_PMPro {
 			return '';
 		}
 
-		$timestamp = strtotime($value);
+		$timestamp = self::parse_membership_date_timestamp($value);
 		if ($timestamp === false) {
 			return '';
 		}
 
 		return $include_time ? gmdate('Y-m-d 23:59:59', $timestamp) : gmdate('Y-m-d', $timestamp);
+	}
+
+	private static function parse_membership_date_timestamp($value) {
+		$value = trim((string) $value);
+		if (preg_match('/^\d{9,13}$/', $value)) {
+			$timestamp = (int) $value;
+			if (strlen($value) >= 13) {
+				$timestamp = (int) floor($timestamp / 1000);
+			}
+
+			return $timestamp > 0 ? $timestamp : false;
+		}
+
+		return strtotime($value);
 	}
 
 	private static function normalize_membership_status($status) {

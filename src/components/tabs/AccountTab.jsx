@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { KeyRound, Receipt } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
+import CommunicationConsentFields from '@/components/CommunicationConsentFields';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,17 +10,11 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
-import { getMemberTransactions } from '@/lib/memberApi';
-import { getMemberApiBase } from '@/lib/backendConfig';
-import { getMembershipBenefits, formatDollars } from '@/lib/membershipBenefits';
+import { getMemberApiBase, getAppRuntimeConfig } from '@/lib/backendConfig';
+import { resolveAddressCode, addressSelectOptions } from '@/lib/addressOptions';
 import { normalizeAccountInfo, TSHIRT_SIZE_OPTIONS, formatTShirtSizeLabel } from '@/lib/memberProfile';
 import { isPartnerOrAboveMembershipTierId } from '@/lib/membershipTiers';
 import { getPortalUiSettings } from '@/lib/portalSettings';
-import {
-  listMemberTransactions,
-  subscribeMemberTransactions,
-  MEMBER_TRANSACTIONS_STORAGE_KEY,
-} from '@/lib/transactions';
 
 const ProfileSection = ({ title, children, className = '', titleClassName = '' }) => (
   <section className={`bg-white py-6 ${className}`}>
@@ -32,7 +27,37 @@ const ProfileSection = ({ title, children, className = '', titleClassName = '' }
   </section>
 );
 
-const TRANSACTION_REGISTER_VISIBLE_KINDS = new Set(['Membership']);
+const CommunicationPreferenceToggle = ({ label, description, value, onChange }) => {
+  const isPrint = value !== 'Digital';
+
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-stone-200 py-3">
+      <div>
+        <p className="text-sm font-medium leading-tight text-black">{label}</p>
+        <p className="mt-0.5 text-xs leading-snug text-black/60">{description}</p>
+        <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-stone-950">
+          {isPrint ? 'Print' : 'Digital'}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isPrint}
+        aria-label={`${label}: ${isPrint ? 'Print' : 'Digital'}`}
+        onClick={() => onChange(isPrint ? 'Digital' : 'Print')}
+        className={`aac-publication-toggle relative inline-flex h-8 w-16 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b71c1c] focus-visible:ring-offset-2 ${
+          isPrint ? 'border-[#b71c1c] bg-[#b71c1c]' : 'border-stone-300 bg-stone-100'
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className="aac-publication-toggle__thumb"
+        />
+      </button>
+    </div>
+  );
+};
+
 const SERVICE_COMPONENT_OPTIONS = [
   'Active',
   'Reserve',
@@ -186,86 +211,16 @@ const StudentUniversityField = ({ value, schoolId, onChange }) => {
 
 const AccountTab = ({ profile }) => {
   const navigate = useNavigate();
-  const { user, updateProfile } = useAuth();
+  const { updateProfile } = useAuth();
   const [accountData, setAccountData] = useState(null);
   const accountDataRef = useRef(null);
   const [saving, setSaving] = useState(false);
-  const [savingPreferences, setSavingPreferences] = useState(false);
-  const [localTransactions, setLocalTransactions] = useState([]);
-  const [remoteTransactions, setRemoteTransactions] = useState([]);
-
-  const refreshLocalTransactions = useCallback(() => {
-    if (user?.id) {
-      setLocalTransactions(listMemberTransactions(user.id));
-    } else {
-      setLocalTransactions([]);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    refreshLocalTransactions();
-    const unsubscribe = subscribeMemberTransactions(refreshLocalTransactions);
-    return unsubscribe;
-  }, [refreshLocalTransactions]);
-
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === MEMBER_TRANSACTIONS_STORAGE_KEY) {
-        refreshLocalTransactions();
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [refreshLocalTransactions]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!user?.id) {
-      setRemoteTransactions([]);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const loadRemoteTransactions = async () => {
-      try {
-        const data = await getMemberTransactions();
-        if (!cancelled) {
-          setRemoteTransactions(Array.isArray(data?.transactions) ? data.transactions : []);
-        }
-      } catch (_error) {
-        if (!cancelled) {
-          setRemoteTransactions([]);
-        }
-      }
-    };
-
-    loadRemoteTransactions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
-  const { openMembershipAction, getMembershipActionUrl, hasManagedMembershipUrls } = useMembershipActions();
-
-  const transactions = React.useMemo(() => {
-    const combined = [...remoteTransactions, ...localTransactions];
-    const seen = new Set();
-
-    return combined
-      .filter((transaction) => {
-        const dedupeKey = transaction.referenceId || transaction.id;
-        if (!dedupeKey || seen.has(dedupeKey)) {
-          return false;
-        }
-
-        seen.add(dedupeKey);
-        return TRANSACTION_REGISTER_VISIBLE_KINDS.has(transaction.kind);
-      })
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [localTransactions, remoteTransactions]);
-  const recentTransactions = React.useMemo(() => transactions.slice(0, 2), [transactions]);
+  const { hasManagedMembershipUrls } = useMembershipActions();
+  const addressOptions = getAppRuntimeConfig().addressOptions || {};
+  const countries = addressOptions.countries || {};
+  const countryCode = resolveAddressCode(accountData?.country, countries);
+  const states = addressOptions.states?.[countryCode] || {};
+  const stateCode = resolveAddressCode(accountData?.state, states);
   const canManagePublicationPreferences = isPartnerOrAboveMembershipTierId(profile?.profile_info?.tier);
 
   useEffect(() => {
@@ -289,20 +244,17 @@ const AccountTab = ({ profile }) => {
   }, []);
 
   const currentProfileAccountInfo = normalizeAccountInfo(profile?.account_info || {});
-  const publicationFieldKeys = ['aaj_pref', 'anac_pref', 'acj_pref', 'guidebook_pref'];
   const emergencyRelationshipOptions = Array.isArray(accountData?.emergency_contact_relationship_options) && accountData.emergency_contact_relationship_options.length
     ? accountData.emergency_contact_relationship_options
     : [
-        { value: 'Spouse / Partner', label: 'Spouse / Partner' },
+        { value: 'Spouse', label: 'Spouse' },
+        { value: 'Partner', label: 'Partner' },
         { value: 'Parent', label: 'Parent' },
         { value: 'Sibling', label: 'Sibling' },
         { value: 'Child', label: 'Child' },
         { value: 'Friend', label: 'Friend' },
         { value: 'Other', label: 'Other' },
       ];
-  const publicationPreferencesDirty = canManagePublicationPreferences && publicationFieldKeys.some(
-    (key) => (accountData?.[key] || '') !== (currentProfileAccountInfo?.[key] || '')
-  );
 
   const handleSave = async () => {
     const nextAccountData = accountDataRef.current || accountData;
@@ -341,92 +293,15 @@ const AccountTab = ({ profile }) => {
     }
   };
 
-  const handlePublicationPreferencesSave = async () => {
-    if (!accountData || !canManagePublicationPreferences) {
-      return;
-    }
-
-    const publicationPreferencePayload = publicationFieldKeys.reduce((payload, key) => {
-      payload[key] = accountData[key];
-      return payload;
-    }, {});
-
-    const normalizedAccountData = normalizeAccountInfo({
-      ...currentProfileAccountInfo,
-      ...publicationPreferencePayload,
-    });
-
-      setSavingPreferences(true);
-    try {
-      const nextAccountData = normalizeAccountInfo({
-        ...(accountDataRef.current || currentProfileAccountInfo),
-        ...publicationPreferencePayload,
-      });
-      accountDataRef.current = nextAccountData;
-      setAccountData(nextAccountData);
-      await updateProfile({ account_info: normalizedAccountData });
-      toast({
-        title: 'Publication preferences saved',
-        description: 'These updates were saved to your profile and queued for Salesforce sync.',
-      });
-    } finally {
-      setSavingPreferences(false);
-    }
-  };
 
   const handleRenew = () => {
-    void openMembershipAction('renew', { targetTier: profile?.profile_info?.tier || 'Partner' });
-  };
-
-  const handleCancel = async () => {
-    if (hasManagedMembershipUrls) {
-      if (getMembershipActionUrl('cancel')) {
-        void openMembershipAction('cancel');
-        return;
-      }
-
-      toast({
-        variant: 'destructive',
-        title: 'Cancellation unavailable',
-        description: 'PMPro cancellation is not configured yet for this membership. Please open your membership account to continue.',
-      });
-      void openMembershipAction('manage');
-      return;
-    }
-
-    if (getMembershipActionUrl('cancel')) {
-      void openMembershipAction('cancel');
-      return;
-    }
-
-    const nextAccountData = { ...accountData, auto_renew: false };
-    accountDataRef.current = nextAccountData;
-    setAccountData(nextAccountData);
-    await updateProfile({
-      account_info: nextAccountData,
-      profile_info: {
-        ...(profile?.profile_info || {}),
-        tier: '',
-        renewal_date: '',
-        status: 'Inactive',
-      },
-      benefits_info: getMembershipBenefits('Supporter'),
-    });
-    toast({
-      title: 'Membership canceled',
-      description: 'Your membership is now inactive and Redpoint benefits have been removed.',
-    });
+    navigate('/membership/upgrade');
   };
 
   const portalContent = getPortalUiSettings().content;
 
-  const transactionGroups = ['Membership'].map((kind) => ({
-    kind,
-    entries: recentTransactions.filter((transaction) => transaction.kind === kind),
-  }));
   const membershipExpirationDate = profile?.profile_info?.expiration_date || profile?.profile_info?.valid_through_date || '';
   const hasAutoRenewal = Boolean(currentProfileAccountInfo.auto_renew || profile?.membership_actions?.current_subscription_id);
-  const canCancelMembership = hasAutoRenewal && Boolean(getMembershipActionUrl('cancel'));
 
   if (!accountData) return <div className="text-black text-center pt-10">Loading account details...</div>;
 
@@ -525,7 +400,14 @@ const AccountTab = ({ profile }) => {
                     </div>
                     <div>
                         <Label htmlFor="state" className="text-black">State / Province</Label>
-                        <Input id="state" required value={accountData.state || ''} onChange={(e) => patchAccountData({ state: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        {Object.keys(states).length ? (
+                          <select id="state" required autoComplete="address-level1" value={stateCode} onChange={(e) => patchAccountData({ state: e.target.value })} className={AAC_PROFILE_FIELD_CLASS}>
+                            <option value="">Select state / province</option>
+                            {addressSelectOptions(states, accountData.state).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                        ) : (
+                          <Input id="state" required autoComplete="address-level1" value={accountData.state || ''} onChange={(e) => patchAccountData({ state: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        )}
                     </div>
                 </div>
 
@@ -536,7 +418,10 @@ const AccountTab = ({ profile }) => {
                     </div>
                     <div>
                         <Label htmlFor="country" className="text-black">Country</Label>
-                        <Input id="country" required value={accountData.country || ''} onChange={(e) => patchAccountData({ country: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1"/>
+                        <select id="country" required autoComplete="country" value={countryCode} onChange={(e) => patchAccountData({ country: e.target.value, state: '' })} className={AAC_PROFILE_FIELD_CLASS}>
+                          <option value="">Select country</option>
+                          {addressSelectOptions(countries, accountData.country).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
                     </div>
                 </div>
 
@@ -665,6 +550,46 @@ const AccountTab = ({ profile }) => {
                   </div>
                 </div>
 
+            {canManagePublicationPreferences ? (
+              <ProfileSection title="Publications Preferences" className="py-3" titleClassName="!mb-2 !pb-2">
+                <div className="space-y-1">
+                  <p className="pb-2 text-sm leading-6 text-black/60">
+                    Turn print delivery on or off for each publication. When off, the publication is delivered digitally.
+                  </p>
+                  <CommunicationPreferenceToggle
+                    label="American Alpine Journal"
+                    description="Annual publication delivery"
+                    value={accountData.aaj_pref || 'Print'}
+                    onChange={(value) => patchAccountData({ aaj_pref: value })}
+                  />
+                  <CommunicationPreferenceToggle
+                    label="Accidents in North American Climbing"
+                    description="Annual publication delivery"
+                    value={accountData.anac_pref || 'Print'}
+                    onChange={(value) => patchAccountData({ anac_pref: value })}
+                  />
+                  <CommunicationPreferenceToggle
+                    label="American Climbing Journal"
+                    description="Journal delivery"
+                    value={accountData.acj_pref || 'Print'}
+                    onChange={(value) => patchAccountData({ acj_pref: value })}
+                  />
+                  <CommunicationPreferenceToggle
+                    label="Guidebook to Membership"
+                    description="AAC guide content delivery"
+                    value={accountData.guidebook_pref || 'Print'}
+                    onChange={(value) => patchAccountData({ guidebook_pref: value })}
+                  />
+
+
+                </div>
+              </ProfileSection>
+            ) : null}
+
+                <section aria-labelledby="communication-preferences-heading">
+                  <h4 id="communication-preferences-heading" className="mb-3 text-lg font-bold text-black">Communication Preferences</h4>
+                  <CommunicationConsentFields values={accountData} onChange={patchAccountData} />
+                </section>
                 <Button
                   onClick={handleSave}
                   disabled={saving}
@@ -674,86 +599,6 @@ const AccountTab = ({ profile }) => {
                 </Button>
               </div>
             </ProfileSection>
-
-            {canManagePublicationPreferences ? (
-            <ProfileSection title="Preferences">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-t border-stone-200 py-4">
-                  <div>
-                    <p className="text-black font-medium">American Alpine Journal</p>
-                    <p className="text-black/60 text-sm">Choose how you receive this annual publication</p>
-                  </div>
-                  <select
-                    value={accountData.aaj_pref || 'Print'}
-                    onChange={(e) => patchAccountData({ aaj_pref: e.target.value })}
-                    className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
-                  >
-                    <option value="Print">Print</option>
-                    <option value="Digital">Digital</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-stone-200 py-4">
-                  <div>
-                    <p className="text-black font-medium">Accidents in North American Climbing</p>
-                    <p className="text-black/60 text-sm">Choose how you receive this annual publication</p>
-                  </div>
-                  <select
-                    value={accountData.anac_pref || 'Print'}
-                    onChange={(e) => patchAccountData({ anac_pref: e.target.value })}
-                    className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
-                  >
-                    <option value="Print">Print</option>
-                    <option value="Digital">Digital</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-stone-200 py-4">
-                  <div>
-                    <p className="text-black font-medium">American Climbing Journal</p>
-                    <p className="text-black/60 text-sm">Choose how you receive this journal</p>
-                  </div>
-                  <select
-                    value={accountData.acj_pref || 'Print'}
-                    onChange={(e) => patchAccountData({ acj_pref: e.target.value })}
-                    className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
-                  >
-                    <option value="Print">Print</option>
-                    <option value="Digital">Digital</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-stone-200 py-4">
-                  <div>
-                    <p className="text-black font-medium">Guidebook to Membership</p>
-                    <p className="text-black/60 text-sm">Choose how you receive AAC guide content</p>
-                  </div>
-                  <select
-                    value={accountData.guidebook_pref || 'Print'}
-                    onChange={(e) => patchAccountData({ guidebook_pref: e.target.value })}
-                    className="bg-white border border-[#d9d9d9] text-black rounded-md px-3 py-2"
-                  >
-                    <option value="Print">Print</option>
-                    <option value="Digital">Digital</option>
-                  </select>
-                </div>
-
-                <div className="space-y-3 pt-2">
-                  <Button
-                    onClick={handlePublicationPreferencesSave}
-                    disabled={savingPreferences || !publicationPreferencesDirty}
-                    className="h-12 w-full rounded-none bg-[#b71c1c] text-lg text-white hover:bg-[#8f1515]"
-                  >
-                    {savingPreferences ? 'Saving...' : 'Save Publication Preferences'}
-                  </Button>
-                  <p className="text-sm text-black/60">
-                    Saving here updates your member profile and triggers the outbound Salesforce field sync queue.
-                  </p>
-                </div>
-
-              </div>
-            </ProfileSection>
-            ) : null}
 
             <ProfileSection title="Security" titleClassName="!mb-2 !pb-2">
               <div className="flex items-center justify-between gap-4 border-t border-stone-200 py-4">
@@ -774,73 +619,6 @@ const AccountTab = ({ profile }) => {
               </div>
             </ProfileSection>
 
-            <ProfileSection>
-              <div className="mb-5 flex items-center gap-3 border-b-2 border-[#b71c1c] pb-4">
-                <Receipt className="h-6 w-6 text-[#c8a43a]" />
-                <h3 className="text-xl font-bold text-black">Transaction register</h3>
-              </div>
-              <p className="mb-5 text-sm text-black/60">
-                Membership payments you complete in this portal appear here. Non-membership charges are not shown in this register.
-              </p>
-              <div className="space-y-5">
-                {transactionGroups.map((group) => (
-                  <div key={group.kind}>
-                    <p className="mb-3 text-sm uppercase tracking-[0.25em] text-[#c8a43a]">{group.kind}</p>
-                    {group.entries.length === 0 ? (
-                      <div className="border-y-2 border-[#b71c1c] bg-white px-5 py-5 text-sm text-black">
-                        <p className="font-semibold">No {group.kind.toLowerCase()} transactions yet.</p>
-                        <p className="mt-2 leading-6 text-black/60">
-                          Completed membership payments will display here with their date, status, and amount.
-                        </p>
-                        {hasManagedMembershipUrls ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="mt-4 rounded-none border-stone-300 text-black hover:bg-stone-100"
-                            onClick={() => void openMembershipAction('manage')}
-                          >
-                            Open PMPro account
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {group.entries.map((transaction) => (
-                          <div
-                            key={transaction.id}
-                            className="flex flex-col gap-3 border-t border-stone-200 py-4 md:flex-row md:items-center md:justify-between"
-                          >
-                            <div>
-                              <p className="font-medium text-black">{transaction.description}</p>
-                              <p className="text-sm text-stone-500">
-                                {new Date(transaction.createdAt).toLocaleString()} • {transaction.status}
-                              </p>
-								<div className="mt-3 space-y-2 border-t border-stone-100 pt-3 md:min-w-[28rem]">
-									{(Array.isArray(transaction.lineItems) && transaction.lineItems.length
-										? transaction.lineItems
-										: [{ label: transaction.description || 'Membership payment', amount: transaction.amount }]
-									).map((item, index) => (
-										<div key={`${transaction.id || transaction.referenceId}-line-${index}`} className="flex items-center justify-between gap-5 text-sm">
-											<span className="text-stone-600">{item.label || 'Membership payment'}</span>
-											<span className="font-medium text-black">{formatDollars(item.amount)}</span>
-										</div>
-									))}
-								</div>
-                            </div>
-                            <div className="text-left md:text-right">
-								<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Total paid</p>
-								<p className="mt-1 text-lg font-bold text-black">{formatDollars(transaction.amount)}</p>
-                              <p className="text-xs uppercase tracking-[0.2em] text-[#f1d37b]">{transaction.kind}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ProfileSection>
-
             {/* Action Buttons */}
             <div className="space-y-3">
               {!hasManagedMembershipUrls ? (
@@ -852,15 +630,7 @@ const AccountTab = ({ profile }) => {
                 </Button>
               ) : null}
 
-              {canCancelMembership ? (
-                <Button
-                  onClick={handleCancel}
-                  variant="outline"
-                  className="w-full border-stone-400 text-black hover:bg-stone-100 h-12 text-lg"
-                >
-                  Turn Off Automatic Renewal
-                </Button>
-              ) : membershipExpirationDate ? (
+              {!hasAutoRenewal && membershipExpirationDate ? (
                 <div className="border-y-2 border-[#b71c1c] bg-white px-5 py-4 text-sm leading-6 text-black">
                   <p className="font-semibold">Automatic renewal is off.</p>
                   <p className="text-black/60">
@@ -869,6 +639,7 @@ const AccountTab = ({ profile }) => {
                 </div>
               ) : null}
             </div>
+
           </div>
         </motion.div>
       </div>

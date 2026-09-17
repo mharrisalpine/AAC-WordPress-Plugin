@@ -1,0 +1,114 @@
+/* Scoped to the signed-in signup notice; never alter checkout controls. */
+.aac-signup-account-notice {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-right: 24px;
+  padding-left: 24px;
+  padding-bottom: clamp(64px, 10vh, 120px);
+  color: #16130f;
+  font-family: inherit;
+}
+.aac-signup-account-notice .aac-signup-account-notice__card {
+  border: 1px solid #dedbd5;
+  border-top: 5px solid #ffc72c;
+  padding: clamp(28px, 4vw, 48px);
+  box-shadow: 0 12px 36px rgb(22 19 15 / 5%);
+  background: #fff;
+  color: #16130f;
+}
+.aac-signup-account-notice .aac-signup-account-notice__heading {
+  margin: 0 0 32px;
+  color: #050505;
+  font-size: clamp(28px, 4vw, 36px);
+  font-weight: 800;
+  line-height: 1.15;
+}
+.aac-signup-account-notice .aac-signup-account-notice__identity {
+  margin: 0 0 32px;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.aac-signup-account-notice .aac-signup-account-notice__label {
+  margin: 0 0 8px;
+  color: #625e58;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.aac-signup-account-notice .aac-signup-account-notice__name {
+  display: block;
+  color: #16130f;
+  font-size: clamp(22px, 3vw, 26px);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.aac-signup-account-notice .aac-signup-account-notice__email {
+  display: block;
+  margin-top: 6px;
+  color: #625e58;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.aac-signup-account-notice a.aac-signup-account-notice__account {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: auto;
+  min-height: 3.5rem;
+  padding: 1rem 1.5rem;
+  border: 2px solid #ffc72c !important;
+  border-radius: 0 !important;
+  background: #ffc72c !important;
+  color: #16130f !important;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: normal;
+  text-align: center;
+}
+.aac-signup-account-notice a.aac-signup-account-notice__account:hover {
+  border-color: #16130f !important;
+  background: #16130f !important;
+  color: #ffc72c !important;
+}
+.aac-signup-account-notice .aac-signup-account-notice__alternate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 8px;
+  margin: 32px 0 0;
+  border-top: 1px solid #dedbd5;
+  padding-top: 24px;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+.aac-signup-account-notice button.aac-signup-account-notice__signout {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #b71c1c;
+  font: inherit;
+  font-weight: 700;
+  text-transform: none;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+  cursor: pointer;
+}
+.aac-signup-account-notice button.aac-signup-account-notice__signout:hover { color: #16130f; }
+.aac-signup-account-notice button.aac-signup-account-notice__signout:disabled { opacity: .6; cursor: wait; }
+.aac-signup-account-notice a:focus-visible,
+.aac-signup-account-notice button:focus-visible { outline: 3px solid #b71c1c; outline-offset: 4px; }
+@media (max-width: 480px) {
+  .aac-signup-account-notice { padding-right: 20px; padding-left: 20px; }
+  .aac-signup-account-notice .aac-signup-account-notice__alternate { flex-direction: column; }
+  .aac-signup-account-notice a.aac-signup-account-notice__account { width: 100%; }
+}

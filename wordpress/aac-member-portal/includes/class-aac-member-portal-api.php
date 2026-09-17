@@ -126,6 +126,12 @@ class AAC_Member_Portal_API {
 			'permission_callback' => [$this, 'is_logged_in'],
 		]);
 
+		register_rest_route(self::ROUTE_NAMESPACE, '/upcoming-payment', [
+			'methods' => 'GET',
+			'callback' => [$this, 'upcoming_payment'],
+			'permission_callback' => [$this, 'is_logged_in'],
+		]);
+
 		register_rest_route(self::ROUTE_NAMESPACE, '/transactions', [
 			'methods' => 'GET',
 			'callback' => [$this, 'transactions'],
@@ -950,6 +956,12 @@ class AAC_Member_Portal_API {
 			} else {
 				$this->sync_reportable_member_fields($user_id, $synced_account_info);
 			}
+			// PMPro user-meta values are the single source of truth for consent.
+			foreach (['aac_email_marketing_opt_in', 'aac_sms_marketing_opt_in'] as $consent_key) {
+				if (array_key_exists($consent_key, $account_info)) {
+					update_user_meta($user_id, $consent_key, filter_var($account_info[$consent_key], FILTER_VALIDATE_BOOLEAN) ? '1' : '0');
+				}
+			}
 			$saved_account_info = $synced_account_info;
 		}
 
@@ -1129,6 +1141,16 @@ class AAC_Member_Portal_API {
 		return '';
 	}
 
+	public function upcoming_payment() {
+		$user_id = get_current_user_id();
+		$payment = $this->get_linked_parent_user_id($user_id) > 0
+			? ['status' => 'hidden']
+			: AAC_Member_Portal_PMPro::get_upcoming_payment($user_id);
+		$response = rest_ensure_response(['upcoming_payment' => $payment]);
+		$response->header('Cache-Control', 'private, no-store, max-age=0');
+		return $response;
+	}
+
 	public function transactions() {
 		$user_id = get_current_user_id();
 		$transactions = AAC_Member_Portal_PMPro::is_available()
@@ -1276,7 +1298,9 @@ class AAC_Member_Portal_API {
 		], $account_info, $this->get_normalized_publication_preferences($account_info));
 
 		$account_info['magazine_subscriptions'] = $this->get_member_magazine_subscription_labels($user_id);
-		$account_info['membership_discount_type'] = sanitize_key(get_user_meta($user_id, 'aac_membership_discount_type', true));
+		$account_info['membership_discount_type'] = $this->format_membership_discount_type_label(
+			get_user_meta($user_id, 'aac_membership_discount_type', true)
+		);
 		$account_info['size'] = $this->normalize_tshirt_size_value($account_info['size'] ?? 'No T-shirt');
 
 		$membership_actions = $this->build_membership_actions($membership_owner_user_id, $profile_info);
@@ -1307,6 +1331,9 @@ class AAC_Member_Portal_API {
 		}
 
 		$linked_parent_account = $this->build_linked_parent_account($user_id);
+		$group_account = class_exists('AAC_Member_Portal_Group_Accounts')
+			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_user($user_id)
+			: null;
 
 		$family_membership = get_user_meta($user_id, 'aac_partner_family_config', true);
 		$family_membership = is_array($family_membership)
@@ -1329,6 +1356,7 @@ class AAC_Member_Portal_API {
 			'connected_accounts' => $connected_accounts,
 			'family_membership' => $family_membership,
 			'linked_parent_account' => $linked_parent_account,
+			'group_account' => $group_account,
 		];
 
 		return apply_filters('aac_member_portal_profile', $profile, $user_id, $user);
@@ -1453,9 +1481,9 @@ class AAC_Member_Portal_API {
 		}
 
 		self::$university_school_index = [];
-		$data_path = AAC_MEMBER_PORTAL_DIR . 'includes/data/us-universities-dapip-static.json';
+		$data_path = AAC_MEMBER_PORTAL_DIR . 'includes/data/us-universities-scorecard-seed.json';
 		if (!is_readable($data_path)) {
-			$data_path = AAC_MEMBER_PORTAL_DIR . 'includes/data/us-universities-scorecard-seed.json';
+			$data_path = AAC_MEMBER_PORTAL_DIR . 'includes/data/us-universities-dapip-static.json';
 		}
 
 		if (!is_readable($data_path)) {
@@ -1684,6 +1712,21 @@ class AAC_Member_Portal_API {
 		];
 	}
 
+	private function format_membership_discount_type_label($value) {
+		$key = sanitize_key((string) $value);
+		if ($key === '') {
+			return '';
+		}
+
+		$labels = [
+			'student' => 'Student',
+			'family' => 'Family',
+			'military' => 'Military',
+		];
+
+		return $labels[$key] ?? ucwords(str_replace(['_', '-'], ' ', $key));
+	}
+
 	private function validate_required_account_info($account_info) {
 		$required_fields = [
 			'first_name' => 'First name',
@@ -1851,7 +1894,7 @@ class AAC_Member_Portal_API {
 		);
 		$account_info['emergency_contact_relationship_options'] = $this->get_emergency_contact_relationship_options();
 		$account_info['student_university'] = sanitize_text_field(
-			$this->get_preferred_user_meta_value($user_id, ['student_university', 'university_or_school'], $account_info['student_university'] ?? '')
+			$this->get_preferred_user_meta_value($user_id, ['student_university', 'university_or_school', 'university_or_schooluniversity_or_school'], $account_info['student_university'] ?? '')
 		);
 		$account_info['student_university_id'] = sanitize_text_field(
 			$this->get_preferred_user_meta_value($user_id, ['student_university_id', 'university_school_id'], $account_info['student_university_id'] ?? '')
@@ -1869,6 +1912,9 @@ class AAC_Member_Portal_API {
 			$this->get_preferred_user_meta_value($user_id, ['t_shirt'], $account_info['size'] ?? 'No T-shirt')
 		);
 		unset($account_info['email_opt_out'], $account_info['do_not_call'], $account_info['do_not_contact']);
+		foreach (['aac_email_marketing_opt_in', 'aac_sms_marketing_opt_in'] as $consent_key) {
+			$account_info[$consent_key] = filter_var(get_user_meta($user_id, $consent_key, true), FILTER_VALIDATE_BOOLEAN);
+		}
 		$account_info['aaj_pref'] = $this->normalize_print_digital_value(
 			$this->get_preferred_user_meta_value($user_id, ['aaj_preference'], $account_info['aaj_pref'] ?? 'Print')
 		);
@@ -1935,7 +1981,8 @@ class AAC_Member_Portal_API {
 
 		if (!is_array($options) || empty($options)) {
 			$options = [
-				['value' => 'Spouse / Partner', 'label' => 'Spouse / Partner'],
+				['value' => 'Spouse', 'label' => 'Spouse'],
+				['value' => 'Partner', 'label' => 'Partner'],
 				['value' => 'Parent', 'label' => 'Parent'],
 				['value' => 'Sibling', 'label' => 'Sibling'],
 				['value' => 'Child', 'label' => 'Child'],
@@ -2298,8 +2345,20 @@ class AAC_Member_Portal_API {
 		update_user_meta($user_id, 'student_university_id', sanitize_text_field($account_info['student_university_id'] ?? ''));
 		update_user_meta($user_id, 'graduation_date', $this->sanitize_birthdate_value($account_info['graduation_date'] ?? ''));
 		update_user_meta($user_id, 'student_graduation_date', $this->sanitize_birthdate_value($account_info['graduation_date'] ?? ''));
-		update_user_meta($user_id, 'service_component', sanitize_text_field($account_info['service_component'] ?? ''));
-		update_user_meta($user_id, 'military_service_component', sanitize_text_field($account_info['service_component'] ?? ''));
+		$service_component = sanitize_text_field($account_info['service_component'] ?? '');
+		if (!in_array($service_component, ['Active', 'Reserve', 'Veteran', 'Retired'], true)) {
+			$service_component = '';
+		}
+		if ($service_component === '') {
+			delete_user_meta($user_id, 'service_component');
+			delete_user_meta($user_id, 'military_service_component');
+		} else {
+			update_user_meta($user_id, 'service_component', $service_component);
+			update_user_meta($user_id, 'military_service_component', $service_component);
+		}
+		// This legacy field stored military branches and must never override the
+		// current Service Component selection (including an intentionally blank one).
+		delete_user_meta($user_id, 'service_branch');
 		update_user_meta($user_id, 'aaj_preference', sanitize_text_field($publication_preferences['aaj_pref']));
 		update_user_meta($user_id, 'anac_preference', sanitize_text_field($publication_preferences['anac_pref']));
 		update_user_meta($user_id, 'american_climbing_journal_preference', sanitize_text_field($publication_preferences['acj_pref']));

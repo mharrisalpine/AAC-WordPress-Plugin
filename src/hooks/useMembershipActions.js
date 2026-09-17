@@ -30,12 +30,16 @@ export const useMembershipActions = () => {
       return actions.add_dependent_checkout_url || '';
     }
 
+    if (type === 'renew' && actions.current_level_checkout_url) {
+      return actions.current_level_checkout_url;
+    }
+
     const targetAction = targetTier ? actions.levels?.[targetTier] : null;
     if (targetAction?.checkout_url) {
       return targetAction.checkout_url;
     }
 
-    if (actions.current_level_checkout_url && (type === 'renew' || type === 'join')) {
+    if (actions.current_level_checkout_url && type === 'join') {
       return actions.current_level_checkout_url;
     }
 

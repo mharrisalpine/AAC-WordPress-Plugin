@@ -243,7 +243,7 @@ const LoginPage = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.08 }}
             className="self-center border border-white/18 p-6 text-white shadow-[0_32px_80px_rgba(0,0,0,0.52)] backdrop-blur-md sm:p-8 lg:-translate-y-6"
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.58)' }}
+            style={{ backgroundColor: '#000000' }}
             data-aac-login-surface="true"
           >
             <div className="mb-6 flex items-start justify-between gap-4">
@@ -316,8 +316,9 @@ const LoginPage = () => {
                     />
                     <button
                       type="button"
+                      data-aac-password-visibility="true"
                       onClick={() => setShowPassword((value) => !value)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 border-0 bg-transparent p-0 text-xs font-semibold uppercase tracking-[0.14em] text-[#f8c235] shadow-none outline-none hover:text-[#ffd86a] focus-visible:ring-0"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 border-0 bg-transparent p-0 text-xs font-semibold uppercase tracking-[0.14em] text-black shadow-none outline-none hover:text-black focus-visible:ring-0"
                     >
                       {showPassword ? 'Hide' : 'Show'}
                     </button>
@@ -338,10 +339,10 @@ const LoginPage = () => {
                 type="button"
                 onClick={handleSubmit}
                 disabled={busy}
-                className="mt-8 h-12 w-full rounded-none text-base font-semibold text-white"
+                className="mt-8 h-12 w-full rounded-none text-base font-semibold text-black"
                 style={{
                   backgroundColor: portalDesign.secondaryActionBackground,
-                  color: '#ffffff',
+                  color: '#000000',
                 }}
               >
                 {busy ? 'Please wait…' : forgotMode ? 'Send reset link' : portalContent.login_submit_label}

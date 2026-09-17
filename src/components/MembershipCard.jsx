@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { CheckCircle2, CheckSquare2, FileText, Flag, GraduationCap, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,7 +8,7 @@ import ConfirmationLetterDialog from '@/components/ConfirmationLetterDialog';
 import { getFullName, normalizeAccountInfo, normalizeMembershipDiscountType } from '@/lib/memberProfile';
 import { getMembershipStatus } from '@/lib/membershipStatus';
 import { getTierDisplayLabel } from '@/lib/membershipTiers';
-import { getAppRuntimeConfig, getPortalPageUrl } from '@/lib/backendConfig';
+import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
@@ -93,6 +94,7 @@ const formatMemberNumber = (memberId) => {
 
 const MembershipCard = ({ profile }) => {
   const [confirmationLetterOpen, setConfirmationLetterOpen] = React.useState(false);
+  const navigate = useNavigate();
   const portalDesign = getPortalUiSettings().design || {};
   const runtimeConfig = getAppRuntimeConfig();
   const assetBaseUrl = String(runtimeConfig.assetBaseUrl || '').replace(/\/$/, '');
@@ -128,12 +130,7 @@ const MembershipCard = ({ profile }) => {
   };
 
   const handleChangeMembership = () => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const portalPageUrl = getPortalPageUrl();
-    window.location.assign(`${portalPageUrl}/#/membership`);
+    navigate('/membership/upgrade');
   };
 
   const cardBackgroundStyle = {
@@ -195,14 +192,14 @@ const MembershipCard = ({ profile }) => {
                 {membershipTierLabel}
               </span>
               {discountBadge ? (
-                <span className="inline-flex items-center gap-2 border border-white/18 px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-white/68">
-                  {DiscountBadgeIcon ? <DiscountBadgeIcon className="h-3.5 w-3.5 text-[#d23a32]" strokeWidth={2.1} /> : null}
+                <span className="inline-flex items-center gap-2 border-2 border-[#f8c235] px-3.5 py-2.5 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[#f8c235]">
+                  {DiscountBadgeIcon ? <DiscountBadgeIcon className="h-4 w-4 text-[#f8c235]" strokeWidth={2.3} /> : null}
                   {discountBadge.label}
                 </span>
               ) : null}
               {isFamilyPlan ? (
-                <span className="inline-flex items-center gap-2 border border-white/18 px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-white/68">
-                  <Users className="h-3.5 w-3.5 text-[#d23a32]" strokeWidth={2.1} />
+                <span className="inline-flex items-center gap-2 border-2 border-[#f8c235] px-3.5 py-2.5 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[#f8c235]">
+                  <Users className="h-4 w-4 text-[#f8c235]" strokeWidth={2.3} />
                   Family
                 </span>
               ) : null}
@@ -211,7 +208,7 @@ const MembershipCard = ({ profile }) => {
 
           <div className="aac-membership-card-identity mt-6 flex flex-1 items-center sm:mt-8">
             <div className="min-w-0 self-center">
-              <p className="text-[0.66rem] font-medium uppercase tracking-[0.36em] text-[#ff8a80] sm:text-xs">
+              <p className="text-sm font-bold uppercase tracking-[0.28em] text-[#ff8a80] sm:text-base">
                 {membershipTierLabel} Member
               </p>
               <h2 className="aac-membership-card-name mt-3 font-serif text-3xl leading-[1.08] tracking-normal text-white sm:text-5xl lg:text-6xl">
@@ -223,7 +220,7 @@ const MembershipCard = ({ profile }) => {
             </div>
           </div>
 
-          <div className="aac-membership-card-meta mt-auto flex flex-col gap-4 pt-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="aac-membership-card-meta mb-8 mt-auto flex flex-col gap-4 pt-5 sm:mb-10 sm:flex-row sm:items-end sm:justify-between lg:mb-12">
             <div className="grid w-full grid-cols-2 gap-8 sm:gap-12">
               <div>
                 <p className="font-mono text-[0.66rem] uppercase tracking-[0.3em] text-white/46 sm:text-xs">Valid Thru</p>

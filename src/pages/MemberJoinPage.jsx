@@ -7,13 +7,15 @@ import { getPmproLevelIdForTier, getTierById, normalizeTierId } from '@/lib/memb
 import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import { mainSiteHref } from '@/lib/mainWebsiteNav';
 import { getPortalUiSettings } from '@/lib/portalSettings';
+import { useAuth } from '@/hooks/useAuth';
+import './MemberJoinNotice.css';
 
 const CHECKOUT_EMBED_MESSAGE = 'aac-pmpro-checkout-height';
 const CHECKOUT_SCROLL_MESSAGE = 'aac-pmpro-checkout-scroll';
 const CHECKOUT_STEP_MESSAGE = 'aac-pmpro-checkout-step';
-const CHECKOUT_MIN_EMBED_HEIGHT = 540;
+const CHECKOUT_MIN_EMBED_HEIGHT = 320;
 const CHECKOUT_MAX_EMBED_HEIGHT = 5200;
-const POST_PURCHASE_LOGIN_URL = mainSiteHref('/membership/#/login?purchase_success=1');
+const POST_PURCHASE_LOGIN_URL = mainSiteHref('/member-profile/#/profile?purchase_success=1');
 const MEMBERSHIP_GRID_PLANS = [
   { id: 'Supporter', price: '$45' },
   { id: 'Partner', price: '$65-100', eyebrow: 'Most Popular' },
@@ -24,7 +26,7 @@ const MEMBERSHIP_GRID_ROWS = [
   { label: 'Support for AAC Advocacy, Education & Member Services', values: [{ check: true }, { check: true, suffix: '+' }, { check: true, suffix: '++' }, { check: true, suffix: '+++' }] },
   { label: 'AAC T-shirt', values: [{ check: true }, { check: true }, { check: true }, { check: true }] },
   { label: 'AAC Grant Access', values: [{ check: true }, { check: true }, { check: true }, { check: true }] },
-  { label: 'Discounts: Gear, Gym, & Guide Services', values: [{ check: true }, { check: true }, { check: true }, { check: true }] },
+  { label: 'Discounts: Gear, Gym, & Guide Services', values: [{ check: true }, { check: true }, '', ''] },
   { label: 'AAC Library', values: [{ check: true }, { check: true }, { check: true }, { check: true }] },
   { label: 'Rescue Coverage', values: ['', '$7,500', '$300,000', '$300,000'] },
   { label: 'Medical Expense Coverage', values: ['', '$5,000', '$5,000', '$5,000'] },
@@ -109,20 +111,39 @@ const buildEmbeddedCheckoutUrl = (tierId, wizardStep = 'account') => {
 
   checkoutUrl.searchParams.set('level', String(levelId));
   checkoutUrl.searchParams.set('aac_embed', '1');
+  checkoutUrl.searchParams.set('aac_signup', '1');
   checkoutUrl.searchParams.set('aac_wizard_step', wizardStep);
-  checkoutUrl.searchParams.set('aac_rev', 'wizard-cards');
+  if (normalizedTier === 'Supporter') {
+    checkoutUrl.searchParams.set('aac_skip_publications', '1');
+  }
+  checkoutUrl.searchParams.set('aac_rev', 'wizard-isolation-529');
 
   return checkoutUrl.toString();
 };
 
 const MemberJoinPage = () => {
+  const { user, profile, loading, signOut } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+  const [noticeTop, setNoticeTop] = useState(200);
+  useEffect(() => {
+    if (!user) return undefined;
+    const header = document.getElementById('site-header') || document.querySelector('.inner-header');
+    const measure = () => setNoticeTop(Math.max(0, header?.getBoundingClientRect().bottom || 0) + 32);
+    measure();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (header) observer?.observe(header);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [user]);
   const [selectedTierId, setSelectedTierId] = useState('Partner');
   const [embedHeight, setEmbedHeight] = useState(CHECKOUT_MIN_EMBED_HEIGHT);
   const checkoutFrameRef = useRef(null);
   const checkoutDraftRef = useRef([]);
   const currentWizardStepRef = useRef('account');
+  const [showLevelCards, setShowLevelCards] = useState(true);
   const heightFrameRef = useRef(0);
   const pendingHeightRef = useRef(CHECKOUT_MIN_EMBED_HEIGHT);
+  const hasVisibleContentHeightRef = useRef(false);
   const portalUiSettings = getPortalUiSettings();
   const portalContent = portalUiSettings.content;
   const redeemInviteButtonLabel =
@@ -142,6 +163,18 @@ const MemberJoinPage = () => {
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
+    let headerMeasureFrame = 0;
+    let headerMeasureTimer = 0;
+
+    const syncHeaderClearance = () => {
+      window.cancelAnimationFrame(headerMeasureFrame);
+      headerMeasureFrame = window.requestAnimationFrame(() => {
+        const siteHeader = document.querySelector('#site-header');
+        const headerBottom = siteHeader ? Math.max(0, siteHeader.getBoundingClientRect().bottom) : 0;
+        document.documentElement.style.setProperty('--aac-signup-header-clearance', `${Math.ceil(headerBottom)}px`);
+      });
+    };
+
     const syncHeaderState = () => {
       const nextScrollY = Math.max(0, window.scrollY);
       const delta = nextScrollY - lastScrollY;
@@ -157,10 +190,17 @@ const MemberJoinPage = () => {
     };
 
     document.body.classList.add('aac-signup-header-managed');
+    syncHeaderClearance();
+    headerMeasureTimer = window.setTimeout(syncHeaderClearance, 500);
     syncHeaderState();
     window.addEventListener('scroll', syncHeaderState, { passive: true });
+    window.addEventListener('resize', syncHeaderClearance);
     return () => {
+      window.cancelAnimationFrame(headerMeasureFrame);
+      window.clearTimeout(headerMeasureTimer);
       window.removeEventListener('scroll', syncHeaderState);
+      window.removeEventListener('resize', syncHeaderClearance);
+      document.documentElement.style.removeProperty('--aac-signup-header-clearance');
       document.body.classList.remove('aac-signup-header-managed', 'aac-signup-header-scrolled', 'aac-signup-header-hidden');
     };
   }, []);
@@ -172,6 +212,13 @@ const MemberJoinPage = () => {
       }
 
       if (event.data?.type === CHECKOUT_EMBED_MESSAGE) {
+        const isVisibleContentHeight = event.data.visibleContent === true;
+        if (hasVisibleContentHeightRef.current && !isVisibleContentHeight) {
+          return;
+        }
+        if (isVisibleContentHeight) {
+          hasVisibleContentHeightRef.current = true;
+        }
         const nextHeight = Number(event.data.height);
         if (Number.isFinite(nextHeight) && nextHeight > 0) {
           pendingHeightRef.current = Math.min(Math.max(nextHeight, CHECKOUT_MIN_EMBED_HEIGHT), CHECKOUT_MAX_EMBED_HEIGHT);
@@ -180,7 +227,7 @@ const MemberJoinPage = () => {
               heightFrameRef.current = 0;
               setEmbedHeight((currentHeight) => {
                 const delta = pendingHeightRef.current - currentHeight;
-                const shouldResize = delta >= 24 || delta <= -120;
+                const shouldResize = Math.abs(delta) >= 8;
                 return shouldResize ? pendingHeightRef.current : currentHeight;
               });
             });
@@ -189,6 +236,13 @@ const MemberJoinPage = () => {
       }
 
       if (event.data?.type === CHECKOUT_STEP_MESSAGE) {
+        if (event.source !== checkoutFrameRef.current?.contentWindow) {
+          return;
+        }
+        const stepIndex = Number(event.data.stepIndex);
+        if (Number.isInteger(stepIndex) && stepIndex >= 0) {
+          setShowLevelCards(stepIndex === 0);
+        }
         const label = String(event.data.stepLabel || '').toLowerCase();
         currentWizardStepRef.current = label.includes('payment')
           ? 'payment'
@@ -332,6 +386,40 @@ const MemberJoinPage = () => {
     }
   };
 
+  if (loading || user) {
+    const email = user?.email || '';
+    const name = profile?.account_info?.name || '';
+    return (
+      <section className="aac-signup-account-notice" style={{paddingTop: noticeTop + 24}} aria-busy={loading}>
+        <Helmet><title>Join - American Alpine Club</title></Helmet>
+        {user ? (
+          <div className="aac-signup-account-notice__card">
+            <h1 className="aac-signup-account-notice__heading">Your AAC Account</h1>
+            <div className="aac-signup-account-notice__identity">
+              <p className="aac-signup-account-notice__label">You are signed in as</p>
+              <strong className="aac-signup-account-notice__name">{name || email}</strong>
+              {name && name !== email && <span className="aac-signup-account-notice__email">{email}</span>}
+            </div>
+            <Button asChild className="aac-signup-account-notice__account"><Link to="/profile">Go to your account</Link></Button>
+            <p className="aac-signup-account-notice__alternate">
+              <span>Creating a different membership?</span>
+              <button type="button" className="aac-signup-account-notice__signout" disabled={signingOut || loading}
+                onClick={async () => {
+                  setSigningOut(true);
+                  try {
+                    const result = await signOut();
+                    if (!result?.error) window.location.reload();
+                  } finally { setSigningOut(false); }
+                }}>
+                {signingOut ? 'Signing out…' : 'Sign out to continue.'}
+              </button>
+            </p>
+          </div>
+        ) : <p role="status">Checking your sign-in status…</p>}
+      </section>
+    );
+  }
+
   return (
     <>
       <Helmet>
@@ -350,10 +438,12 @@ const MemberJoinPage = () => {
             <div id="membership-form" className="mx-auto w-full max-w-[1440px] text-[#16130f]" style={signupFormStyle}>
               <section
                 className="grid content-start bg-white p-0 pb-6 sm:pb-8"
+                hidden={!showLevelCards}
+                style={{ display: showLevelCards ? undefined : 'none' }}
               >
-                <div className="aac-signup-form-intro mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div className="aac-signup-form-intro mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <h2 className="text-3xl font-extrabold leading-tight tracking-tight text-[#16130f] sm:text-4xl">Select your plan</h2>
+                    <h2 className="text-3xl font-extrabold leading-tight tracking-tight text-[#16130f] sm:text-4xl">Select Your Plan</h2>
                     <p className="mt-3 text-base leading-7 text-[#6e675d] sm:text-lg">Choose the annual membership that fits your climbing life.</p>
                   </div>
                 </div>
@@ -367,7 +457,7 @@ const MemberJoinPage = () => {
                     asChild
                     type="button"
                     variant="outline"
-                    className="min-h-[1.75rem] rounded-[6px] border-[#e4dfd6] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#6e675d] hover:border-[#d7cfbf] hover:text-[#16130f]"
+                    className="aac-redeem-family-invite-button min-h-[1.75rem] rounded-[6px] border border-black px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-black hover:border-black hover:bg-stone-50 hover:text-black"
                   >
                     <Link to="/linked-accounts">{redeemInviteButtonLabel}</Link>
                   </Button>
@@ -399,7 +489,7 @@ const MemberJoinPage = () => {
 	                      maxWidth: '100%',
 	                      height: 'var(--aac-checkout-iframe-height)',
 	                      minHeight: `${CHECKOUT_MIN_EMBED_HEIGHT}px`,
-                        overflow: 'hidden',
+	                      overflow: 'hidden',
 	                      border: 0,
 	                    }}
                   />

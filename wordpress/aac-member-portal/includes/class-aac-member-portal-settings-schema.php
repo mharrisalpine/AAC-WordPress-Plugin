@@ -9,13 +9,21 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_Settings_Schema {
 	private static function get_join_page_url() {
-		return function_exists('home_url') ? home_url('/membership-sign-up-test/') : '/membership-sign-up-test/';
+		return function_exists('home_url') ? home_url('/signup/') : '/signup/';
 	}
 
 	private static function is_legacy_join_url($url) {
 		$normalized = trim((string) $url);
 		$normalized = rtrim($normalized, '/');
-		return in_array($normalized, ['/join', 'https://membership.americanalpineclub.org/join'], true);
+		if (in_array($normalized, ['/join', 'https://membership.americanalpineclub.org/join'], true)) {
+			return true;
+		}
+
+		$path = untrailingslashit((string) wp_parse_url($normalized, PHP_URL_PATH));
+		$fragment = trim((string) wp_parse_url($normalized, PHP_URL_FRAGMENT), '/');
+
+		return in_array($path, ['/membership-sign-up-test', '/signup'], true)
+			|| (in_array($path, ['/membership', '/member-profile'], true) && $fragment === 'join');
 	}
 
 	public static function get_defaults() {
@@ -223,7 +231,6 @@ class AAC_Member_Portal_Settings_Schema {
 			'Leader' => [
 				'aac_support',
 				'tshirt',
-				'discounts',
 				'library',
 				'rescue_coverage',
 				'medical_expense_coverage',
@@ -233,7 +240,6 @@ class AAC_Member_Portal_Settings_Schema {
 			'Advocate' => [
 				'aac_support',
 				'tshirt',
-				'discounts',
 				'library',
 				'rescue_coverage',
 				'medical_expense_coverage',

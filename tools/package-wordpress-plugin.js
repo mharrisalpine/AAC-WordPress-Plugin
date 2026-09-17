@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -60,9 +61,23 @@ async function createCompatibilityAliases() {
 
 async function createPluginZip() {
   await fs.rm(pluginZipPath, { force: true });
-  await execFileAsync('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', pluginDir, pluginZipPath], {
-    cwd: projectRoot,
-  });
+  const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'aac-member-portal-package-'));
+  const stagedPluginDir = path.join(stagingRoot, path.basename(pluginDir));
+
+  try {
+    await fs.cp(pluginDir, stagedPluginDir, {
+      recursive: true,
+      filter: (source) => {
+        const name = path.basename(source);
+        return !name.endsWith('.zip') && name !== '.DS_Store' && !name.startsWith('._');
+      },
+    });
+    await execFileAsync('ditto', ['-c', '-k', '--norsrc', '--keepParent', stagedPluginDir, pluginZipPath], {
+      cwd: stagingRoot,
+    });
+  } finally {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+  }
 }
 
 async function copyExtraPluginAssets() {

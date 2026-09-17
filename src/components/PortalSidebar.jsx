@@ -36,7 +36,7 @@ export function PortalNavLinks({ onNavigate, className }) {
       return pathname === '/discounts' || pathname === '/rescue';
     }
     if (itemId === 'manage') {
-      return pathname === '/membership';
+      return pathname === '/membership' || pathname.startsWith('/membership/');
     }
     return pathname === to;
   };

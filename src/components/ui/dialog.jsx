@@ -8,6 +8,14 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 
+const getDialogPortalContainer = () => {
+  if (typeof document === 'undefined') {
+    return undefined;
+  }
+
+  return document.getElementById('aac-member-portal-root') || document.getElementById('root') || undefined;
+};
+
 const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
@@ -21,7 +29,7 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
-  <DialogPortal>
+  <DialogPortal container={getDialogPortalContainer()}>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}

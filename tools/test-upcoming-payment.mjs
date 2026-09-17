@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { formatUpcomingAmount, formatUpcomingDate } from '../src/lib/upcomingPayment.js';
+assert.equal(formatUpcomingAmount(12500, 'USD'), 'USD\u00a0125.00');
+assert.equal(formatUpcomingAmount(0, 'USD'), 'USD\u00a00.00');
+assert.equal(formatUpcomingAmount(1250, 'JPY'), 'JPY\u00a01,250');
+assert.equal(formatUpcomingAmount(1234, 'KWD'), 'KWD\u00a01.234');
+assert.equal(formatUpcomingAmount(null, 'USD'), 'Unavailable');
+assert.equal(formatUpcomingDate('2027-01-02'), 'January 2, 2027');
+assert.equal(formatUpcomingDate('2027-02-30'), 'Unavailable');
+console.log('Upcoming payment formatting checks passed.');

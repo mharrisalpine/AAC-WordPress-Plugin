@@ -50,6 +50,7 @@ ReactDOM.createRoot(mountElement).render(
             <Route path="rescue" element={<RescuePage />} />
             <Route path="linked-accounts" element={<LinkedAccountsPage />} />
             <Route path="membership" element={<MembershipManagementPage />} />
+            <Route path="membership/upgrade" element={<MembershipManagementPage standaloneUpgrade />} />
             <Route path="contact" element={<ContactPage />} />
             <Route path="account" element={<MemberPortal portalTab="account" />} />
             <Route path="login" element={<LoginPage />} />

@@ -181,8 +181,8 @@ const MemberProfilePage = () => {
 
   const handleRenewFromExpirationPrompt = React.useCallback(() => {
     dismissExpirationPrompt();
-    void openMembershipAction('renew', { targetTier: profile?.profile_info?.tier || 'Partner' });
-  }, [dismissExpirationPrompt, openMembershipAction, profile?.profile_info?.tier]);
+    navigate('/membership/upgrade');
+  }, [dismissExpirationPrompt, navigate]);
 
   if (loading || !profile) {
     return <div className="pt-10 text-center text-stone-800">Loading member profile...</div>;
@@ -361,6 +361,11 @@ const MemberProfilePage = () => {
 
   return (
     <>
+      {new URLSearchParams(location.search).get('purchase_success') === '1' && (
+        <div role="status" className="mb-6 border border-green-700 bg-green-50 p-4 text-green-900">
+          Thank you for your purchase. Welcome to your member profile.
+        </div>
+      )}
       <Dialog open={showExpirationPrompt} onOpenChange={(open) => {
         if (!open) {
           dismissExpirationPrompt();

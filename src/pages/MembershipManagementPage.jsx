@@ -1,13 +1,10 @@
 import React from 'react';
 import { Helmet } from 'react-helmet';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   BadgeCheck,
-  Calendar,
-  Download,
-  FileText,
   Receipt,
   Shield,
   TrendingDown,
@@ -16,12 +13,12 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ConfirmationLetterPreview } from '@/components/ConfirmationLetterDialog';
+import UpcomingPayment from '@/components/UpcomingPayment';
 import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getMemberTransactions } from '@/lib/memberApi';
-import { downloadMembershipConfirmationLetter } from '@/lib/membershipConfirmationLetter';
-import { getFullName, normalizeAccountInfo } from '@/lib/memberProfile';
+import { normalizeAccountInfo } from '@/lib/memberProfile';
+import { getAutoRenewalControl } from '@/lib/autoRenewalControl';
 import {
   MEMBERSHIP_PLAN_DETAILS,
   MEMBERSHIP_PLAN_ORDER,
@@ -36,8 +33,6 @@ import {
 
 const MANAGE_TABS = [
   { id: 'account', label: 'Account', icon: User },
-  { id: 'change', label: 'Upgrade Membership', icon: TrendingUp },
-  { id: 'confirmation', label: 'Proof of Membership', icon: FileText },
 ];
 
 const parseMembershipDate = (value) => {
@@ -94,17 +89,8 @@ const getValidThroughDate = (profileInfo = {}) => {
   return latest?.value || '';
 };
 
-const formatAddress = (accountInfo = {}) => {
-  const cityState = [accountInfo.city, accountInfo.state].filter(Boolean).join(', ');
-  const zipCountry = [accountInfo.zip, accountInfo.country].filter(Boolean).join(' ');
-
-  return [accountInfo.street, accountInfo.address2, cityState, zipCountry]
-    .filter(Boolean)
-    .join(', ');
-};
-
 const DetailRow = ({ label, value }) => (
-  <div className="border-t border-stone-200 py-4">
+  <div className="border-t border-stone-200 py-3">
     <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-stone-500">
       {label}
     </p>
@@ -131,25 +117,6 @@ const SectionHeader = ({ icon: Icon, eyebrow, title, description }) => (
   </div>
 );
 
-const TabButton = ({ tab, active, onClick }) => {
-  const Icon = tab.icon;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`aac-manage-tab-button flex min-h-[3.75rem] items-center justify-center gap-3 border px-4 text-sm font-bold uppercase tracking-[0.18em] transition-colors ${
-        active
-          ? 'border-[#b71c1c] bg-[#b71c1c] text-white'
-          : 'border-stone-300 bg-white text-stone-950 hover:border-[#b71c1c]'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      {tab.label}
-    </button>
-  );
-};
-
 const TransactionList = ({ transactions, loading }) => {
   if (loading) {
     return (
@@ -171,11 +138,11 @@ const TransactionList = ({ transactions, loading }) => {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {transactions.slice(0, 5).map((transaction) => (
         <div
           key={transaction.id || transaction.referenceId}
-          className="grid gap-3 border-t border-stone-200 py-4 md:grid-cols-[1fr,auto]"
+          className="aac-transaction-register-entry grid gap-3 border border-black bg-white p-4 md:grid-cols-[1fr,auto]"
         >
           <div>
             <p className="font-semibold text-stone-950">
@@ -211,8 +178,9 @@ const TransactionList = ({ transactions, loading }) => {
   );
 };
 
-const MembershipManagementPage = () => {
+const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { profile } = useAuth();
   const {
     getMembershipActionUrl,
@@ -224,12 +192,22 @@ const MembershipManagementPage = () => {
   const [activeTab, setActiveTab] = React.useState(initialTab);
   const [transactions, setTransactions] = React.useState([]);
   const [transactionsLoading, setTransactionsLoading] = React.useState(true);
+  const [showBillingForm, setShowBillingForm] = React.useState(false);
+  const [billingFormHeight, setBillingFormHeight] = React.useState(720);
+  const [upgradeCheckout, setUpgradeCheckout] = React.useState(null);
+  const [upgradeCheckoutHeight, setUpgradeCheckoutHeight] = React.useState(900);
+  const billingFrameRef = React.useRef(null);
+  const upgradeFrameRef = React.useRef(null);
 
   React.useEffect(() => {
+    if (requestedTab === 'change' && !standaloneUpgrade) {
+      navigate('/membership/upgrade', { replace: true });
+      return;
+    }
     if (MANAGE_TABS.some((tab) => tab.id === requestedTab)) {
       setActiveTab(requestedTab);
     }
-  }, [requestedTab]);
+  }, [navigate, requestedTab, standaloneUpgrade]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -276,23 +254,77 @@ const MembershipManagementPage = () => {
   const isActive = profileInfo?.status === 'Active';
   const currentIndex = currentTier ? MEMBERSHIP_PLAN_ORDER.indexOf(currentTier) : -1;
   const visiblePlanOrder = MEMBERSHIP_PLAN_ORDER.filter((tier) => isPublicMembershipTierId(tier));
+  const selectablePlanOrder = visiblePlanOrder.filter((tier) => {
+    if (tier === currentTier) {
+      return Boolean(actions?.current_level_checkout_url || actions?.levels?.[tier]?.checkout_url);
+    }
+
+    return actions?.levels?.[tier]?.action_type === 'upgrade' && Boolean(actions?.levels?.[tier]?.checkout_url);
+  });
+  const displayedUpgradePlanOrder = standaloneUpgrade ? visiblePlanOrder : selectablePlanOrder;
   const pendingDowngrade = actions?.pending_downgrade || null;
-  const memberName = getFullName(accountInfo);
   const validThrough = getValidThroughDate(profileInfo);
-  const hasAutoRenewal = Boolean(accountInfo.auto_renew || actions?.current_subscription_id);
+  const autoRenewDisableUrl = getMembershipActionUrl('cancel');
+  const { hasAutoRenewal, isParentAccount, disabled: autoRenewDisabled } = getAutoRenewalControl(profile, autoRenewDisableUrl);
   const billingUrl = getMembershipActionUrl('manage_payment');
+  const embeddedBillingUrl = React.useMemo(() => {
+    if (!billingUrl) return '';
+    try {
+      const url = new URL(billingUrl, window.location.origin);
+      url.searchParams.set('aac_embed', '1');
+      return url.toString();
+    } catch (_error) {
+      return billingUrl;
+    }
+  }, [billingUrl]);
   const cancelUrl = getMembershipActionUrl('cancel');
-  const autoRenewEnableUrl = actions?.current_level_checkout_url || billingUrl;
-  const autoRenewDisableUrl = cancelUrl;
-  const visibleTabs = MANAGE_TABS;
-  const isWideManageTab = activeTab === 'account' || activeTab === 'cancel' || activeTab === 'change' || activeTab === 'confirmation';
+  const isWideManageTab = standaloneUpgrade || activeTab === 'account' || activeTab === 'cancel';
   const widePanelClass = 'relative left-1/2 w-screen -translate-x-1/2 bg-white px-6 py-6 sm:px-12 lg:px-20 xl:px-28 2xl:px-40';
   const widePanelInnerClass = 'mx-auto w-full max-w-[1600px]';
 
+  React.useEffect(() => {
+    const handleBillingFrameHeight = (event) => {
+      if (event.origin !== window.location.origin || event.data?.type !== 'aac-pmpro-checkout-height') {
+        return;
+      }
+
+      const nextHeight = Number(event.data.height || 0);
+      if (Number.isFinite(nextHeight) && nextHeight > 300) {
+        if (event.source === billingFrameRef.current?.contentWindow) {
+          setBillingFormHeight(Math.ceil(nextHeight));
+        } else if (event.source === upgradeFrameRef.current?.contentWindow) {
+          setUpgradeCheckoutHeight(Math.ceil(nextHeight));
+        }
+      }
+    };
+
+    window.addEventListener('message', handleBillingFrameHeight);
+    return () => window.removeEventListener('message', handleBillingFrameHeight);
+  }, []);
+
   const handleAutoRenewalToggle = () => {
-    const targetUrl = hasAutoRenewal ? autoRenewDisableUrl : autoRenewEnableUrl;
-    if (targetUrl) {
-      window.location.assign(targetUrl);
+    if (autoRenewDisabled) return;
+    window.location.assign(autoRenewDisableUrl);
+  };
+
+  const openUpgradeCheckout = (tier, membershipAction = 'upgrade') => {
+    const checkoutUrl = getMembershipActionUrl(membershipAction, { targetTier: tier });
+    if (!checkoutUrl) {
+      void openMembershipAction(membershipAction, { targetTier: tier });
+      return;
+    }
+
+    try {
+      const url = new URL(checkoutUrl, window.location.origin);
+      url.searchParams.set('aac_embed', '1');
+      url.searchParams.set('aac_member_checkout', '1');
+      url.searchParams.set('aac_membership_action', membershipAction);
+      url.searchParams.set('aac_wizard', '0');
+      url.searchParams.delete('aac_signup');
+      url.searchParams.delete('aac_embed');
+      window.location.assign(url.toString());
+    } catch (_error) {
+      void openMembershipAction(membershipAction, { targetTier: tier });
     }
   };
 
@@ -324,27 +356,10 @@ const MembershipManagementPage = () => {
     }
 
     if (targetIndex < currentIndex) {
-      if (!hasAutoRenewal) {
-        return {
-          label: 'Downgrade unavailable',
-          icon: TrendingDown,
-          disabled: true,
-        };
-      }
-
-      const targetAction = actions?.levels?.[tier];
-      if (targetAction?.action_type === 'downgrade_unavailable') {
-        return {
-          label: 'Downgrade unavailable',
-          icon: TrendingDown,
-          disabled: true,
-        };
-      }
-
       return {
-        label: 'Downgrade at Renewal',
+        label: 'Downgrade Locked',
         icon: TrendingDown,
-        type: 'downgrade',
+        disabled: true,
       };
     }
 
@@ -356,21 +371,10 @@ const MembershipManagementPage = () => {
   };
 
   const renderAccountSection = () => (
-    <section className="bg-white py-6">
-      <SectionHeader
-        icon={User}
-        eyebrow="Account"
-        title="Account management"
-        description="Review your account, current membership term, and profile-management shortcuts."
-      />
-
-      <div className="grid gap-8 lg:grid-cols-[1.1fr,0.9fr]">
-        <div>
+    <section className="bg-white py-2">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr,0.9fr] lg:gap-6">
+        <div className="aac-billing-membership-details border border-black bg-white p-4">
           <div className="grid gap-x-8 md:grid-cols-2">
-            <DetailRow label="Name" value={memberName} />
-            <DetailRow label="Email" value={accountInfo.email} />
-            <DetailRow label="Phone" value={accountInfo.phone} />
-            <DetailRow label="Address" value={formatAddress(accountInfo)} />
             <DetailRow label="Membership" value={currentTierLabel} />
             <DetailRow label="Status" value={profileInfo.status || 'Not available'} />
             <DetailRow label="Valid Through" value={formatMembershipDate(validThrough)} />
@@ -378,56 +382,98 @@ const MembershipManagementPage = () => {
           </div>
         </div>
 
-        <div className="space-y-3 border-y-2 border-[#b71c1c] py-5">
+        <div className="space-y-2 border-y-2 border-[#b71c1c] py-3">
           <Button
-            asChild
+            type="button"
+            onClick={() => navigate('/membership/upgrade')}
+            disabled={!selectablePlanOrder.length}
             className="h-12 w-full rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]"
           >
-            <Link to="/account">Edit Settings</Link>
+            <TrendingUp className="mr-2 h-4 w-4" />
+            Upgrade Membership
           </Button>
-          {billingUrl ? (
+          {billingUrl && actions?.current_subscription_id ? (
             <Button
               type="button"
               variant="outline"
-              onClick={() => void openMembershipAction('manage_payment')}
+              onClick={() => setShowBillingForm((visible) => !visible)}
               className="aac-white-outline-button h-12 w-full rounded-none border-stone-300 bg-white text-black hover:bg-stone-100"
             >
-              Update Billing Information
+              {showBillingForm ? 'Close Billing Information' : 'Update Billing Information'}
             </Button>
           ) : null}
-          <div className="border border-stone-300 bg-white p-5">
+          <div className="border border-stone-300 bg-white p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-[#b71c1c]">
                   Automatic Renewal
                 </p>
-                <p className="mt-1 text-sm leading-5 text-stone-600">
-                  {hasAutoRenewal
+                <p id="auto-renewal-help" className="mt-1 text-sm leading-5 text-stone-600">
+                  {!isParentAccount
+                    ? 'Automatic renewal is managed by the Parent account.'
+                    : hasAutoRenewal
                     ? 'Automatic renewal is on. Turning it off will not cancel your membership today; access continues through the current subscription period.'
-                    : 'Automatic renewal is off. Use this control to restart recurring renewal for this membership.'}
+                    : 'Automatic renewal is off. This control is unavailable for memberships without automatic renewal.'}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleAutoRenewalToggle}
-                disabled={hasAutoRenewal ? !autoRenewDisableUrl : !autoRenewEnableUrl}
-                className={`aac-auto-renew-toggle relative inline-flex h-8 w-16 shrink-0 items-center border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                disabled={autoRenewDisabled}
+                role="switch"
+                aria-checked={hasAutoRenewal}
+                aria-describedby="auto-renewal-help"
+                className={`aac-auto-renew-toggle relative inline-flex h-8 w-16 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                   hasAutoRenewal ? 'border-[#b71c1c] bg-[#b71c1c]' : 'border-stone-300 bg-stone-100'
                 }`}
-                aria-label={hasAutoRenewal ? 'Turn automatic renewal off' : 'Turn automatic renewal on'}
+                aria-label="Automatic renewal"
               >
                 <span
-                  className={`aac-auto-renew-toggle__thumb absolute h-6 w-6 bg-white shadow-sm transition-transform ${
+                  className={`aac-auto-renew-toggle__thumb absolute h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
                     hasAutoRenewal ? 'translate-x-8' : 'translate-x-1'
                   }`}
                 />
               </button>
             </div>
-            <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-stone-950">
+            <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-stone-950">
               {hasAutoRenewal ? 'On' : 'Off'}
             </p>
           </div>
         </div>
+      </div>
+
+      {hasAutoRenewal && isParentAccount ? <UpcomingPayment subscriptionId={actions.current_subscription_id} /> : null}
+
+      {showBillingForm && embeddedBillingUrl ? (
+        <section className="mt-6 border-t-2 border-[#b71c1c] pt-5">
+          <div className="mb-4 border-b-2 border-[#b71c1c] pb-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-[#b71c1c]">
+              Payment Method
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-black">Update Billing Information</h2>
+            <p className="mt-2 text-sm leading-6 text-stone-600">
+              Update the billing address and card used for your membership renewal.
+            </p>
+          </div>
+          <iframe
+            ref={billingFrameRef}
+            title="Update Billing Information"
+            src={embeddedBillingUrl}
+            className="block w-full border-0 bg-white"
+            style={{ height: `${billingFormHeight}px` }}
+          />
+        </section>
+      ) : null}
+
+      <div className="aac-membership-transaction-section mt-6 border-t-2 border-[#b71c1c] pt-5">
+        <div className="mb-3 flex items-center gap-3 border-b-2 border-[#b71c1c] pb-3">
+          <Receipt className="h-6 w-6 text-[#a07f21]" />
+          <h3 className="text-xl font-bold text-stone-950">Transaction register</h3>
+        </div>
+        <p className="mb-3 text-sm leading-5 text-stone-600">
+          Membership payments you complete in this portal appear here. Non-membership charges are not shown in this register.
+        </p>
+        <TransactionList transactions={transactions} loading={transactionsLoading} />
       </div>
 
     </section>
@@ -436,6 +482,33 @@ const MembershipManagementPage = () => {
   const renderChangeSection = () => (
     <section className={widePanelClass}>
       <div className={widePanelInnerClass}>
+        {upgradeCheckout ? (
+          <>
+            <SectionHeader
+              icon={TrendingUp}
+              eyebrow="Membership Upgrade"
+              title={`Upgrade to ${upgradeCheckout.tier}`}
+              description="Review the prorated upgrade amount and complete payment using your existing member information."
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setUpgradeCheckout(null)}
+              className="mb-5 rounded-none border-2 border-black bg-white text-black hover:bg-stone-100"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to membership levels
+            </Button>
+            <iframe
+              ref={upgradeFrameRef}
+              title={`Upgrade to ${upgradeCheckout.tier}`}
+              src={upgradeCheckout.url}
+              className="block w-full border-0 bg-white"
+              style={{ height: `${upgradeCheckoutHeight}px` }}
+            />
+          </>
+        ) : (
+          <>
         <SectionHeader
           icon={Shield}
           eyebrow="Membership"
@@ -454,9 +527,13 @@ const MembershipManagementPage = () => {
       ) : null}
 
         <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        {visiblePlanOrder.map((tier, index) => {
+        {(standaloneUpgrade ? displayedUpgradePlanOrder : visiblePlanOrder).map((tier, index) => {
           const details = MEMBERSHIP_PLAN_DETAILS[tier];
-          const action = getCardAction(tier);
+          const action = standaloneUpgrade && tier === currentTier
+            ? (hasAutoRenewal
+              ? { label: 'Auto-Renewal Active', icon: BadgeCheck, type: 'renew', disabled: true }
+              : { label: 'Renew Current Level', icon: BadgeCheck, type: 'renew', disabled: false })
+            : getCardAction(tier);
 
           const ActionIcon = action.icon;
           const isCurrent = action.disabled;
@@ -499,7 +576,13 @@ const MembershipManagementPage = () => {
               ) : (
                 <Button
                   type="button"
-                  onClick={() => void openMembershipAction(action.type, { targetTier: tier })}
+                  onClick={() => {
+                    if (action.type === 'upgrade' || action.type === 'renew') {
+                      openUpgradeCheckout(tier, action.type);
+                      return;
+                    }
+                    void openMembershipAction(action.type, { targetTier: tier });
+                  }}
                   className="mt-6 w-full rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]"
                 >
                   <ActionIcon className="w-4 h-4 mr-2" />
@@ -510,6 +593,13 @@ const MembershipManagementPage = () => {
           );
         })}
         </div>
+        {standaloneUpgrade && !selectablePlanOrder.length ? (
+          <p className="border border-[#b71c1c] bg-red-50 p-5 text-sm font-medium text-[#8f1515]">
+            No renewable or higher PMPro membership levels are currently available for this account.
+          </p>
+        ) : null}
+          </>
+        )}
       </div>
     </section>
   );
@@ -564,55 +654,12 @@ const MembershipManagementPage = () => {
     </section>
   );
 
-  const renderConfirmationSection = () => (
-    <section className={widePanelClass}>
-      <div className={widePanelInnerClass}>
-        <SectionHeader
-          icon={Receipt}
-          eyebrow="Confirmation"
-          title="Confirmation and receipts"
-          description="Review the member confirmation letter and recent PMPro membership receipts."
-        />
-
-        <div className="mb-8 border-b-2 border-[#b71c1c] pb-8">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-xl font-bold text-stone-950">Confirmation Letter</h3>
-              <p className="mt-1 text-sm leading-6 text-stone-600">
-                This is the browser-rendered version shown on the Confirmation page.
-              </p>
-            </div>
-            <Button
-              type="button"
-              onClick={() => void downloadMembershipConfirmationLetter(profile)}
-              className="h-12 rounded-none bg-[#b71c1c] px-6 text-white hover:bg-[#8f1515]"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download PDF
-            </Button>
-          </div>
-          <div className="bg-stone-100 p-3 sm:p-6">
-            <ConfirmationLetterPreview profile={profile} framed fullWidth />
-          </div>
-        </div>
-
-        <div className="mb-4 flex items-center gap-3 border-b-2 border-[#b71c1c] pb-4">
-          <Calendar className="h-5 w-5 text-[#b71c1c]" />
-          <h3 className="text-xl font-bold text-stone-950">Recent membership receipts</h3>
-        </div>
-        <TransactionList transactions={transactions} loading={transactionsLoading} />
-      </div>
-    </section>
-  );
-
   const renderActiveSection = () => {
     switch (activeTab) {
       case 'change':
         return renderChangeSection();
       case 'cancel':
         return renderCancelSection();
-      case 'confirmation':
-        return renderConfirmationSection();
       case 'account':
       default:
         return renderAccountSection();
@@ -622,46 +669,37 @@ const MembershipManagementPage = () => {
   return (
     <>
       <Helmet>
-        <title>Manage Membership - American Alpine Club</title>
+        <title>{standaloneUpgrade ? 'Upgrade Membership' : 'Manage Membership'} - American Alpine Club</title>
         <meta
           name="description"
-          content="Manage AAC account details, billing, membership changes, cancellation, and confirmation records."
+          content={standaloneUpgrade
+            ? 'Compare AAC membership levels and upgrade or change your membership.'
+            : 'Manage AAC account details, billing, and cancellation.'}
         />
       </Helmet>
-      <div className={`aac-manage-page mx-auto w-full bg-white px-6 pb-12 !pt-4 sm:px-12 lg:px-20 xl:px-28 2xl:px-40 ${isWideManageTab ? 'max-w-none' : 'max-w-7xl'}`}>
-        <Link to="/" className="mb-6 inline-flex items-center gap-2 text-black transition-colors hover:text-[#a07f21]">
+      <div className={`aac-manage-page mx-auto w-full bg-white px-6 pb-6 !pt-2 sm:px-12 lg:px-20 xl:px-28 2xl:px-40 ${isWideManageTab ? 'max-w-none' : 'max-w-7xl'}`}>
+        <Link to={standaloneUpgrade ? '/membership' : '/'} className="mb-4 inline-flex items-center gap-2 text-black transition-colors hover:text-[#a07f21]">
           <ArrowLeft size={16} />
-          Back to portal
+          {standaloneUpgrade ? 'Back to billing' : 'Back to portal'}
         </Link>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="space-y-8"
+          className="space-y-4"
         >
-          <div className="border-b-2 border-[#b71c1c] pb-6">
-            <p className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-[#b71c1c]">
+          {!standaloneUpgrade ? <div className="border-b-2 border-[#b71c1c] pb-4">
+            <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.26em] text-[#b71c1c]">
               Member Account
             </p>
             <h1 className="text-4xl font-bold text-black sm:text-5xl">Manage Membership</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-600 sm:text-base">
-              Manage account details, billing, membership changes, cancellation options, and confirmation records from one place.
+            <p className="mt-2 max-w-3xl text-sm leading-5 text-stone-600 sm:text-base">
+              Manage account details, billing, membership changes, and cancellation options from one place.
             </p>
-          </div>
+          </div> : null}
 
-          <div className={`grid gap-3 ${visibleTabs.length >= 4 ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
-            {visibleTabs.map((tab) => (
-              <TabButton
-                key={tab.id}
-                tab={tab}
-                active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id)}
-              />
-            ))}
-          </div>
-
-          {renderActiveSection()}
+          {standaloneUpgrade ? renderChangeSection() : renderActiveSection()}
       </motion.div>
       </div>
     </>
