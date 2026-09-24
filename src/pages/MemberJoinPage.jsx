@@ -137,6 +137,7 @@ const MemberJoinPage = () => {
   }, [user]);
   const [selectedTierId, setSelectedTierId] = useState('Partner');
   const [embedHeight, setEmbedHeight] = useState(CHECKOUT_MIN_EMBED_HEIGHT);
+  const [checkoutFrameReady, setCheckoutFrameReady] = useState(false);
   const checkoutFrameRef = useRef(null);
   const checkoutDraftRef = useRef([]);
   const currentWizardStepRef = useRef('account');
@@ -357,6 +358,7 @@ const MemberJoinPage = () => {
       return;
     }
     preserveCheckoutDraft();
+    setCheckoutFrameReady(false);
     setSelectedTierId(tierId);
   };
 
@@ -367,10 +369,6 @@ const MemberJoinPage = () => {
     }
 
     try {
-      window.requestAnimationFrame(() => {
-        restoreCheckoutDraft();
-        window.setTimeout(restoreCheckoutDraft, 180);
-      });
       const frameUrl = new URL(frameWindow.location.href);
       const postPurchaseUrl = new URL(POST_PURCHASE_LOGIN_URL);
       const runtimeConfirmationUrl = getAppRuntimeConfig().pmproConfirmationUrl;
@@ -387,7 +385,24 @@ const MemberJoinPage = () => {
 
 	      if (isConfirmationPath || isFramedProfile) {
 	        window.location.assign(postPurchaseUrl.toString());
+	        return;
 	      }
+
+      const expectedLevelId = new URL(checkoutUrl).searchParams.get('level');
+      if (frameUrl.searchParams.get('level') !== expectedLevelId) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        const liveFrameUrl = new URL(checkoutFrameRef.current?.contentWindow?.location.href || 'about:blank');
+        const liveExpectedUrl = new URL(checkoutFrameRef.current?.src || checkoutUrl);
+        if (liveFrameUrl.searchParams.get('level') !== liveExpectedUrl.searchParams.get('level')) {
+          return;
+        }
+        restoreCheckoutDraft();
+        setCheckoutFrameReady(true);
+        window.setTimeout(restoreCheckoutDraft, 180);
+      });
 
     } catch (error) {
       // Ignore cross-document timing errors and leave the iframe in place.
@@ -493,6 +508,8 @@ const MemberJoinPage = () => {
 	                      position: 'static',
 	                      inset: 'auto',
 	                      display: 'block',
+	                      visibility: checkoutFrameReady ? 'visible' : 'hidden',
+	                      opacity: checkoutFrameReady ? 1 : 0,
 	                      width: '100%',
 	                      maxWidth: '100%',
 	                      height: 'var(--aac-checkout-iframe-height)',
@@ -500,6 +517,7 @@ const MemberJoinPage = () => {
 	                      overflow: 'hidden',
 	                      border: 0,
 	                    }}
+                    aria-hidden={!checkoutFrameReady}
                   />
                 </div>
             </div>
