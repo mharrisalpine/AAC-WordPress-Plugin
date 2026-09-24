@@ -193,6 +193,30 @@ body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-
   color: #000000 !important;
 }
 
+body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-nav-item,
+body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utility-nav-item,
+body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-nav a,
+body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utility-nav a {
+  color: #000000 !important;
+}
+
+body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-icon--light,
+body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utility-icon--light {
+  display: none !important;
+  opacity: 0 !important;
+}
+
+body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-icon--dark,
+body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utility-icon--dark {
+  display: inline-block !important;
+  opacity: 1 !important;
+}
+
+body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-nav svg,
+body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utility-nav svg {
+  color: #000000 !important;
+}
+
 body.aac-signup-header-managed.aac-signup-header-hidden #site-header {
   opacity: 0 !important;
   transform: translateY(calc(-100% - 8px)) !important;
