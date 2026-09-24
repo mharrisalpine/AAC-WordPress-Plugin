@@ -152,7 +152,7 @@ body.aac-signup-header-managed .aac-join-layout {
   padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
 }
 
-body.aac-member-signup-page.aac-signup-header-managed #site-header {
+body.aac-signup-header-managed #site-header {
   background-color: #030000 !important;
   background-image: none !important;
   opacity: 1 !important;
@@ -161,39 +161,39 @@ body.aac-member-signup-page.aac-signup-header-managed #site-header {
   transition: transform 240ms ease, opacity 180ms ease, background-color 220ms ease, box-shadow 220ms ease !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed #site-header::before {
+body.aac-signup-header-managed #site-header::before {
   opacity: 1 !important;
   transition: opacity 220ms ease !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header {
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header {
   background-color: transparent !important;
   background-image: none !important;
   box-shadow: none !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header::before {
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header::before {
   opacity: 0 !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav-item,
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav a {
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav-item,
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav a {
   color: #000000 !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--light {
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--light {
   display: none !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--dark {
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--dark {
   display: inline-block !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav svg {
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav svg {
   color: #000000 !important;
 }
 
-body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-hidden #site-header {
+body.aac-signup-header-managed.aac-signup-header-hidden #site-header {
   opacity: 0 !important;
   transform: translateY(calc(-100% - 8px)) !important;
   visibility: hidden !important;
