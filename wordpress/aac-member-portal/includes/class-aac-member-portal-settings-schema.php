@@ -92,7 +92,7 @@ class AAC_Member_Portal_Settings_Schema {
 				'join_application_title' => 'Choose your membership and complete checkout.',
 				'join_application_description' => 'Select a membership level above, then complete the real AAC checkout form below.',
 				'join_redeem_code_button_label' => 'Redeem Family Member Invite',
-				'signup_benefits_matrix_image_url' => '',
+				'signup_benefit_catalog' => self::get_default_signup_benefit_catalog_rows(),
 				'signup_level_benefits' => self::get_default_signup_level_benefits(),
 				'login_hero_kicker' => 'Member access',
 				'login_hero_title' => "United\nWe Climb.",
@@ -199,6 +199,53 @@ class AAC_Member_Portal_Settings_Schema {
 			'publications' => 'AAC Publications (AAJ+Accidents+Guidebook+ACJ)',
 			'limited_hardcover_aaj' => 'Limited Edition Hardcover AAJ',
 		];
+	}
+
+	public static function get_default_signup_benefit_catalog_rows() {
+		$rows = [];
+		foreach (self::get_signup_level_benefit_catalog() as $key => $label) {
+			$rows[] = ['key' => $key, 'label' => $label];
+		}
+		return $rows;
+	}
+
+	public static function normalize_signup_benefit_catalog($rows) {
+		$normalized = [];
+		$seen = [];
+		foreach (is_array($rows) ? $rows : [] as $index => $row) {
+			if (is_string($row)) {
+				$row = ['key' => is_string($index) ? $index : '', 'label' => $row];
+			}
+			if (!is_array($row)) {
+				continue;
+			}
+			$label = sanitize_text_field($row['label'] ?? '');
+			$key = sanitize_key($row['key'] ?? '');
+			if ($label === '') {
+				continue;
+			}
+			if ($key === '') {
+				$key = sanitize_key($label);
+			}
+			$base_key = $key ?: 'benefit';
+			$suffix = 2;
+			while (isset($seen[$key])) {
+				$key = $base_key . '_' . $suffix;
+				$suffix++;
+			}
+			$seen[$key] = true;
+			$normalized[] = ['key' => $key, 'label' => $label];
+		}
+
+		return !empty($normalized) ? $normalized : self::get_default_signup_benefit_catalog_rows();
+	}
+
+	public static function signup_benefit_catalog_rows_to_map($rows) {
+		$catalog = [];
+		foreach (self::normalize_signup_benefit_catalog($rows) as $row) {
+			$catalog[$row['key']] = $row['label'];
+		}
+		return $catalog;
 	}
 
 	public static function get_signup_level_labels() {
@@ -641,8 +688,10 @@ class AAC_Member_Portal_Settings_Schema {
 		$settings['content']['rescue_levels'] = isset($settings['content']['rescue_levels']) && is_array($settings['content']['rescue_levels']) && !empty($settings['content']['rescue_levels'])
 			? array_values($settings['content']['rescue_levels'])
 			: self::get_default_rescue_levels();
+		$settings['content']['signup_benefit_catalog'] = self::normalize_signup_benefit_catalog($settings['content']['signup_benefit_catalog'] ?? []);
+		$signup_benefit_catalog = self::signup_benefit_catalog_rows_to_map($settings['content']['signup_benefit_catalog']);
 		$settings['content']['signup_level_benefits'] = isset($settings['content']['signup_level_benefits']) && is_array($settings['content']['signup_level_benefits'])
-			? self::normalize_signup_level_benefits($settings['content']['signup_level_benefits'])
+			? self::normalize_signup_level_benefits($settings['content']['signup_level_benefits'], $signup_benefit_catalog)
 			: self::get_default_signup_level_benefits();
 		$settings['content']['contact_issue_types'] = isset($settings['content']['contact_issue_types']) && is_array($settings['content']['contact_issue_types'])
 			? self::normalize_contact_issue_types($settings['content']['contact_issue_types'])
@@ -789,7 +838,6 @@ class AAC_Member_Portal_Settings_Schema {
 			'publication_view_url_anac',
 			'publication_view_url_acj',
 			'publication_view_url_guidebook',
-			'signup_benefits_matrix_image_url',
 		];
 		foreach ($url_fields as $field) {
 			if (array_key_exists($field, $content_input)) {
@@ -810,8 +858,12 @@ class AAC_Member_Portal_Settings_Schema {
 		if (isset($content_input['rescue_levels']) && is_array($content_input['rescue_levels'])) {
 			$settings['content']['rescue_levels'] = self::sanitize_rescue_levels($content_input['rescue_levels']);
 		}
+		if (isset($content_input['signup_benefit_catalog']) && is_array($content_input['signup_benefit_catalog'])) {
+			$settings['content']['signup_benefit_catalog'] = self::normalize_signup_benefit_catalog($content_input['signup_benefit_catalog']);
+		}
 		if (isset($content_input['signup_level_benefits']) && is_array($content_input['signup_level_benefits'])) {
-			$settings['content']['signup_level_benefits'] = self::sanitize_signup_level_benefits($content_input['signup_level_benefits']);
+			$catalog = self::signup_benefit_catalog_rows_to_map($settings['content']['signup_benefit_catalog'] ?? []);
+			$settings['content']['signup_level_benefits'] = self::sanitize_signup_level_benefits($content_input['signup_level_benefits'], $catalog);
 		}
 		if (isset($content_input['home_involvement_cards']) && is_array($content_input['home_involvement_cards'])) {
 			$settings['content']['home_involvement_cards'] = self::sanitize_home_involvement_cards($content_input['home_involvement_cards']);
@@ -1352,8 +1404,8 @@ class AAC_Member_Portal_Settings_Schema {
 		return implode("\n", $lines);
 	}
 
-	public static function normalize_signup_level_benefits($benefits_by_level) {
-		$catalog = self::get_signup_level_benefit_catalog();
+	public static function normalize_signup_level_benefits($benefits_by_level, $catalog = null) {
+		$catalog = is_array($catalog) && !empty($catalog) ? $catalog : self::get_signup_level_benefit_catalog();
 		$levels = self::get_signup_level_labels();
 		$defaults = self::get_default_signup_level_benefits();
 		$is_configured_submission = !empty($benefits_by_level['_configured']);
@@ -1390,8 +1442,8 @@ class AAC_Member_Portal_Settings_Schema {
 		return $normalized;
 	}
 
-	public static function sanitize_signup_level_benefits($benefits_by_level) {
-		return self::normalize_signup_level_benefits($benefits_by_level);
+	public static function sanitize_signup_level_benefits($benefits_by_level, $catalog = null) {
+		return self::normalize_signup_level_benefits($benefits_by_level, $catalog);
 	}
 
 	public static function sanitize_rescue_levels($levels) {

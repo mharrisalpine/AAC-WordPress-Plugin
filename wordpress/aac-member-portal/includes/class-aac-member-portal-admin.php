@@ -864,38 +864,35 @@ class AAC_Member_Portal_Admin {
 	}
 
 	private function render_level_benefits_tab($settings) {
-		$this->open_panel('Signup Level Benefits', 'Choose which benefits appear on each membership level card in the signup form and set the Redpoint dollar amounts displayed for each level.');
-		$catalog = self::get_signup_level_benefit_catalog();
+		$this->open_panel('Signup Level Benefits', 'Add, rename, or remove benefits and choose which membership levels include each one.');
+		$catalog_rows = AAC_Member_Portal_Settings_Schema::normalize_signup_benefit_catalog($settings['content']['signup_benefit_catalog'] ?? []);
+		$catalog = AAC_Member_Portal_Settings_Schema::signup_benefit_catalog_rows_to_map($catalog_rows);
 		$levels = self::get_signup_level_labels();
 		$selected_benefits = isset($settings['content']['signup_level_benefits']) && is_array($settings['content']['signup_level_benefits'])
-			? AAC_Member_Portal_Settings_Schema::normalize_signup_level_benefits($settings['content']['signup_level_benefits'])
+			? AAC_Member_Portal_Settings_Schema::normalize_signup_level_benefits($settings['content']['signup_level_benefits'], $catalog)
 			: self::get_default_signup_level_benefits();
 		?>
 		<h3 style="margin:0 0 8px;">Signup Benefits Matrix</h3>
-		<p class="description" style="margin-bottom:12px;">Choose the benefits comparison image displayed above the membership level buttons. Leave empty to show the placeholder grid.</p>
-		<div class="aac-benefits-gallery-admin__media-row" data-aac-signup-matrix-media>
-			<input type="url" class="regular-text" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefits_matrix_image_url]'); ?>" value="<?php echo esc_attr($settings['content']['signup_benefits_matrix_image_url'] ?? ''); ?>" />
-			<button type="button" class="button button-secondary" data-aac-select-signup-matrix-image>Select Matrix Image</button>
-		</div>
-		<div class="aac-benefits-gallery-admin__preview" data-aac-signup-matrix-preview>
-			<?php if (!empty($settings['content']['signup_benefits_matrix_image_url'])) : ?>
-				<img src="<?php echo esc_url($settings['content']['signup_benefits_matrix_image_url']); ?>" alt="" />
-			<?php endif; ?>
-		</div>
+		<p class="description" style="margin-bottom:12px;">Benefit names become rows in the signup comparison matrix. Check the membership levels that include each benefit.</p>
 		<input type="hidden" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_level_benefits][_configured]'); ?>" value="1" />
-		<table class="widefat striped" style="margin-top:16px;">
+		<table class="widefat striped" style="margin-top:16px;" data-aac-signup-benefits-table>
 			<thead>
 				<tr>
 					<th style="width:42%;">Benefit</th>
 					<?php foreach ($levels as $level_id => $level_label) : ?>
 						<th style="text-align:center;"><?php echo esc_html($level_label); ?></th>
 					<?php endforeach; ?>
+					<th style="width:90px;"><span class="screen-reader-text">Actions</span></th>
 				</tr>
 			</thead>
-			<tbody>
-				<?php foreach ($catalog as $benefit_key => $benefit_label) : ?>
-					<tr>
-						<td><strong><?php echo esc_html($benefit_label); ?></strong></td>
+			<tbody data-aac-signup-benefits-list>
+				<?php foreach ($catalog_rows as $row_index => $benefit_row) : ?>
+					<?php $benefit_key = $benefit_row['key']; $benefit_label = $benefit_row['label']; ?>
+					<tr data-aac-signup-benefit-row>
+						<td>
+							<input type="hidden" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefit_catalog][' . $row_index . '][key]'); ?>" value="<?php echo esc_attr($benefit_key); ?>" />
+							<input type="text" class="large-text" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefit_catalog][' . $row_index . '][label]'); ?>" value="<?php echo esc_attr($benefit_label); ?>" required />
+						</td>
 						<?php foreach ($levels as $level_id => $level_label) : ?>
 							<td style="text-align:center;">
 								<label aria-label="<?php echo esc_attr($level_label . ': ' . $benefit_label); ?>">
@@ -908,11 +905,37 @@ class AAC_Member_Portal_Admin {
 								</label>
 							</td>
 						<?php endforeach; ?>
+						<td><button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button></td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
 		</table>
-		<p class="description" style="margin-top:12px;">The card display follows the order shown here. Unchecking every benefit for a level will hide the benefit checklist for that level card.</p>
+		<p style="margin:12px 0 0;"><button type="button" class="button button-secondary" data-aac-add-signup-benefit>Add Benefit</button></p>
+		<p class="description" style="margin-top:12px;">Benefits display in this order. Removing a row removes it from every membership level.</p>
+		<script>
+			document.addEventListener('DOMContentLoaded', function () {
+				const list = document.querySelector('[data-aac-signup-benefits-list]');
+				const addButton = document.querySelector('[data-aac-add-signup-benefit]');
+				if (!list || !addButton) return;
+				const optionKey = <?php echo wp_json_encode(self::OPTION_KEY); ?>;
+				const levels = <?php echo wp_json_encode(array_keys($levels)); ?>;
+				const bindRemove = (row) => {
+					row.querySelector('[data-aac-remove-signup-benefit]')?.addEventListener('click', () => row.remove());
+				};
+				list.querySelectorAll('[data-aac-signup-benefit-row]').forEach(bindRemove);
+				addButton.addEventListener('click', () => {
+					const index = Date.now().toString();
+					const benefitKey = 'custom_' + index;
+					const row = document.createElement('tr');
+					row.setAttribute('data-aac-signup-benefit-row', '1');
+					const checkboxCells = levels.map((level) => '<td style="text-align:center"><input type="checkbox" name="' + optionKey + '[content][signup_level_benefits][' + level + '][' + benefitKey + ']" value="1" /></td>').join('');
+					row.innerHTML = '<td><input type="hidden" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][key]" value="' + benefitKey + '" /><input type="text" class="large-text" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][label]" value="" placeholder="Benefit name" required /></td>' + checkboxCells + '<td><button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button></td>';
+					list.appendChild(row);
+					bindRemove(row);
+					row.querySelector('input[type="text"]')?.focus();
+				});
+			});
+		</script>
 		<?php $this->render_redpoint_level_amounts_editor($settings); ?>
 		<?php
 		$this->close_panel();
@@ -1960,22 +1983,6 @@ class AAC_Member_Portal_Admin {
 
 							frame.open();
 						});
-					});
-				});
-				document.querySelectorAll('[data-aac-select-signup-matrix-image]').forEach((button) => {
-					button.addEventListener('click', () => {
-						if (!window.wp || !window.wp.media) return;
-						const row = button.closest('[data-aac-signup-matrix-media]');
-						const imageInput = row ? row.querySelector('input[type="url"]') : null;
-						const preview = document.querySelector('[data-aac-signup-matrix-preview]');
-						const frame = window.wp.media({ title: 'Select signup benefits matrix', button: { text: 'Use image' }, multiple: false });
-						frame.on('select', () => {
-							const attachment = frame.state().get('selection').first().toJSON();
-							const nextUrl = attachment.url || '';
-							if (imageInput) imageInput.value = nextUrl;
-							if (preview) preview.innerHTML = nextUrl ? '<img src="' + nextUrl.replace(/"/g, '&quot;') + '" alt="" />' : '';
-						});
-						frame.open();
 					});
 				});
 				if (!list || !template || !addButton) {

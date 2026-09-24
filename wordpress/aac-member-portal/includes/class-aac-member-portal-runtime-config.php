@@ -36,8 +36,8 @@ class AAC_Member_Portal_Runtime_Config {
 				'memberProfileBlocks' => array_values(isset($content['member_profile_blocks']) && is_array($content['member_profile_blocks']) ? $content['member_profile_blocks'] : []),
 				'memberProfileCardSections' => isset($content['member_profile_card_sections']) && is_array($content['member_profile_card_sections']) ? $content['member_profile_card_sections'] : [],
 				'rescueLevels' => array_values(isset($content['rescue_levels']) && is_array($content['rescue_levels']) ? $content['rescue_levels'] : []),
+				'membershipBenefitCatalog' => array_values(AAC_Member_Portal_Settings_Schema::signup_benefit_catalog_rows_to_map($content['signup_benefit_catalog'] ?? [])),
 				'membershipLevelBenefits' => $this->build_signup_level_benefits($settings),
-				'signupBenefitsMatrixImageUrl' => esc_url_raw($content['signup_benefits_matrix_image_url'] ?? ''),
 				'publicationViewUrls' => [
 					'aaj' => $content['publication_view_url_aaj'] ?? '',
 					'anac' => $content['publication_view_url_anac'] ?? '',
@@ -113,9 +113,9 @@ class AAC_Member_Portal_Runtime_Config {
 	}
 
 	private function build_signup_level_benefits($settings) {
-		$catalog = AAC_Member_Portal_Admin::get_signup_level_benefit_catalog();
 		$levels = AAC_Member_Portal_Admin::get_signup_level_labels();
 		$content = isset($settings['content']) && is_array($settings['content']) ? $settings['content'] : [];
+		$catalog = AAC_Member_Portal_Settings_Schema::signup_benefit_catalog_rows_to_map($content['signup_benefit_catalog'] ?? []);
 		$selected = isset($content['signup_level_benefits']) && is_array($content['signup_level_benefits'])
 			? $content['signup_level_benefits']
 			: AAC_Member_Portal_Admin::get_default_signup_level_benefits();

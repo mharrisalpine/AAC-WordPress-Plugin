@@ -4,32 +4,21 @@ import { MEMBERSHIP_TIER_OPTIONS, isOneTimeMembershipTierId, isPublicMembershipT
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
-const MATRIX_BENEFIT_ROWS = [
-  { id: 'aac-support', label: 'Support AAC advocacy, education, and member services', match: /^support for aac/i },
-  { id: 'tshirt', label: 'AAC T-shirt', match: /^aac t-shirt/i },
-  { id: 'discounts', label: 'Gear, gym, and guide discounts', match: /^discounts?:/i },
-  { id: 'library', label: 'AAC Library', match: /^aac library/i },
-  { id: 'rescue', label: 'Rescue coverage', match: /^rescue coverage/i },
-  { id: 'medical', label: 'Medical expense coverage', match: /^medical expense coverage/i },
-  { id: 'mortal-remains', label: 'Mortal remains transport', match: /^mortal remains transport/i },
-  { id: 'publications', label: 'AAC publications', match: /^aac publications/i },
-  { id: 'hardcover-aaj', label: 'Limited Edition Hardcover AAJ', match: /^limited edition hardcover aaj/i },
-];
-
 function getPriceLabel(tier) {
   return tier.priceCents === 0
     ? 'Free'
     : `$${(tier.priceCents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
+function getBenefitBaseLabel(value) {
+  return String(value || '').trim().replace(/:\s*\$[\d,.]+\s*$/, '').trim();
+}
+
 function getBenefitCell(benefits, row) {
-  const benefit = benefits.find((item) => row.match.test(String(item || '').trim()));
+  const benefit = benefits.find((item) => getBenefitBaseLabel(item).toLocaleLowerCase() === row.label.toLocaleLowerCase());
   if (!benefit) return null;
 
-  const detail = String(benefit)
-    .replace(row.match, '')
-    .replace(/^\s*[:\-–—]\s*/, '')
-    .trim();
+  const detail = String(benefit).slice(getBenefitBaseLabel(benefit).length).replace(/^\s*[:\-–—]\s*/, '').trim();
 
   return { detail: detail.includes('$') ? detail : '' };
 }
@@ -68,15 +57,14 @@ function TierBenefitsList({ benefits, dense, maxItems }) {
  * @param {'compact' | 'full'} [props.variant]
  */
 export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact' }) {
-  const membershipLevelBenefits = getPortalUiSettings().content?.membershipLevelBenefits || {};
+  const portalContent = getPortalUiSettings().content || {};
+  const membershipLevelBenefits = portalContent.membershipLevelBenefits || {};
   const getTierBenefits = (tier) => {
     const benefits = Object.prototype.hasOwnProperty.call(membershipLevelBenefits, tier.id) && Array.isArray(membershipLevelBenefits[tier.id])
       ? membershipLevelBenefits[tier.id]
       : tier.benefits;
 
-    return ['Leader', 'Advocate'].includes(tier.id)
-      ? benefits.filter((benefit) => !/^discounts?:/i.test(String(benefit || '').trim()))
-      : benefits;
+    return benefits;
   };
   const visibleTiers = MEMBERSHIP_TIER_OPTIONS
     .filter((tier) => isPublicMembershipTierId(tier.id))
@@ -84,6 +72,19 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
       ...tier,
       benefits: getTierBenefits(tier),
     }));
+  const fallbackCatalog = visibleTiers.flatMap((tier) => tier.benefits || []);
+  const configuredCatalog = Array.isArray(portalContent.membershipBenefitCatalog)
+    ? portalContent.membershipBenefitCatalog
+    : [];
+  const matrixBenefitRows = [];
+  const seenBenefitLabels = new Set();
+  (configuredCatalog.length ? configuredCatalog : fallbackCatalog).forEach((benefit, index) => {
+    const label = getBenefitBaseLabel(benefit);
+    const normalized = label.toLocaleLowerCase();
+    if (!label || seenBenefitLabels.has(normalized)) return;
+    seenBenefitLabels.add(normalized);
+    matrixBenefitRows.push({ id: `${normalized.replace(/[^a-z0-9]+/g, '-')}-${index}`, label });
+  });
 
   if (variant === 'full') {
     return (
@@ -191,7 +192,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
               </tr>
             </thead>
             <tbody>
-              {MATRIX_BENEFIT_ROWS.map((row, rowIndex) => (
+              {matrixBenefitRows.map((row, rowIndex) => (
                 <tr key={row.id} className={rowIndex % 2 ? 'bg-stone-50' : 'bg-white'}>
                   <th scope="row" className="border-r border-t border-stone-300 px-5 py-4 text-sm font-semibold leading-5 text-stone-800">
                     {row.label}

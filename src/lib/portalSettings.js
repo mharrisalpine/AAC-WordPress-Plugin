@@ -138,7 +138,17 @@ const DEFAULT_SETTINGS = {
     join_application_description:
       'Select a membership level above, then complete the real AAC checkout form below.',
     join_redeem_code_button_label: 'Redeem Family Member Invite',
-    signupBenefitsMatrixImageUrl: '',
+    membershipBenefitCatalog: [
+      'Support for AAC Advocacy, Education, & Member Services',
+      'AAC T-shirt',
+      'Discounts: Gear, Gym, & Guide Services',
+      'AAC Library',
+      'Rescue Coverage',
+      'Medical Expense Coverage',
+      'Mortal Remains Transport',
+      'AAC Publications (AAJ+Accidents+Guidebook+ACJ)',
+      'Limited Edition Hardcover AAJ',
+    ],
     membershipLevelBenefits: {
       Supporter: [
         'Support for AAC Advocacy, Education, & Member Services',
@@ -503,6 +513,10 @@ export const getPortalUiSettings = () => {
         runtimeSettings.content?.membershipLevelBenefits && typeof runtimeSettings.content.membershipLevelBenefits === 'object'
           ? runtimeSettings.content.membershipLevelBenefits
           : DEFAULT_SETTINGS.content.membershipLevelBenefits,
+      membershipBenefitCatalog:
+        Array.isArray(runtimeSettings.content?.membershipBenefitCatalog) && runtimeSettings.content.membershipBenefitCatalog.length
+          ? runtimeSettings.content.membershipBenefitCatalog
+          : DEFAULT_SETTINGS.content.membershipBenefitCatalog,
       memberProfileBlocks:
         Array.isArray(runtimeSettings.content?.memberProfileBlocks) && runtimeSettings.content.memberProfileBlocks.length
           ? runtimeSettings.content.memberProfileBlocks
