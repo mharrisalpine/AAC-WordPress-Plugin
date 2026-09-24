@@ -165,7 +165,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         aria-checked={selected}
                         className={cn(
                           'relative !m-0 flex min-h-[112px] !w-full flex-col !items-stretch !p-0 text-center transition focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
-                          selected ? 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]' : 'bg-white hover:bg-stone-50',
+                          selected ? 'bg-[#ffc72c] shadow-[inset_0_0_0_2px_#000]' : 'bg-white hover:bg-stone-50',
                         )}
                       >
                         <span className={cn(
@@ -209,7 +209,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         onClick={() => onSelect(tier.id)}
                         className={cn(
                           'cursor-pointer border-r border-t border-stone-300 px-3 py-2.5 text-center last:border-r-0',
-                          selected && 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]',
+                          selected && 'bg-[#ffc72c] shadow-[inset_0_0_0_2px_#000]',
                         )}
                       >
                         {benefit ? (
