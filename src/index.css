@@ -182,11 +182,13 @@ body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-
 }
 
 body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--light {
-  display: none !important;
+  display: inline-block !important;
+  opacity: 0 !important;
 }
 
 body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--dark {
   display: inline-block !important;
+  opacity: 1 !important;
 }
 
 body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav svg {
@@ -202,7 +204,7 @@ body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utilit
 
 body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-icon--light,
 body.aac-signup-header-managed #site-header:has(.mega-menu:focus-within) .utility-icon--light {
-  display: none !important;
+  display: inline-block !important;
   opacity: 0 !important;
 }
 

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.656
+ * Version: 1.0.657
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.656');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.657');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -9756,7 +9756,7 @@ CSS;
 	html.aac-member-profile-page #site-header:has(.mega-menu:focus-within) .utility-nav .utility-icon--light,
 	body.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-icon--light,
 	body.aac-member-profile-page #site-header:has(.mega-menu:focus-within) .utility-nav .utility-icon--light {
-		display: none !important;
+		display: inline-block !important;
 		opacity: 0 !important;
 	}
 
