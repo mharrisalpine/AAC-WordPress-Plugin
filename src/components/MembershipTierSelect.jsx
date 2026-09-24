@@ -135,7 +135,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
           })}
         </div>
 
-        <div className="hidden overflow-x-auto border border-black bg-white lg:block">
+        <div className="hidden overflow-x-auto border-2 border-black bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] lg:block">
           <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
             <caption className="sr-only">Compare and select an AAC membership level</caption>
             <colgroup>
@@ -144,8 +144,8 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" className="border-b border-r border-stone-300 bg-stone-100 px-5 py-5 align-bottom">
-                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-stone-600">Benefits</span>
+                <th scope="col" className="border-b-2 border-r border-black bg-black px-4 py-3 align-middle">
+                  <span className="text-sm font-bold uppercase tracking-[0.12em] text-white">Benefits</span>
                 </th>
                 {visibleTiers.map((tier) => {
                   const selected = selectedId === tier.id;
@@ -154,8 +154,8 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                       key={tier.id}
                       scope="col"
                       className={cn(
-                        'border-b border-r border-stone-300 p-0 align-top last:border-r-0',
-                        selected ? 'bg-[#fff8dc]' : 'bg-white',
+                        'border-b-2 border-r border-black p-0 align-top last:border-r-0',
+                        selected ? 'bg-[#ffc72c]' : 'bg-white',
                       )}
                     >
                       <button
@@ -164,26 +164,29 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         role="radio"
                         aria-checked={selected}
                         className={cn(
-                          'relative flex min-h-[176px] w-full flex-col items-center justify-center px-4 py-5 text-center transition hover:bg-stone-50 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
-                          selected && 'bg-[#fff8dc] shadow-[inset_0_4px_0_#ffc72c]',
+                          'relative flex min-h-[112px] w-full flex-col items-stretch text-center transition focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
+                          selected ? 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]' : 'bg-white hover:bg-stone-50',
                         )}
                       >
-                        <span
-                          className={cn(
-                            'mb-3 flex h-8 w-8 items-center justify-center rounded-full border-2',
-                            selected ? 'border-[#8f1515] bg-[#8f1515] text-white' : 'border-stone-300 bg-white text-transparent',
-                          )}
-                          aria-hidden
-                        >
-                          <Check className="h-5 w-5" strokeWidth={3} />
+                        <span className={cn(
+                          'flex min-h-11 items-center justify-center px-3 py-2 text-lg font-bold',
+                          selected ? 'bg-[#ffc72c] text-black' : 'bg-black text-white',
+                        )}>
+                          {tier.id === 'Partner' ? <span className="mr-2 text-[9px] font-black uppercase tracking-[0.12em]">Most popular</span> : null}
+                          {tier.label}
                         </span>
-                        <span className="text-xl font-bold text-stone-950">{tier.label}</span>
-                        <span className="mt-2 text-[26px] font-bold leading-none text-[#8f1515]">
-                          {getPriceLabel(tier)}
-                          {tier.priceCents > 0 ? <span className="text-sm font-medium text-stone-500">/yr</span> : null}
-                        </span>
-                        <span className={cn('mt-3 text-[11px] font-bold uppercase tracking-[0.12em]', selected ? 'text-[#8f1515]' : 'text-stone-500')}>
-                          {selected ? 'Selected' : `Select ${tier.label}`}
+                        <span className="flex flex-1 items-center justify-center gap-3 px-3 py-2">
+                          <span className="text-[24px] font-bold leading-none text-black">
+                            {getPriceLabel(tier)}
+                            {tier.priceCents > 0 ? <span className="text-xs font-semibold text-stone-600">/yr</span> : null}
+                          </span>
+                          <span className={cn(
+                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2',
+                            selected ? 'border-black bg-black text-[#ffc72c]' : 'border-stone-400 bg-white text-transparent',
+                          )} aria-hidden>
+                            <Check className="h-4 w-4" strokeWidth={3} />
+                          </span>
+                          <span className="sr-only">{selected ? 'Selected' : `Select ${tier.label}`}</span>
                         </span>
                       </button>
                     </th>
@@ -194,7 +197,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
             <tbody>
               {matrixBenefitRows.map((row, rowIndex) => (
                 <tr key={row.id} className={rowIndex % 2 ? 'bg-stone-50' : 'bg-white'}>
-                  <th scope="row" className="border-r border-t border-stone-300 px-5 py-4 text-sm font-semibold leading-5 text-stone-800">
+                  <th scope="row" className="border-r border-t border-stone-300 px-4 py-2.5 text-[13px] font-semibold leading-4 text-stone-900">
                     {row.label}
                   </th>
                   {visibleTiers.map((tier) => {
@@ -205,14 +208,14 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         key={tier.id}
                         onClick={() => onSelect(tier.id)}
                         className={cn(
-                          'cursor-pointer border-r border-t border-stone-300 px-3 py-4 text-center last:border-r-0',
-                          selected && 'bg-[#fff8dc]',
+                          'cursor-pointer border-r border-t border-stone-300 px-3 py-2.5 text-center last:border-r-0',
+                          selected && 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]',
                         )}
                       >
                         {benefit ? (
-                          <span className="inline-flex flex-col items-center gap-1 text-sm font-semibold text-stone-800">
-                            <Check className="h-5 w-5 text-[#8f1515]" strokeWidth={3} aria-label="Included" />
-                            {benefit.detail ? <span className="text-xs leading-4 text-stone-600">{benefit.detail}</span> : null}
+                          <span className="inline-flex min-h-5 flex-col items-center justify-center gap-0.5 text-sm font-semibold text-black">
+                            <Check className="h-5 w-5 text-black" strokeWidth={3.5} aria-label="Included" />
+                            {benefit.detail ? <span className="text-xs font-semibold leading-3.5 text-black">{benefit.detail}</span> : null}
                           </span>
                         ) : (
                           <span className="text-stone-300" aria-label="Not included">—</span>
