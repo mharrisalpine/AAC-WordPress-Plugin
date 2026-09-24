@@ -228,7 +228,7 @@ const DEFAULT_SETTINGS = {
         url: '/rescue',
         actionLabel: 'Open Rescue Benefits',
         description:
-          'With your newly enhanced rescue and medical expense coverage, you can tie in a little easier knowing the Club has got your back. As a Leader level member, you receive a $300,000 rescue benefit and $5,000 in medical expense coverage.',
+          'With your newly enhanced rescue and medical expense coverage, you can tie in a little easier knowing the Club has got your back.',
       },
       {
         id: 'publications',

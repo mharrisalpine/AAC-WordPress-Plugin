@@ -133,7 +133,7 @@ const BENEFIT_GALLERY_ITEMS = [
     url: '/rescue',
     actionLabel: 'Open Rescue Benefits',
     description:
-      'With your newly enhanced rescue and medical expense coverage, you can tie in a little easier knowing the Club has got your back. As a Leader level member, you receive a $300,000 rescue benefit and $5,000 in medical expense coverage.',
+      'With your newly enhanced rescue and medical expense coverage, you can tie in a little easier knowing the Club has got your back.',
   },
   {
     id: 'publications',
@@ -187,8 +187,10 @@ const normalizeBenefitGalleryItems = (items = []) => {
   return BENEFIT_GALLERY_ITEMS.map((fallback) => {
     const raw = inputItems.find((item) => item?.id === fallback.id) || {};
     const isBooksMedia = fallback.id === 'publications';
+    const isRescue = fallback.id === 'rescue';
     const rawTitle = String(raw.title || '').trim();
     const rawUrl = String(raw.url || '').trim();
+    const rawDescription = String(raw.description || '').trim();
     return {
       id: fallback.id,
       title: isBooksMedia && (!rawTitle || rawTitle === 'Publications') ? fallback.title : String(raw.title || fallback.title || '').trim(),
@@ -197,9 +199,11 @@ const normalizeBenefitGalleryItems = (items = []) => {
       actionLabel: isBooksMedia && String(raw.actionLabel || raw.action_label || '').trim() === 'Open Publications'
         ? fallback.actionLabel
         : String(raw.actionLabel || raw.action_label || fallback.actionLabel || '').trim(),
-      description: isBooksMedia && String(raw.description || '').includes('digital copies of Accidents')
+      description: isRescue && rawDescription.includes('As a Leader level member')
         ? fallback.description
-        : String(raw.description || fallback.description || '').trim(),
+        : isBooksMedia && rawDescription.includes('digital copies of Accidents')
+        ? fallback.description
+        : String(rawDescription || fallback.description || '').trim(),
     };
   }).filter((item) => item.title);
 };

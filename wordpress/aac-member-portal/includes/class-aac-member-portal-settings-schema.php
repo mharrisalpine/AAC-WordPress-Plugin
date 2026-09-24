@@ -377,7 +377,7 @@ class AAC_Member_Portal_Settings_Schema {
 				'image_url' => 'https://images.unsplash.com/photo-1534621107955-b06bbc17b043?auto=format&fit=crop&w=1200&q=82',
 				'url' => '/rescue',
 				'action_label' => 'Open Rescue Benefits',
-				'description' => 'With your newly enhanced rescue and medical expense coverage, you can tie in a little easier knowing the Club has got your back. As a Leader level member, you receive a $300,000 rescue benefit and $5,000 in medical expense coverage.',
+				'description' => 'With your newly enhanced rescue and medical expense coverage, you can tie in a little easier knowing the Club has got your back.',
 			],
 			[
 				'id' => 'publications',
