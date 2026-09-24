@@ -164,16 +164,16 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         role="radio"
                         aria-checked={selected}
                         className={cn(
-                          'relative flex min-h-[112px] w-full flex-col items-stretch text-center transition focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
+                          'relative !m-0 flex min-h-[112px] !w-full flex-col !items-stretch !p-0 text-center transition focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
                           selected ? 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]' : 'bg-white hover:bg-stone-50',
                         )}
                       >
                         <span className={cn(
-                          'flex min-h-11 items-center justify-center px-3 py-2 text-lg font-bold',
+                          'relative flex min-h-11 w-full items-center justify-center px-3 py-2 text-lg font-bold',
                           selected ? 'bg-[#ffc72c] text-black' : 'bg-black text-white',
                         )}>
-                          {tier.id === 'Partner' ? <span className="mr-2 text-[9px] font-black uppercase tracking-[0.12em]">Most popular</span> : null}
-                          {tier.label}
+                          {tier.id === 'Partner' ? <span className="absolute left-1/2 top-0.5 -translate-x-1/2 whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em]">Most popular</span> : null}
+                          <span className={tier.id === 'Partner' ? 'pt-2.5' : ''}>{tier.label}</span>
                         </span>
                         <span className="flex flex-1 items-center justify-center gap-3 px-3 py-2">
                           <span className="text-[24px] font-bold leading-none text-black">
