@@ -72,6 +72,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
       ...tier,
       benefits: getTierBenefits(tier),
     }));
+  const selectedTierIndex = visibleTiers.findIndex((tier) => tier.id === selectedId);
   const fallbackCatalog = visibleTiers.flatMap((tier) => tier.benefits || []);
   const configuredCatalog = Array.isArray(portalContent.membershipBenefitCatalog)
     ? portalContent.membershipBenefitCatalog
@@ -144,10 +145,13 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" className="border-b-2 border-r border-black bg-black px-4 py-3 align-middle">
+                <th scope="col" className={cn(
+                  'border-b-2 border-r border-black bg-black px-4 py-3 align-middle',
+                  selectedTierIndex === 0 && '!border-r-0',
+                )}>
                   <span className="text-sm font-bold uppercase tracking-[0.12em] text-white">Benefits</span>
                 </th>
-                {visibleTiers.map((tier) => {
+                {visibleTiers.map((tier, tierIndex) => {
                   const selected = selectedId === tier.id;
                   return (
                     <th
@@ -155,7 +159,8 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                       scope="col"
                       className={cn(
                         'border-b-2 border-r border-black p-0 align-top last:border-r-0',
-                        selected ? '!border-b-0 bg-[#ffc72c]' : 'bg-white',
+                        selected ? '!border-b-0 !border-r-0 bg-[#ffc72c]' : 'bg-white',
+                        tierIndex + 1 === selectedTierIndex && '!border-r-0',
                       )}
                     >
                       <button
@@ -165,9 +170,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         aria-checked={selected}
                         className={cn(
                           'relative !m-0 flex min-h-[112px] !w-full flex-col !items-stretch !p-0 text-center transition focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
-                          selected
-                            ? 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000,inset_0_2px_0_#000]'
-                            : 'bg-white hover:bg-stone-50',
+                          selected ? 'bg-[#ffc72c]' : 'bg-white hover:bg-stone-50',
                         )}
                       >
                         <span className={cn(
@@ -199,10 +202,13 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
             <tbody>
               {matrixBenefitRows.map((row, rowIndex) => (
                 <tr key={row.id} className={rowIndex % 2 ? 'bg-stone-50' : 'bg-white'}>
-                  <th scope="row" className="border-r border-t border-stone-300 px-4 py-2.5 text-[13px] font-semibold leading-4 text-stone-900">
+                  <th scope="row" className={cn(
+                    'border-r border-t border-stone-300 px-4 py-2.5 text-[13px] font-semibold leading-4 text-stone-900',
+                    selectedTierIndex === 0 && '!border-r-0',
+                  )}>
                     {row.label}
                   </th>
-                  {visibleTiers.map((tier) => {
+                  {visibleTiers.map((tier, tierIndex) => {
                     const benefit = getBenefitCell(tier.benefits, row);
                     const selected = selectedId === tier.id;
                     return (
@@ -211,8 +217,8 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         onClick={() => onSelect(tier.id)}
                         className={cn(
                           'cursor-pointer border-r border-t border-stone-300 px-3 py-2.5 text-center last:border-r-0',
-                          selected && '!border-t-0 bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]',
-                          selected && rowIndex === matrixBenefitRows.length - 1 && 'shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000,inset_0_-2px_0_#000]',
+                          selected && '!border-r-0 !border-t-0 bg-[#ffc72c]',
+                          tierIndex + 1 === selectedTierIndex && '!border-r-0',
                         )}
                       >
                         {benefit ? (
