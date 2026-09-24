@@ -176,6 +176,23 @@ body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled
   opacity: 0 !important;
 }
 
+body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav-item,
+body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav a {
+  color: #000000 !important;
+}
+
+body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--light {
+  display: none !important;
+}
+
+body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--dark {
+  display: inline-block !important;
+}
+
+body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav svg {
+  color: #000000 !important;
+}
+
 body.aac-member-signup-page.aac-signup-header-managed.aac-signup-header-hidden #site-header {
   opacity: 0 !important;
   transform: translateY(calc(-100% - 8px)) !important;

@@ -135,7 +135,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
           })}
         </div>
 
-        <div className="hidden overflow-x-auto border-2 border-black bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] lg:block">
+        <div className="hidden overflow-x-auto border-2 border-black bg-white lg:block">
           <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
             <caption className="sr-only">Compare and select an AAC membership level</caption>
             <colgroup>
