@@ -162,7 +162,13 @@ const MemberJoinPage = () => {
   );
 
   useEffect(() => {
-    let lastScrollY = window.scrollY;
+    const portalScrollContainer = document.querySelector('#aac-member-portal-root');
+    const getScrollY = () => Math.max(
+      0,
+      window.scrollY,
+      portalScrollContainer instanceof HTMLElement ? portalScrollContainer.scrollTop : 0,
+    );
+    let lastScrollY = getScrollY();
     let headerMeasureFrame = 0;
     let headerMeasureTimer = 0;
 
@@ -176,7 +182,7 @@ const MemberJoinPage = () => {
     };
 
     const syncHeaderState = () => {
-      const nextScrollY = Math.max(0, window.scrollY);
+      const nextScrollY = getScrollY();
       const delta = nextScrollY - lastScrollY;
       document.body.classList.toggle('aac-signup-header-scrolled', nextScrollY > 24);
 
@@ -194,11 +200,13 @@ const MemberJoinPage = () => {
     headerMeasureTimer = window.setTimeout(syncHeaderClearance, 500);
     syncHeaderState();
     window.addEventListener('scroll', syncHeaderState, { passive: true });
+    portalScrollContainer?.addEventListener('scroll', syncHeaderState, { passive: true });
     window.addEventListener('resize', syncHeaderClearance);
     return () => {
       window.cancelAnimationFrame(headerMeasureFrame);
       window.clearTimeout(headerMeasureTimer);
       window.removeEventListener('scroll', syncHeaderState);
+      portalScrollContainer?.removeEventListener('scroll', syncHeaderState);
       window.removeEventListener('resize', syncHeaderClearance);
       document.documentElement.style.removeProperty('--aac-signup-header-clearance');
       document.body.classList.remove('aac-signup-header-managed', 'aac-signup-header-scrolled', 'aac-signup-header-hidden');
