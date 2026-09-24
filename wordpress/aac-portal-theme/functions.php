@@ -219,8 +219,8 @@ function aac_portal_theme_default_settings() {
 			'home_partner_logos'              => [],
 		],
 		'design' => [
-			'page_background'          => '#f7f1e3',
-			'panel_background'         => '#fffaf1',
+			'page_background'          => '#ffffff',
+			'panel_background'         => '#ffffff',
 			'panel_border_color'       => '#d7cec0',
 			'primary_action_background'=> '#8f1515',
 			'primary_action_text'      => '#ffffff',
@@ -374,6 +374,7 @@ function aac_portal_theme_get_header_actions() {
 			['label' => __('Account', 'aac-portal-theme'), 'url' => aac_portal_theme_portal_route('profile'), 'kind' => 'primary', 'icon' => 'user'],
 			['label' => __('Donate', 'aac-portal-theme'), 'url' => 'https://membership.americanalpineclub.org/donate', 'kind' => 'secondary', 'icon' => 'dollar'],
 			['label' => __('Rescue', 'aac-portal-theme'), 'url' => home_url('/rescue/'), 'kind' => 'utility', 'icon' => 'shield'],
+			['label' => __('Sign Out', 'aac-portal-theme'), 'url' => wp_logout_url(home_url('/')), 'kind' => 'utility', 'icon' => 'logout'],
 		];
 	}
 

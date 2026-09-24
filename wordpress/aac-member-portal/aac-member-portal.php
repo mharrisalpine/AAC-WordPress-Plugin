@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.631
+ * Version: 1.0.641
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.631');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.641');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -27,6 +27,7 @@ require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-runtime-c
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-database.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-number.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-daily-member-export.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-koha-sync.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-import-manager.php';
 if (defined('WP_CLI') && WP_CLI) {
 	require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-wp-cli-importer.php';
@@ -73,6 +74,7 @@ final class AAC_Member_Portal_Plugin {
 		new AAC_Member_Portal_Member_Database();
 		new AAC_Member_Portal_Member_Number();
 		new AAC_Member_Portal_Daily_Member_Export();
+		new AAC_Member_Portal_Koha_Sync();
 		new AAC_Member_Portal_Import_Manager();
 		AAC_Member_Portal_Error_Log::init();
 
@@ -111,6 +113,7 @@ final class AAC_Member_Portal_Plugin {
 			add_action('init', [$this, 'maybe_seed_pmpro_checkout_username'], 1);
 			add_action('init', [$this, 'maybe_apply_partner_family_checkout_level_override'], 2);
 			add_action('init', [$this, 'maybe_apply_partner_country_checkout_level_override'], 3);
+			add_action('init', [$this, 'maybe_apply_submitted_pmpro_discount_code_to_request'], 4);
 			add_action('init', [$this, 'maybe_apply_membership_discount_code_to_request'], 4);
 			add_action('init', [$this, 'maybe_remove_partner_only_discount_from_non_partner_checkout'], 5);
 			add_action('init', [$this, 'log_checkout_post_checkpoint'], 6);
@@ -124,9 +127,12 @@ final class AAC_Member_Portal_Plugin {
 		add_filter('gettext', [$this, 'filter_pmpro_cancel_review_language'], 20, 3);
 		add_action('admin_init', [$this, 'maybe_restore_pmpro_admin_capabilities']);
 		add_filter('user_has_cap', [$this, 'maybe_grant_pmpro_admin_capabilities'], 20, 4);
-		add_filter('login_url', [$this, 'filter_login_url_to_portal'], 20, 3);
+		// PMPro replaces login_url at priority 50; route after it, not before it.
+		add_filter('login_url', [$this, 'filter_login_url_to_portal'], 100, 3);
+		add_filter('pmpro_login_url', [$this, 'filter_login_url_to_portal'], 100, 3);
 		add_filter('login_redirect', [$this, 'filter_administrator_login_redirect'], 20, 3);
 		add_action('login_enqueue_scripts', [$this, 'render_branded_wp_login_styles']);
+		add_action('login_header', [$this, 'render_branded_wp_login_intro']);
 		add_filter('login_headerurl', [$this, 'filter_wp_login_logo_url']);
 		add_filter('login_headertext', [$this, 'filter_wp_login_logo_text']);
 		add_filter('login_body_class', [$this, 'filter_wp_login_body_classes'], 10, 2);
@@ -254,6 +260,7 @@ final class AAC_Member_Portal_Plugin {
 		wp_localize_script('aac-checkout-security', 'aacCheckoutSecurity', [
 			'url' => admin_url('admin-ajax.php'),
 			'context' => $this->checkout_session_context(),
+			'states' => $this->get_checkout_state_options(),
 		]);
 	}
 
@@ -286,6 +293,20 @@ final class AAC_Member_Portal_Plugin {
 		$classes[] = 'aac-branded-wp-login--' . sanitize_html_class((string) $action);
 
 		return array_values(array_unique($classes));
+	}
+
+	public function render_branded_wp_login_intro() {
+		if (isset($_REQUEST['interim-login'])) { return; }
+		$settings = AAC_Member_Portal_Settings_Schema::get_settings(AAC_Member_Portal_Admin::OPTION_KEY);
+		$content = isset($settings['content']) && is_array($settings['content']) ? $settings['content'] : [];
+		?>
+		<section class="aac-native-login-intro" aria-label="American Alpine Club">
+			<p class="aac-native-login-kicker"><?php echo esc_html($content['login_hero_kicker'] ?? 'Member access'); ?></p>
+			<h2>United<br>We Climb.</h2>
+			<p><?php echo esc_html($content['login_hero_description'] ?? 'Sign in to access your American Alpine Club membership.'); ?></p>
+			<a href="<?php echo esc_url(home_url('/signup/')); ?>">Join Now</a>
+		</section>
+		<?php
 	}
 
 	public function render_branded_wp_login_styles() {
@@ -500,6 +521,26 @@ final class AAC_Member_Portal_Plugin {
 				body.aac-branded-wp-login #registerform {
 					padding: 24px 20px;
 				}
+			}
+			/* Same hero, black form surface and gold primary action as the member sign-in. */
+			.aac-native-login-intro { position: relative; z-index: 1; width: min(520px, calc(100% - 48px)); margin: 48px auto 24px; }
+			.aac-native-login-intro .aac-native-login-kicker { color: var(--aac-login-gold); text-transform: uppercase; letter-spacing: .3em; font-size: 12px; }
+			.aac-native-login-intro h2 { font-size: clamp(64px, 7vw, 106px); line-height: .92; margin: 18px 0 24px; color: white; }
+			.aac-native-login-intro p { font-size: 20px; line-height: 1.6; }
+			.aac-native-login-intro a { display: inline-flex; align-items: center; min-height: 48px; padding: 0 24px; margin-top: 24px; background: var(--aac-login-red); color: white; text-transform: uppercase; text-decoration: none; font-weight: 600; letter-spacing: .14em; font-size: 14px; }
+			body.aac-branded-wp-login #loginform,
+			body.aac-branded-wp-login #lostpasswordform,
+			body.aac-branded-wp-login #resetpassform { background: #000; }
+			body.aac-branded-wp-login #loginform::before { content: "Welcome back."; font-size: 28px; text-transform: none; letter-spacing: normal; color: white; }
+			body.aac-branded-wp-login .button-primary { background: var(--aac-login-gold); border-color: var(--aac-login-gold); color: #000; width: 100%; margin-top: 22px; font-size: 16px; text-transform: none; letter-spacing: normal; }
+			body.aac-branded-wp-login .button-primary:hover,
+			body.aac-branded-wp-login .button-primary:focus { background: #ffd86a; border-color: #ffd86a; color: #000; }
+			body.aac-branded-wp-login label { font-size: 16px; }
+			@media (min-width: 1000px) {
+				body.aac-branded-wp-login:not(.interim-login) { box-sizing: border-box; display: grid; grid-template-columns: minmax(0,520px) minmax(0,440px); gap: 32px 64px; align-content: center; align-items: center; justify-content: center; padding: 64px 32px; }
+				body.aac-branded-wp-login .aac-native-login-intro { grid-column: 1; grid-row: 1; width: 100%; margin: 0; }
+				body.aac-branded-wp-login:not(.interim-login) #login { grid-column: 2; grid-row: 1; width: 100%; margin: 0; padding: 0; }
+				body.aac-branded-wp-login .language-switcher { grid-column: 2; }
 			}
 		</style>
 		<?php
@@ -1687,6 +1728,8 @@ final class AAC_Member_Portal_Plugin {
 	}
 
 	public function maybe_redirect_frontend_login_to_portal() {
+		// Never discard a native login/reset POST or redirect credentials in a URL.
+		if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') { return; }
 		if (is_admin() || is_user_logged_in()) {
 			return;
 		}
@@ -1696,11 +1739,6 @@ final class AAC_Member_Portal_Plugin {
 		}
 
 		if (!$this->is_frontend_login_request()) {
-			return;
-		}
-
-		$queried = get_queried_object();
-		if ($queried instanceof WP_Post && has_shortcode($queried->post_content, self::LOGIN_SHORTCODE)) {
 			return;
 		}
 
@@ -1717,10 +1755,14 @@ final class AAC_Member_Portal_Plugin {
 		}
 
 		if ($this->is_wp_admin_auth_request($admin_redirect) || $this->should_preserve_wp_login_url($this->get_current_request_url(), $admin_redirect)) {
+			nocache_headers();
 			wp_safe_redirect($this->build_wp_login_url_from_current_request($admin_redirect));
 			exit;
 		}
 
+		$queried = get_queried_object();
+		if ($queried instanceof WP_Post && has_shortcode($queried->post_content, self::LOGIN_SHORTCODE)) { return; }
+		nocache_headers();
 		wp_safe_redirect($this->build_portal_login_url($redirect_to));
 		exit;
 	}
@@ -1747,11 +1789,8 @@ final class AAC_Member_Portal_Plugin {
 			$this->is_wp_admin_auth_request($redirect) ||
 			$this->should_preserve_wp_login_url($login_url, $redirect)
 		) {
-			return $login_url;
-		}
-
-		if (!$this->should_use_portal_login($redirect)) {
-			return $login_url;
+			$native_url = $this->build_wp_login_url_from_current_request(wp_validate_redirect($redirect, ''), $login_url);
+			return $force_reauth ? add_query_arg('reauth', '1', $native_url) : $native_url;
 		}
 
 		return $this->build_portal_login_url($redirect);
@@ -1766,7 +1805,7 @@ final class AAC_Member_Portal_Plugin {
 			return $redirect_to;
 		}
 
-		return admin_url();
+		return $requested_redirect_to ? wp_validate_redirect($requested_redirect_to, admin_url()) : admin_url();
 	}
 
 		public function filter_pmpro_required_user_fields($required_fields) {
@@ -2075,6 +2114,16 @@ final class AAC_Member_Portal_Plugin {
 			return;
 		}
 
+		// A code entered in PMPro's separate promo-code field takes precedence over
+		// AAC's eligibility discount. PMPro renders that input as
+		// `pmpro_other_discount_code`, but its authoritative checkout calculation
+		// reads `pmpro_discount_code`. The normalizer immediately above this hook
+		// copies and validates that submitted value for PMPro; do not overwrite it
+		// with STUDENT, MILITARY, or another AAC eligibility code.
+		if ($this->get_uppercase_request_value('pmpro_other_discount_code') !== '') {
+			return;
+		}
+
 		$checkout_level = $this->get_level_at_checkout();
 		if (!$this->supports_discount_tiers($checkout_level)) {
 			return;
@@ -2096,6 +2145,33 @@ final class AAC_Member_Portal_Plugin {
 		foreach (['discount_code', 'pmpro_discount_code', 'other_discount_code'] as $request_key) {
 			$_REQUEST[$request_key] = $discount_code;
 			$_GET[$request_key] = $discount_code;
+			$_POST[$request_key] = $discount_code;
+		}
+	}
+
+	/**
+	 * Normalize PMPro's visible promo field into the field consumed by
+	 * pmpro_getLevelAtCheckout(). PMPro then performs its normal server-side
+	 * validation, attaches code_id/discount_code to the checkout level, records
+	 * the code use on the order, and sends the discounted amounts to Stripe.
+	 */
+	public function maybe_apply_submitted_pmpro_discount_code_to_request() {
+		if (is_admin() || !$this->is_pmpro_checkout_request()) {
+			return;
+		}
+
+		$request_method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : '';
+		if ($request_method !== 'POST') {
+			return;
+		}
+
+		$discount_code = $this->get_uppercase_request_value('pmpro_other_discount_code');
+		if ($discount_code === '') {
+			return;
+		}
+
+		foreach (['discount_code', 'pmpro_discount_code', 'other_discount_code'] as $request_key) {
+			$_REQUEST[$request_key] = $discount_code;
 			$_POST[$request_key] = $discount_code;
 		}
 	}
@@ -2306,11 +2382,41 @@ final class AAC_Member_Portal_Plugin {
 		(function () {
 			const checkoutBasePrice = <?php echo wp_json_encode($summary_base_price); ?>;
 			const checkoutLevelName = <?php echo wp_json_encode($summary_level_name); ?>;
+			const checkoutLevelId = <?php echo wp_json_encode($checkout_level && isset($checkout_level->id) ? (int) $checkout_level->id : 0); ?>;
+			const promoValidationConfig = {
+				endpoint: <?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>,
+				nonce: <?php echo wp_json_encode(wp_create_nonce('aac_validate_pmpro_discount_code')); ?>,
+			};
 			const formatMoney = (amount) => `${amount < 0 ? '-' : ''}$${Math.abs(amount).toFixed(2)}`;
 			const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
 				'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
 			}[character]));
 			let simpleCheckoutWizardStep = 0;
+
+			async function validatePromoForSummary() {
+				const input = document.getElementById('pmpro_other_discount_code');
+				const code = String(input?.value || '').trim();
+				if (!code || !checkoutLevelId) return;
+				const body = new URLSearchParams({
+					action: 'aac_validate_pmpro_discount_code',
+					nonce: promoValidationConfig.nonce,
+					code,
+					level_id: String(checkoutLevelId),
+				});
+				try {
+					const response = await fetch(promoValidationConfig.endpoint, {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+						body,
+					});
+					const payload = await response.json();
+					window.__aacValidatedDiscountCode = payload?.success ? payload.data : null;
+				} catch (error) {
+					window.__aacValidatedDiscountCode = null;
+				}
+				window.setTimeout(syncOrderSummary, 0);
+			}
 
 			function ensureSignupAccountFields(form) {
 				if (!form || !new URLSearchParams(window.location.search).has('aac_signup')) return null;
@@ -2739,7 +2845,16 @@ final class AAC_Member_Portal_Plugin {
 				const hasSeparatePromo = promoCode !== '' && promoCode.toLowerCase() !== membershipCode;
 				const nativeCostText = document.getElementById('pmpro_level_cost')?.innerText || '';
 				const nativePriceMatch = nativeCostText.match(/\$\s*([0-9,]+(?:\.\d{1,2})?)/);
-				const nativeMembershipPrice = nativePriceMatch ? Number.parseFloat(nativePriceMatch[1].replace(/,/g, '')) : checkoutBasePrice;
+				const scrapedMembershipPrice = nativePriceMatch ? Number.parseFloat(nativePriceMatch[1].replace(/,/g, '')) : checkoutBasePrice;
+				const validatedPromo = window.__aacValidatedDiscountCode || null;
+				const validatedPromoCode = String(validatedPromo?.code || '').trim().toLowerCase();
+				const validatedPromoPrice = validatedPromoCode === promoCode.toLowerCase()
+					? Number.parseFloat(validatedPromo?.initial_payment ?? validatedPromo?.billing_amount ?? '')
+					: Number.NaN;
+				const pmproCodePrice = Number.parseFloat(window.pmpropbc?.code_level?.initial_payment ?? '');
+				const nativeMembershipPrice = Number.isFinite(validatedPromoPrice)
+					? validatedPromoPrice
+					: (hasSeparatePromo && Number.isFinite(pmproCodePrice) ? pmproCodePrice : scrapedMembershipPrice);
 				const discountedMembership = Math.max(0, checkoutBasePrice - membershipDiscount);
 				const promoDiscount = hasSeparatePromo && Number.isFinite(nativeMembershipPrice)
 					? Math.max(0, Math.round((discountedMembership - nativeMembershipPrice) * 100) / 100)
@@ -3050,6 +3165,11 @@ final class AAC_Member_Portal_Plugin {
 				}
 			});
 			document.addEventListener('click', function (event) {
+				if (event.target.closest('#other_discount_code_button')) {
+					validatePromoForSummary();
+				}
+			}, true);
+			document.addEventListener('click', function (event) {
 				if (event.target.closest('.aac-membership-discounts__label')) {
 					window.setTimeout(syncDiscountDetailPanels, 0);
 					window.setTimeout(enhanceDonation, 0);
@@ -3244,6 +3364,27 @@ final class AAC_Member_Portal_Plugin {
 		<?php
 	}
 
+	private function get_validated_promo_checkout_totals($level) {
+		// These markers are set by PMPro only after pmpro_checkDiscountCode succeeds.
+		// Never treat the presence of a code in $_REQUEST as validated pricing.
+		if (empty($level->code_id) || empty($level->discount_code)) {
+			return null;
+		}
+		$key = (int) $level->id . ':' . (int) $level->code_id . ':' . (string) $level->discount_code;
+		$snapshot = $level->aac_validated_promo_totals ?? null;
+		if (!is_array($snapshot) || ($snapshot['key'] ?? '') !== $key) {
+			// Keep the original PMPro amounts on this level object so a later pass
+			// cannot compound a donation or surcharge already added by other filters.
+			$snapshot = [
+				'key' => $key,
+				'initial' => max(0, (float) $level->initial_payment),
+				'recurring' => max(0, (float) ($level->billing_amount ?? 0)),
+			];
+			$level->aac_validated_promo_totals = $snapshot;
+		}
+		return $snapshot;
+	}
+
 	public function filter_pmpro_checkout_level_for_magazine_addons($level) {
 		if (!$level || !is_object($level)) {
 			return $level;
@@ -3268,6 +3409,17 @@ final class AAC_Member_Portal_Plugin {
 		$base_membership_recurring_total = $is_public_signup_checkout && $catalog_membership_total !== null
 			? max(0, (float) $catalog_membership_total)
 			: max(0, $this->get_level_recurring_total($level));
+		$validated_promo_totals = $is_public_signup_checkout ? $this->get_validated_promo_checkout_totals($level) : null;
+		if ($validated_promo_totals !== null) {
+			$base_membership_initial_total = $validated_promo_totals['initial'];
+			$base_membership_recurring_total = $validated_promo_totals['recurring'];
+		}
+		$validated_promo_code = $validated_promo_totals !== null
+			? strtoupper(sanitize_text_field((string) ($level->discount_code ?? '')))
+			: '';
+		$requested_membership_discount_code = $this->get_membership_discount_code($this->get_requested_membership_discount_type());
+		$has_separate_validated_promo = $validated_promo_code !== ''
+			&& $validated_promo_code !== strtoupper((string) $requested_membership_discount_code);
 		$incoming_base_membership_initial_total = $base_membership_initial_total;
 		$prorated_upgrade_initial_total = $this->get_prorated_upgrade_initial_total_for_checkout(
 			$level,
@@ -3302,6 +3454,12 @@ final class AAC_Member_Portal_Plugin {
 		$partner_family_total = $this->get_partner_family_addon_total($base_membership_recurring_total, $partner_family_config);
 		$membership_discount_amount = $this->get_requested_membership_discount_amount($base_membership_initial_total, $level, $partner_family_config);
 		$membership_recurring_discount_amount = $this->get_requested_membership_discount_amount($base_membership_recurring_total, $level, $partner_family_config);
+		if ($has_separate_validated_promo) {
+			// A separately entered PMPro promo is replacement pricing. Do not apply
+			// the AAC eligibility discount a second time to the promo price.
+			$membership_discount_amount = 0.0;
+			$membership_recurring_discount_amount = 0.0;
+		}
 		$selected_addons = [];
 		$addon_total = 0.0;
 		$checkout_account_info = $this->get_checkout_account_info_from_request();
@@ -3335,7 +3493,7 @@ final class AAC_Member_Portal_Plugin {
 			&& !$prepaid_renewal_context
 		) {
 			// PMPro Donations adds its amount later at priority 99. Reset public
-			// signup pricing to the catalog amount on every filter pass so repeated
+			// signup pricing to its validated promo or catalog base on every pass so repeated
 			// PMPro recalculations cannot compound the same donation.
 			if ($is_public_signup_checkout && $catalog_membership_total !== null) {
 				$level->initial_payment = $base_membership_initial_total;
@@ -10623,6 +10781,42 @@ CSS;
 		];
 	}
 
+	public function get_checkout_state_options() {
+		if (function_exists('pmprosd_states')) {
+			$states = pmprosd_states();
+			if (is_array($states) && !empty($states)) {
+				return $states;
+			}
+		}
+
+		return [
+			'US' => [
+				'AL' => 'Alabama', 'AK' => 'Alaska', 'AZ' => 'Arizona', 'AR' => 'Arkansas',
+				'CA' => 'California', 'CO' => 'Colorado', 'CT' => 'Connecticut', 'DE' => 'Delaware',
+				'DC' => 'District of Columbia', 'FL' => 'Florida', 'GA' => 'Georgia', 'HI' => 'Hawaii',
+				'ID' => 'Idaho', 'IL' => 'Illinois', 'IN' => 'Indiana', 'IA' => 'Iowa',
+				'KS' => 'Kansas', 'KY' => 'Kentucky', 'LA' => 'Louisiana', 'ME' => 'Maine',
+				'MD' => 'Maryland', 'MA' => 'Massachusetts', 'MI' => 'Michigan', 'MN' => 'Minnesota',
+				'MS' => 'Mississippi', 'MO' => 'Missouri', 'MT' => 'Montana', 'NE' => 'Nebraska',
+				'NV' => 'Nevada', 'NH' => 'New Hampshire', 'NJ' => 'New Jersey', 'NM' => 'New Mexico',
+				'NY' => 'New York', 'NC' => 'North Carolina', 'ND' => 'North Dakota', 'OH' => 'Ohio',
+				'OK' => 'Oklahoma', 'OR' => 'Oregon', 'PA' => 'Pennsylvania', 'RI' => 'Rhode Island',
+				'SC' => 'South Carolina', 'SD' => 'South Dakota', 'TN' => 'Tennessee', 'TX' => 'Texas',
+				'UT' => 'Utah', 'VT' => 'Vermont', 'VA' => 'Virginia', 'WA' => 'Washington',
+				'WV' => 'West Virginia', 'WI' => 'Wisconsin', 'WY' => 'Wyoming',
+				'AS' => 'American Samoa', 'GU' => 'Guam', 'MP' => 'Northern Mariana Islands',
+				'PR' => 'Puerto Rico', 'VI' => 'U.S. Virgin Islands',
+				'AA' => 'Armed Forces Americas', 'AE' => 'Armed Forces Europe', 'AP' => 'Armed Forces Pacific',
+			],
+			'CA' => [
+				'AB' => 'Alberta', 'BC' => 'British Columbia', 'MB' => 'Manitoba',
+				'NB' => 'New Brunswick', 'NL' => 'Newfoundland and Labrador', 'NS' => 'Nova Scotia',
+				'NT' => 'Northwest Territories', 'NU' => 'Nunavut', 'ON' => 'Ontario',
+				'PE' => 'Prince Edward Island', 'QC' => 'Quebec', 'SK' => 'Saskatchewan', 'YT' => 'Yukon',
+			],
+		];
+	}
+
 	private function get_runtime_config($embed_mode = '') {
 		global $pmpro_countries;
 		$embed_mode = sanitize_key((string) $embed_mode);
@@ -10648,7 +10842,7 @@ CSS;
 			'initialAuth' => $initial_auth,
 			'addressOptions' => [
 				'countries' => is_array($pmpro_countries) ? $pmpro_countries : [],
-				'states' => function_exists('pmprosd_states') ? pmprosd_states() : [],
+				'states' => $this->get_checkout_state_options(),
 			],
 			'portalPageUrl' => untrailingslashit($this->get_portal_page_url()),
 			'mainWebsiteBaseUrl' => untrailingslashit(home_url()),
@@ -11143,10 +11337,15 @@ CSS;
 	}
 
 	private function is_frontend_login_request() {
-		$login_path = $this->normalize_path(home_url('/login/'));
 		$request_path = $this->get_current_request_path();
-
-		return $request_path && $login_path && $request_path === $login_path;
+		if (!$request_path) { return false; }
+		foreach (['login', 'login-2', 'sign-in', 'signin'] as $slug) {
+			if ($request_path === $this->normalize_path(home_url('/' . $slug . '/'))) { return true; }
+		}
+		$login_page_id = (int) get_option('pmpro_login_page_id');
+		if ($login_page_id && is_page($login_page_id)) { return true; }
+		$post = get_queried_object();
+		return $post instanceof WP_Post && (has_shortcode($post->post_content, 'pmpro_login') || has_shortcode($post->post_content, self::LOGIN_SHORTCODE));
 	}
 
 	private function is_pmpro_frontend_request() {
@@ -11234,7 +11433,7 @@ CSS;
 		}
 
 		$action = isset($query_args['action']) ? sanitize_key((string) $query_args['action']) : '';
-		if (in_array($action, ['lostpassword', 'retrievepassword', 'rp', 'resetpass'], true)) {
+		if ($action && $action !== 'login') {
 			return true;
 		}
 
@@ -11249,23 +11448,34 @@ CSS;
 		return $redirect && $this->is_wp_admin_url($redirect);
 	}
 
-	private function build_wp_login_url_from_current_request($redirect = '') {
+	private function build_wp_login_url_from_current_request($redirect = '', $source_url = '') {
 		$query_args = [];
+		$source = $_GET;
+		if ($source_url !== '') {
+			parse_str((string) wp_parse_url($source_url, PHP_URL_QUERY), $source);
+		}
 
 		if ($redirect) {
 			$query_args['redirect_to'] = $redirect;
 		}
 
-		if (isset($_GET['interim-login'])) {
-			$query_args['interim-login'] = sanitize_text_field(wp_unslash($_GET['interim-login']));
+		if (isset($source['interim-login'])) {
+			$query_args['interim-login'] = sanitize_text_field(wp_unslash($source['interim-login']));
 		}
 
-		if (isset($_GET['reauth'])) {
-			$query_args['reauth'] = sanitize_text_field(wp_unslash($_GET['reauth']));
+		if (isset($source['reauth'])) {
+			$query_args['reauth'] = sanitize_text_field(wp_unslash($source['reauth']));
 		}
 
-		if (isset($_GET['wp_lang'])) {
-			$query_args['wp_lang'] = sanitize_text_field(wp_unslash($_GET['wp_lang']));
+		if (isset($source['wp_lang'])) {
+			$query_args['wp_lang'] = sanitize_text_field(wp_unslash($source['wp_lang']));
+		}
+		// Preserve password reset keys and native actions when leaving PMPro's page.
+		foreach (['action', 'key', 'login', 'checkemail', 'resetpass'] as $key) {
+			if (isset($source[$key]) && is_string($source[$key])) { $query_args[$key] = sanitize_text_field(wp_unslash($source[$key])); }
+		}
+		if (($query_args['action'] ?? '') === 'reset_pass') {
+			$query_args['action'] = !empty($query_args['key']) ? 'rp' : 'lostpassword';
 		}
 
 		return add_query_arg($query_args, $this->get_wp_login_base_url());
@@ -11693,6 +11903,7 @@ register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Import_Mana
 register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Plugin', 'install_brand_discounts_page']);
 register_activation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Plugin', 'install_signup_page']);
 register_deactivation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Daily_Member_Export', 'deactivate']);
+register_deactivation_hook(AAC_MEMBER_PORTAL_FILE, ['AAC_Member_Portal_Koha_Sync', 'deactivate']);
 $GLOBALS['aac_member_portal_plugin'] = new AAC_Member_Portal_Plugin();
 
 function aac_member_portal() {

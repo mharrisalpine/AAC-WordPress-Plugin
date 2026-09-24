@@ -20,6 +20,9 @@ class AAC_Salesforce_Sync_Worker {
 		'state',
 		'postal_code',
 		'country',
+		'event_id',
+		'source_modified_at',
+		'schema_version',
 	];
 	const INBOUND_MEMBERSHIP_FIELDS = [
 		'wordpress_user_id',
@@ -37,6 +40,9 @@ class AAC_Salesforce_Sync_Worker {
 		'mortal_remains_amount',
 		'rescue_reimbursement_process',
 		'pmpro_level_id',
+		'event_id',
+		'source_modified_at',
+		'schema_version',
 	];
 	const INBOUND_TRANSACTION_FIELDS = [
 		'amount',
@@ -63,6 +69,7 @@ class AAC_Salesforce_Sync_Worker {
 	];
 
 	private $inbound_sync_user_ids = [];
+	private $last_salesforce_request = null;
 
 	public function __construct() {
 		add_action('init', ['AAC_Salesforce_Sync_Installer', 'maybe_install_schema']);
@@ -78,7 +85,8 @@ class AAC_Salesforce_Sync_Worker {
 		add_action('aac_member_portal_profile_updated', [$this, 'enqueue_profile_updated'], 30, 1);
 		add_action('pmpro_after_checkout', [$this, 'enqueue_after_checkout'], 40, 2);
 		add_action('pmpro_after_change_membership_level', [$this, 'enqueue_after_membership_change'], 40, 2);
-		add_action('aac_grants_review_workflow_updated', [$this, 'enqueue_grant_workflow_update'], 30, 4);
+		add_action('pmpro_updated_order', [$this, 'enqueue_updated_order'], 40, 1);
+		add_action('delete_user', [$this, 'enqueue_user_deletion'], 30, 3);
 		add_action('aac_member_portal_family_account_linked', [$this, 'enqueue_family_account_linked'], 30, 2);
 	}
 
@@ -148,7 +156,49 @@ class AAC_Salesforce_Sync_Worker {
 	}
 
 	public function enqueue_after_membership_change($level_id, $user_id = 0) {
-		$this->enqueue_membership_job((int) $user_id, 'membership_change', ['level_id' => (int) $level_id]);
+		$this->enqueue_membership_job((int) $user_id, 'membership_change', [
+			'level_id' => (int) $level_id,
+			'_sync' => ['operation' => (int) $level_id === 0 ? 'cancelled' : 'upsert'],
+		]);
+	}
+
+	public function enqueue_updated_order($order) {
+		if (!is_object($order) && !is_array($order)) {
+			return;
+		}
+		$user_id = is_object($order) ? absint($order->user_id ?? 0) : absint($order['user_id'] ?? 0);
+		$order_id = is_object($order) ? absint($order->id ?? 0) : absint($order['id'] ?? 0);
+		if ($user_id > 0) {
+			$this->enqueue_transaction_job($user_id, $order_id, 'pmpro_order_updated');
+		}
+	}
+
+	public function enqueue_user_deletion($user_id, $reassign = null, $user = null) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0) {
+			return;
+		}
+
+		$operation = absint($reassign) > 0 ? 'merged' : 'deleted';
+		$targets = ['contact' => [(string) $user_id], 'membership' => []];
+		foreach ($this->get_recent_membership_history_entries($user_id, 1000) as $history_entry) {
+			$targets['membership'][] = $this->get_membership_term_external_key($user_id, $history_entry);
+		}
+		if (!$targets['membership']) {
+			$targets['membership'][] = $this->get_external_key($user_id);
+		}
+		foreach ($targets as $group => $external_keys) {
+			if (!$this->is_sync_enabled($group)) {
+				continue;
+			}
+			foreach (array_unique($external_keys) as $external_key) {
+				AAC_Salesforce_Sync_Queue::enqueue('lifecycle_record', $group, $user_id, $external_key, [
+					'group' => $group,
+					'merged_into_user_id' => absint($reassign),
+					'_sync' => ['operation' => $operation],
+				], 'wordpress_user_lifecycle');
+			}
+		}
 	}
 
 	public function enqueue_family_account_linked($parent_user_id, $child_user_id) {
@@ -219,35 +269,6 @@ class AAC_Salesforce_Sync_Worker {
 		);
 	}
 
-	public function enqueue_grant_workflow_update($application_id, $application = [], $previous_status = '', $new_status = '') {
-		$application_id = (int) $application_id;
-		$new_status = sanitize_key((string) $new_status);
-
-		if ($application_id <= 0 || !$this->is_sync_enabled('grant')) {
-			return;
-		}
-
-		if ($new_status === '') {
-			return;
-		}
-
-		$application = is_array($application) ? $application : [];
-		$external_key = (string) $application_id;
-		AAC_Salesforce_Sync_Queue::enqueue(
-			'upsert_grant',
-			'grant',
-			$application_id,
-			$external_key,
-			[
-				'application_id' => $application_id,
-				'user_id' => absint($application['applicant_user_id'] ?? 0),
-				'status_key' => $new_status,
-				'previous_status' => sanitize_key((string) $previous_status),
-			],
-			'grant_workflow_' . $new_status
-		);
-	}
-
 	public function process_queue($limit = null, $force = false) {
 		$settings = AAC_Salesforce_Sync_Settings::get_settings();
 		if (empty($settings['general']['enabled'])) {
@@ -259,36 +280,99 @@ class AAC_Salesforce_Sync_Worker {
 			return 0;
 		}
 
-		AAC_Salesforce_Sync_Queue::reset_stale_locks();
-		$client = new AAC_Salesforce_Sync_Salesforce_Client();
-		$batch_size = $limit ? absint($limit) : (int) $settings['general']['batch_size'];
-		$processed = 0;
-
-		for ($i = 0; $i < $batch_size; $i++) {
-			$job = AAC_Salesforce_Sync_Queue::claim_next($force, $allowed_job_types);
-			if (!$job) {
-				break;
-			}
-
-			try {
-				$this->process_job($job, $client, $settings);
-				AAC_Salesforce_Sync_Queue::complete($job['id']);
-				$processed++;
-			} catch (Exception $exception) {
-				AAC_Salesforce_Sync_Queue::release_with_retry($job, $exception->getMessage());
-			}
+		$worker_lock = AAC_Salesforce_Sync_Queue::acquire_worker_lock();
+		if ($worker_lock === '') {
+			return 0;
 		}
 
-		return $processed;
+		try {
+			AAC_Salesforce_Sync_Queue::reset_stale_locks();
+			$client = new AAC_Salesforce_Sync_Salesforce_Client();
+			$batch_size = $limit ? absint($limit) : (int) $settings['general']['batch_size'];
+			$processed = 0;
+
+			for ($i = 0; $i < $batch_size; $i++) {
+				AAC_Salesforce_Sync_Queue::refresh_worker_lock($worker_lock);
+				$job = AAC_Salesforce_Sync_Queue::claim_next($force, $allowed_job_types);
+				if (!$job) {
+					break;
+				}
+
+					$this->last_salesforce_request = null;
+					$started_at = microtime(true);
+					try {
+					$this->process_job($job, $client, $settings);
+						AAC_Salesforce_Sync_Queue::complete($job['id'], (string) ($job['lock_token'] ?? ''));
+						AAC_Salesforce_Sync_Health::record_event('job_completed', [
+							'job_id' => (int) $job['id'], 'event_id' => (string) ($job['event_id'] ?? ''),
+							'job_type' => (string) $job['job_type'], 'object_type' => (string) $job['object_type'],
+							'external_key' => (string) $job['external_key'], 'status' => 'completed',
+							'duration_ms' => (int) round((microtime(true) - $started_at) * 1000),
+						]);
+					$processed++;
+				} catch (Throwable $exception) {
+					AAC_Salesforce_Sync_Error_Log::record_job_failure($job, $exception->getMessage(), $this->last_salesforce_request);
+					$retryable = !($exception instanceof AAC_Salesforce_Sync_Exception) || $exception->is_retryable();
+					$retry_after = $exception instanceof AAC_Salesforce_Sync_Exception ? $exception->get_retry_after() : 0;
+						AAC_Salesforce_Sync_Queue::release_with_retry($job, $exception->getMessage(), $retryable, $retry_after);
+						AAC_Salesforce_Sync_Health::record_event('job_failed', [
+							'job_id' => (int) $job['id'], 'event_id' => (string) ($job['event_id'] ?? ''),
+							'job_type' => (string) $job['job_type'], 'object_type' => (string) $job['object_type'],
+							'external_key' => (string) $job['external_key'], 'status' => $retryable ? 'retrying' : 'dead_letter',
+							'attempts' => (int) $job['attempts'] + 1, 'duration_ms' => (int) round((microtime(true) - $started_at) * 1000),
+						]);
+				} finally {
+					$this->last_salesforce_request = null;
+				}
+			}
+
+			return $processed;
+		} finally {
+			AAC_Salesforce_Sync_Queue::release_worker_lock($worker_lock);
+		}
+	}
+
+	public function build_reconciliation_report($limit = 100) {
+		$settings = AAC_Salesforce_Sync_Settings::get_settings();
+		$definitions = AAC_Salesforce_Sync_Settings::get_object_definitions($settings);
+		$client = new AAC_Salesforce_Sync_Salesforce_Client();
+		$users = get_users(['number' => min(500, max(1, absint($limit))), 'orderby' => 'ID', 'order' => 'DESC', 'fields' => ['ID', 'user_email']]);
+		$rows = [];
+		foreach ($users as $user) {
+			foreach (['contact' => (string) $user->ID, 'membership' => $this->get_external_key($user->ID)] as $group => $external_key) {
+				if (!$this->is_sync_enabled($group, $settings)) {
+					continue;
+				}
+				$definition = (array) ($definitions[$group][$group] ?? []);
+				$object = trim((string) ($definition['object_name'] ?? ''));
+				$field = trim((string) ($definition['external_id_field'] ?? ''));
+				if ($object === '' || $field === '') {
+					continue;
+				}
+				try {
+					$salesforce_id = $client->find_record_id_by_field($object, $field, $external_key);
+					$status = $salesforce_id !== '' ? 'matched' : 'missing_in_salesforce';
+					$error = '';
+				} catch (Throwable $exception) {
+					$salesforce_id = '';
+					$status = 'error';
+					$error = $exception->getMessage();
+				}
+				$rows[] = ['user_id' => (int) $user->ID, 'email' => (string) $user->user_email, 'object' => $object, 'external_key' => $external_key, 'salesforce_id' => $salesforce_id, 'status' => $status, 'error' => $error];
+			}
+		}
+		return ['generated_at' => current_time('mysql', true), 'rows' => $rows];
 	}
 
 	private function is_sync_enabled($group, $settings = null) {
 		$settings = is_array($settings) ? $settings : AAC_Salesforce_Sync_Settings::get_settings();
+		if (empty($settings['general']['enabled'])) {
+			return false;
+		}
 		$key_map = [
 			'contact' => 'sync_contact',
 			'membership' => 'sync_membership',
 			'transaction' => 'sync_transaction',
-			'grant' => 'sync_grant',
 		];
 		$key = $key_map[$group] ?? '';
 		return $key !== '' && !empty($settings['general'][$key]);
@@ -306,8 +390,8 @@ class AAC_Salesforce_Sync_Worker {
 		if ($this->is_sync_enabled('transaction', $settings)) {
 			$allowed[] = 'upsert_transaction';
 		}
-		if ($this->is_sync_enabled('grant', $settings)) {
-			$allowed[] = 'upsert_grant';
+		if ($this->is_sync_enabled('contact', $settings) || $this->is_sync_enabled('membership', $settings)) {
+			$allowed[] = 'lifecycle_record';
 		}
 		return $allowed;
 	}
@@ -318,6 +402,10 @@ class AAC_Salesforce_Sync_Worker {
 		if (!$user instanceof WP_User) {
 			throw new RuntimeException('Could not locate WordPress user for inbound Salesforce contact payload.');
 		}
+		if (!$this->should_apply_inbound_event($user->ID, $payload, 'contact')) {
+			return $user->ID;
+		}
+		$payload = $this->apply_inbound_field_ownership($payload, 'contact');
 
 		$this->begin_inbound_sync($user->ID);
 		try {
@@ -358,13 +446,17 @@ class AAC_Salesforce_Sync_Worker {
 
 			if (!empty($updates)) {
 				$updates['ID'] = $user->ID;
-				wp_update_user($updates);
+				$result = wp_update_user($updates);
+				if (is_wp_error($result)) {
+					throw new RuntimeException($result->get_error_message());
+				}
 			}
 
 			update_user_meta($user->ID, 'aac_account_info', $account_info);
 			if (!empty($payload['salesforce_contact_id'])) {
 				update_user_meta($user->ID, 'aac_sf_contact_id', sanitize_text_field($payload['salesforce_contact_id']));
 			}
+			$this->mark_inbound_event_applied($user->ID, $payload, 'contact');
 		} finally {
 			$this->end_inbound_sync($user->ID);
 		}
@@ -378,6 +470,10 @@ class AAC_Salesforce_Sync_Worker {
 		if (!$user instanceof WP_User) {
 			throw new RuntimeException('Could not locate WordPress user for inbound Salesforce membership payload.');
 		}
+		if (!$this->should_apply_inbound_event($user->ID, $payload, 'membership')) {
+			return $user->ID;
+		}
+		$payload = $this->apply_inbound_field_ownership($payload, 'membership');
 
 		$this->begin_inbound_sync($user->ID);
 		try {
@@ -432,8 +528,12 @@ class AAC_Salesforce_Sync_Worker {
 
 			if (function_exists('pmpro_changeMembershipLevel') && array_key_exists('pmpro_level_id', $payload)) {
 				$pmpro_level_id = absint($payload['pmpro_level_id']);
-				pmpro_changeMembershipLevel($pmpro_level_id, $user->ID);
+				$result = pmpro_changeMembershipLevel($pmpro_level_id, $user->ID);
+				if ($result === false) {
+					throw new RuntimeException('PMPro rejected the inbound membership level change.');
+				}
 			}
+			$this->mark_inbound_event_applied($user->ID, $payload, 'membership');
 		} finally {
 			$this->end_inbound_sync($user->ID);
 		}
@@ -490,42 +590,110 @@ class AAC_Salesforce_Sync_Worker {
 		return $prepared;
 	}
 
+	private function apply_inbound_field_ownership($payload, $group) {
+		$field_maps = [
+			'contact' => [
+				'first_name' => 'member_db_profile_account_info_first_name', 'last_name' => 'member_db_profile_account_info_last_name',
+				'email' => 'member_db_profile_account_info_email', 'phone' => 'member_db_profile_account_info_phone',
+				'street' => 'member_db_profile_account_info_street', 'city' => 'member_db_profile_account_info_city',
+				'state' => 'member_db_profile_account_info_state', 'postal_code' => 'member_db_profile_account_info_zip',
+				'country' => 'member_db_profile_account_info_country',
+			],
+			'membership' => [
+				'member_id' => 'member_db_profile_profile_info_member_id', 'membership_level' => 'member_db_profile_profile_info_tier',
+				'status' => 'member_db_profile_profile_info_status', 'renewal_date' => 'member_db_profile_profile_info_renewal_date',
+				'expiration_date' => 'member_db_profile_profile_info_expiration_date', 'auto_renew' => 'member_db_profile_account_info_auto_renew',
+				'rescue_amount' => 'member_db_profile_benefits_info_rescue_amount', 'medical_amount' => 'member_db_profile_benefits_info_medical_amount',
+				'mortal_remains_amount' => 'member_db_profile_benefits_info_mortal_remains_amount',
+			],
+		];
+		$settings = AAC_Salesforce_Sync_Settings::get_settings();
+		$mappings = (array) ($settings['field_mappings'][$group] ?? []);
+		foreach ((array) ($field_maps[$group] ?? []) as $payload_key => $mapping_key) {
+			$mapping = AAC_Salesforce_Sync_Settings::normalize_mapping_entry($mappings[$mapping_key] ?? [], $group);
+			if (($mapping['direction'] ?? 'bidirectional') === 'outbound') {
+				unset($payload[$payload_key]);
+			}
+		}
+		return $payload;
+	}
+
+	private function should_apply_inbound_event($user_id, $payload, $group) {
+		$event_id = sanitize_text_field((string) ($payload['event_id'] ?? ''));
+		$modified = sanitize_text_field((string) ($payload['source_modified_at'] ?? ''));
+		if ($event_id === '' && $modified === '') {
+			return true;
+		}
+		$state = get_user_meta((int) $user_id, '_aac_sf_last_inbound_' . sanitize_key($group), true);
+		$state = is_array($state) ? $state : [];
+		if ($event_id !== '' && hash_equals((string) ($state['event_id'] ?? ''), $event_id)) {
+			return false;
+		}
+		if ($modified !== '' && !empty($state['source_modified_at']) && strtotime($modified) < strtotime($state['source_modified_at'])) {
+			throw new RuntimeException('Rejected stale inbound Salesforce event.');
+		}
+		return true;
+	}
+
+	private function mark_inbound_event_applied($user_id, $payload, $group) {
+		if (empty($payload['event_id']) && empty($payload['source_modified_at'])) {
+			return;
+		}
+		update_user_meta((int) $user_id, '_aac_sf_last_inbound_' . sanitize_key($group), [
+			'event_id' => sanitize_text_field((string) ($payload['event_id'] ?? '')),
+			'source_modified_at' => sanitize_text_field((string) ($payload['source_modified_at'] ?? '')),
+			'schema_version' => sanitize_text_field((string) ($payload['schema_version'] ?? '2.0')),
+			'applied_at' => current_time('mysql', true),
+		]);
+	}
+
 	private function process_job($job, AAC_Salesforce_Sync_Salesforce_Client $client, $settings) {
 		$payload = json_decode((string) $job['payload'], true);
 		$payload = is_array($payload) ? $payload : [];
+		$integration = $this->build_integration_context($job, $payload);
 
 		switch ($job['job_type']) {
 			case 'upsert_contact':
 				$profile = $this->get_portal_profile((int) $job['object_id']);
-				$context = $this->build_source_context((int) $job['object_id'], $profile);
+					$context = $this->build_source_context((int) $job['object_id'], $profile);
+					$context['integration'] = $integration;
 				$this->sync_mapped_objects_for_group('contact', $context, (string) $job['external_key'], $client, $settings);
 				break;
 
 			case 'upsert_membership':
 				$profile = $this->get_portal_profile((int) $job['object_id']);
-				$this->sync_membership_terms((int) $job['object_id'], $profile, $client, $settings);
+					$this->sync_membership_terms((int) $job['object_id'], $profile, $client, $settings, $integration);
 				break;
 
 			case 'upsert_transaction':
-				$transaction = $this->get_transaction_payload((int) ($payload['user_id'] ?? $job['object_id']), (int) ($payload['order_id'] ?? 0));
-				if (!$transaction) {
-					throw new RuntimeException('Could not build PMPro transaction payload.');
-				}
-				$profile = $this->get_portal_profile((int) ($payload['user_id'] ?? $job['object_id']));
-				$context = $this->build_source_context((int) ($payload['user_id'] ?? $job['object_id']), $profile, $transaction);
-				$external_id = (string) ($transaction['PMPro_Order_ID__c'] ?? $job['external_key']);
-				$this->sync_mapped_objects_for_group('transaction', $context, $external_id, $client, $settings);
+				$this->sync_transaction_lines(
+					(int) ($payload['user_id'] ?? $job['object_id']),
+					(int) ($payload['order_id'] ?? 0),
+					(string) $job['external_key'],
+						$client,
+						$settings,
+						$integration
+				);
 				break;
 
-			case 'upsert_grant':
-				$grant_context = $this->build_grant_source_context((int) ($payload['application_id'] ?? $job['object_id']));
-				$external_id = (string) ($grant_context['grant']['application']['review_application_id'] ?? $job['external_key']);
-				$this->sync_mapped_objects_for_group('grant', $grant_context, $external_id, $client, $settings);
-				break;
+				case 'lifecycle_record':
+					$this->sync_lifecycle_record((string) ($payload['group'] ?? $job['object_type']), (string) $job['external_key'], $integration, $client, $settings);
+					break;
 
 			default:
 				throw new RuntimeException('Unsupported sync job type: ' . $job['job_type']);
 		}
+	}
+
+	private function build_integration_context($job, $payload) {
+		$sync = isset($payload['_sync']) && is_array($payload['_sync']) ? $payload['_sync'] : [];
+		return [
+			'event_id' => sanitize_text_field((string) ($job['event_id'] ?? ($sync['event_id'] ?? ''))),
+			'schema_version' => sanitize_text_field((string) ($job['schema_version'] ?? ($sync['schema_version'] ?? '2.0'))),
+			'operation' => sanitize_key((string) ($job['operation'] ?? ($sync['operation'] ?? 'upsert'))),
+			'source_modified_at' => sanitize_text_field((string) ($job['source_modified_at'] ?? ($sync['source_modified_at'] ?? ''))),
+			'source' => sanitize_text_field((string) ($job['source'] ?? ($sync['source'] ?? 'wordpress'))),
+		];
 	}
 
 	private function get_portal_profile($user_id) {
@@ -578,6 +746,262 @@ class AAC_Salesforce_Sync_Worker {
 		return isset($payloads['transaction']) && is_array($payloads['transaction']) ? $payloads['transaction'] : [];
 	}
 
+	private function sync_transaction_lines($user_id, $order_id, $fallback_external_key, AAC_Salesforce_Sync_Salesforce_Client $client, $settings, $integration = []) {
+		$user_id = (int) $user_id;
+		$order = $this->get_pmpro_order_record($user_id, (int) $order_id);
+		if (!$order) {
+			throw new RuntimeException('Could not load PMPro order for transaction sync.');
+		}
+
+		$profile = $this->get_portal_profile($user_id);
+		$order_status = sanitize_key((string) ($order['status'] ?? ''));
+		if (in_array($order_status, ['refunded', 'refund'], true)) {
+			$integration['operation'] = 'refunded';
+		} elseif (in_array($order_status, ['cancelled', 'canceled', 'voided'], true)) {
+			$integration['operation'] = 'cancelled';
+		}
+		$lines = $this->build_pmpro_transaction_lines($order, $user_id, $fallback_external_key);
+		if (!$lines) {
+			throw new RuntimeException('Could not build PMPro transaction line payloads.');
+		}
+
+		foreach ($lines as $line) {
+			if (!is_array($line) || empty($line['line_key'])) {
+				continue;
+			}
+
+			$context = $this->build_source_context($user_id, $profile, $order);
+			$context['integration'] = $integration;
+			if (!isset($context['member_db']) || !is_array($context['member_db'])) {
+				$context['member_db'] = [];
+			}
+			$context['member_db']['transaction_line'] = $line;
+			$this->sync_mapped_objects_for_group('transaction', $context, (string) $line['line_key'], $client, $settings);
+		}
+	}
+
+	private function get_pmpro_order_record($user_id, $order_id = 0) {
+		global $wpdb;
+
+		$user_id = (int) $user_id;
+		$order_id = (int) $order_id;
+		if (!$wpdb || empty($wpdb->pmpro_membership_orders)) {
+			return [];
+		}
+
+		if ($order_id > 0) {
+			$order = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$wpdb->pmpro_membership_orders} WHERE id = %d LIMIT 1", $order_id),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		} else {
+			$order = $wpdb->get_row(
+				$wpdb->prepare("SELECT * FROM {$wpdb->pmpro_membership_orders} WHERE user_id = %d ORDER BY id DESC LIMIT 1", $user_id),
+				ARRAY_A
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		return is_array($order) ? $order : [];
+	}
+
+	private function build_pmpro_transaction_lines($order, $user_id, $fallback_external_key = '') {
+		$order = is_array($order) ? $order : [];
+		$order_id = absint($order['id'] ?? 0);
+		$order_code = sanitize_text_field((string) ($order['code'] ?? ''));
+		$order_key = $order_id > 0 ? (string) $order_id : sanitize_key($order_code);
+		if ($order_key === '') {
+			$order_key = sanitize_key((string) $fallback_external_key);
+		}
+		if ($order_key === '') {
+			return [];
+		}
+
+		$breakdown = $this->get_stored_pmpro_order_breakdown($order);
+		$items = isset($breakdown['items']) && is_array($breakdown['items']) ? $breakdown['items'] : [];
+		$total = $this->normalize_money($order['total'] ?? ($breakdown['total'] ?? 0));
+		$discount_code = $this->get_pmpro_order_discount_code($order);
+		$discount_label = '';
+		$membership_gross = 0.0;
+		$donation_amount = 0.0;
+		$discount_amount = 0.0;
+
+		foreach ($items as $item) {
+			if (!is_array($item)) {
+				continue;
+			}
+
+			$label = sanitize_text_field((string) ($item['label'] ?? ''));
+			$amount = $this->normalize_money($item['amount'] ?? 0);
+			if ($amount < 0 || $this->is_discount_line_label($label)) {
+				$discount_amount += abs($amount);
+				if ($discount_label === '') {
+					$discount_label = $label;
+				}
+				continue;
+			}
+
+			if ($this->is_donation_line_label($label)) {
+				$donation_amount += $amount;
+				continue;
+			}
+
+			if ($amount > 0) {
+				$membership_gross += $amount;
+			}
+		}
+
+		if ($membership_gross <= 0 && $total > 0) {
+			$membership_gross = max(0, $total - $donation_amount);
+		}
+
+		$membership_net = round(max(0, $membership_gross - $discount_amount), 2);
+		if ($membership_net <= 0 && $total > 0) {
+			$membership_net = max(0, round($total - $donation_amount, 2));
+			$membership_gross = max($membership_gross, round($membership_net + $discount_amount, 2));
+		}
+
+		$discount_type = $this->get_discount_type_for_salesforce($discount_code, $discount_label);
+		$shared = [
+			'pmpro_order_id' => $order_id,
+			'pmpro_order_code' => $order_code,
+			'payment_transaction_id' => sanitize_text_field((string) ($order['payment_transaction_id'] ?? '')),
+			'subscription_transaction_id' => sanitize_text_field((string) ($order['subscription_transaction_id'] ?? '')),
+		];
+		$lines = [];
+
+		if ($membership_gross > 0 || $donation_amount <= 0) {
+			$lines[] = array_merge($shared, [
+				'line_key' => $order_key . '-membership',
+				'line_type' => 'membership',
+				'product_type' => 'Membership Dues',
+				'label' => $this->get_pmpro_order_membership_label($order),
+				'amount' => round($membership_net > 0 ? $membership_net : $total, 2),
+				'gross_membership_amount' => round($membership_gross > 0 ? $membership_gross : $total, 2),
+				'discount_amount' => round($discount_amount, 2),
+				'net_membership_amount' => round($membership_net > 0 ? $membership_net : $total, 2),
+				'donation_amount' => 0,
+				'discount_code' => $discount_code,
+				'discount_type' => $discount_type,
+			]);
+		}
+
+		if ($donation_amount > 0) {
+			$lines[] = array_merge($shared, [
+				'line_key' => $order_key . '-donation',
+				'line_type' => 'donation',
+				'product_type' => 'Donation',
+				'label' => 'Donation',
+				'amount' => round($donation_amount, 2),
+				'gross_membership_amount' => 0,
+				'discount_amount' => 0,
+				'net_membership_amount' => 0,
+				'donation_amount' => round($donation_amount, 2),
+				'discount_code' => '',
+				'discount_type' => '',
+			]);
+		}
+
+		return $lines;
+	}
+
+	private function get_stored_pmpro_order_breakdown($order) {
+		$order = is_array($order) ? $order : [];
+		$order_id = absint($order['id'] ?? 0);
+		$order_code = sanitize_key((string) ($order['code'] ?? ''));
+		$keys = [];
+
+		if ($order_id > 0) {
+			$keys[] = 'aac_pmpro_order_breakdown_id_' . $order_id;
+		}
+		if ($order_code !== '') {
+			$keys[] = 'aac_pmpro_order_breakdown_code_' . $order_code;
+		}
+
+		foreach ($keys as $key) {
+			$breakdown = get_option($key, null);
+			if (is_array($breakdown) && !empty($breakdown['items']) && is_array($breakdown['items'])) {
+				return $breakdown;
+			}
+		}
+
+		return [];
+	}
+
+	private function normalize_money($value) {
+		$normalized = preg_replace('/[^0-9.\-]+/', '', (string) $value);
+		if (!is_string($normalized) || $normalized === '' || !is_numeric($normalized)) {
+			return 0.0;
+		}
+
+		return round((float) $normalized, 2);
+	}
+
+	private function is_donation_line_label($label) {
+		return strpos(strtolower((string) $label), 'donation') !== false;
+	}
+
+	private function is_discount_line_label($label) {
+		$label = strtolower((string) $label);
+		return strpos($label, 'discount') !== false || strpos($label, 'promo') !== false;
+	}
+
+	private function get_pmpro_order_discount_code($order) {
+		global $wpdb;
+
+		$order_id = is_array($order) ? absint($order['id'] ?? 0) : 0;
+		if ($order_id <= 0 || !$wpdb || empty($wpdb->pmpro_discount_codes_uses) || empty($wpdb->pmpro_discount_codes)) {
+			return '';
+		}
+
+		$code = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT dc.code
+				FROM {$wpdb->pmpro_discount_codes_uses} dcu
+				INNER JOIN {$wpdb->pmpro_discount_codes} dc ON dc.id = dcu.code_id
+				WHERE dcu.order_id = %d
+				ORDER BY dcu.id DESC
+				LIMIT 1",
+				$order_id
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		return sanitize_text_field((string) $code);
+	}
+
+	private function get_discount_type_for_salesforce($discount_code, $discount_label = '') {
+		$value = strtolower(trim((string) $discount_code . ' ' . $discount_label));
+		if ($value === '') {
+			return '';
+		}
+
+		if (strpos($value, 'student') !== false) {
+			return 'Student';
+		}
+
+		if (strpos($value, 'military') !== false || strpos($value, 'usmilitary') !== false || strpos($value, 'service') !== false) {
+			return 'Military';
+		}
+
+		if (strpos($value, 'family') !== false) {
+			return 'Family';
+		}
+
+		return 'Promo';
+	}
+
+	private function get_pmpro_order_membership_label($order) {
+		$membership_id = is_array($order) ? absint($order['membership_id'] ?? 0) : 0;
+		$level_name = '';
+		if ($membership_id > 0 && function_exists('pmpro_getLevel')) {
+			$level = pmpro_getLevel($membership_id);
+			if (is_object($level) && !empty($level->name)) {
+				$level_name = sanitize_text_field((string) $level->name);
+			}
+		}
+
+		return $level_name !== '' ? $level_name . ' Membership' : 'Membership Dues';
+	}
+
 	private function sync_mapped_objects_for_group($group, $context, $external_key, AAC_Salesforce_Sync_Salesforce_Client $client, $settings) {
 		$payloads = $this->build_salesforce_payloads_from_mapping($group, $context);
 		$object_definitions = AAC_Salesforce_Sync_Settings::get_object_definitions($settings);
@@ -597,17 +1021,26 @@ class AAC_Salesforce_Sync_Worker {
 				continue;
 			}
 
+			$payload = $this->attach_integration_metadata($payload, $object_key, $context, $field_catalog);
+
 			$payload = $this->sanitize_reference_field_payloads($payload, $object_key, $field_catalog);
 
 			if ($group === 'contact') {
 				$payload = $this->attach_contact_household_account_to_payload($payload, $object_key, $context, $settings, $field_catalog, $client);
-			} elseif ($group === 'grant') {
-				$payload = $this->attach_grant_contact_lookup_to_payload($payload, $object_key, $context, $settings, $field_catalog, $client);
 			} elseif ($group === 'membership') {
 				$payload = $this->attach_membership_contact_lookup_to_payload($payload, $object_key, $context, $settings, $field_catalog, $client);
 			}
 
 			$payload = $this->sanitize_reference_field_payloads($payload, $object_key, $field_catalog);
+
+			$this->last_salesforce_request = [
+				'group' => sanitize_key((string) $group),
+				'object_key' => sanitize_key((string) $object_key),
+				'salesforce_object' => sanitize_text_field((string) $object_name),
+				'external_id_field' => sanitize_text_field((string) $external_id_field),
+				'external_key' => (string) $external_key,
+				'payload' => $payload,
+			];
 
 			$client->upsert(
 				$object_name,
@@ -615,16 +1048,54 @@ class AAC_Salesforce_Sync_Worker {
 				(string) $external_key,
 				$payload
 			);
+			$this->last_salesforce_request = null;
 		}
 	}
 
-	private function sync_membership_terms($user_id, $profile, AAC_Salesforce_Sync_Salesforce_Client $client, $settings) {
+	private function attach_integration_metadata($payload, $object_key, $context, $field_catalog) {
+		$integration = isset($context['integration']) && is_array($context['integration']) ? $context['integration'] : [];
+		$field_map = [
+			'Integration_Event_ID__c' => 'event_id',
+			'Integration_Schema_Version__c' => 'schema_version',
+			'Source_Modified_At__c' => 'source_modified_at',
+			'Integration_Source__c' => 'source',
+		];
+		foreach ($field_map as $salesforce_field => $key) {
+			if (!empty($integration[$key]) && $this->object_has_salesforce_field($object_key, $salesforce_field, $field_catalog)) {
+				$payload[$salesforce_field] = $integration[$key];
+			}
+		}
+		if ($this->object_has_salesforce_field($object_key, 'Lifecycle_Status__c', $field_catalog)) {
+			$statuses = ['cancelled' => 'Cancelled', 'canceled' => 'Cancelled', 'refunded' => 'Refunded', 'deleted' => 'Deleted', 'merged' => 'Merged'];
+			$payload['Lifecycle_Status__c'] = $statuses[$integration['operation'] ?? ''] ?? 'Active';
+		}
+		return $payload;
+	}
+
+	private function sync_lifecycle_record($group, $external_key, $integration, AAC_Salesforce_Sync_Salesforce_Client $client, $settings) {
+		$definitions = AAC_Salesforce_Sync_Settings::get_object_definitions($settings);
+		$object_definition = (array) ($definitions[$group][$group] ?? []);
+		$object_name = trim((string) ($object_definition['object_name'] ?? ''));
+		$external_id_field = trim((string) ($object_definition['external_id_field'] ?? ''));
+		$field_catalog = AAC_Salesforce_Sync_Settings::get_field_catalog();
+		if ($object_name === '' || $external_id_field === '') {
+			throw new AAC_Salesforce_Sync_Exception('Lifecycle sync object is not configured.', false);
+		}
+		$payload = $this->attach_integration_metadata([], $group, ['integration' => $integration], $field_catalog);
+		if (!array_key_exists('Lifecycle_Status__c', $payload)) {
+			throw new AAC_Salesforce_Sync_Exception('Add Lifecycle_Status__c to the Salesforce object before enabling deletion or merge events.', false);
+		}
+		$client->upsert($object_name, $external_id_field, $external_key, $payload);
+	}
+
+	private function sync_membership_terms($user_id, $profile, AAC_Salesforce_Sync_Salesforce_Client $client, $settings, $integration = []) {
 		$user_id = (int) $user_id;
 		if ($user_id <= 0) {
 			return;
 		}
 
 		$base_context = $this->build_source_context($user_id, $profile);
+		$base_context['integration'] = $integration;
 		$history_entries = $this->get_recent_membership_history_entries($user_id, 2);
 		if (!$history_entries) {
 			$this->sync_mapped_objects_for_group('membership', $base_context, $this->get_external_key($user_id), $client, $settings);
@@ -674,6 +1145,9 @@ class AAC_Salesforce_Sync_Worker {
 
 		foreach ($group_definitions as $field_key => $definition) {
 			$mapping = AAC_Salesforce_Sync_Settings::normalize_mapping_entry($group_mappings[$field_key] ?? [], $group);
+			if (($mapping['direction'] ?? 'bidirectional') === 'inbound') {
+				continue;
+			}
 			$object_key = trim((string) ($mapping['object'] ?? ''));
 			$salesforce_field = trim((string) ($mapping['field'] ?? ''));
 			if ($object_key === '') {
@@ -694,12 +1168,14 @@ class AAC_Salesforce_Sync_Worker {
 			$value = $this->resolve_context_path($context, (string) ($definition['source_path'] ?? ''));
 			$value = $this->apply_salesforce_field_fallbacks($value, $salesforce_field, $context);
 			$value = $this->apply_group_field_overrides($group, $salesforce_field, $value, $context);
-			if ($value === null || $value === '') {
-				continue;
-			}
-
 			if (!isset($payloads[$object_key]) || !is_array($payloads[$object_key])) {
 				$payloads[$object_key] = [];
+			}
+			if ($value === null || $value === '') {
+				if (!empty($mapping['clear_empty'])) {
+					$payloads[$object_key][$salesforce_field] = null;
+				}
+				continue;
 			}
 
 			$normalized_value = $this->normalize_salesforce_field_value(
@@ -977,170 +1453,6 @@ class AAC_Salesforce_Sync_Worker {
 
 		sort($dates);
 		return (string) $dates[0];
-	}
-
-	private function build_grant_source_context($application_id) {
-		$application = $this->get_grant_application($application_id);
-		if (!is_array($application) || empty($application['id'])) {
-			throw new RuntimeException('Could not load grant application payload.');
-		}
-
-		$applicant_user_id = absint($application['applicant_user_id'] ?? 0);
-		$base_context = [
-			'wp' => [
-				'ID' => $applicant_user_id,
-				'user_login' => '',
-				'user_email' => '',
-				'display_name' => '',
-				'first_name' => '',
-				'last_name' => '',
-			],
-			'member_db' => [
-				'profile_row' => [],
-				'profile' => [],
-				'membership_row' => [],
-				'membership_record' => [],
-				'subscription_row' => [],
-				'subscription_record' => [],
-				'transaction_row' => [],
-				'transaction_record' => [],
-			],
-		];
-
-		if ($applicant_user_id > 0) {
-			try {
-				$profile = $this->get_portal_profile($applicant_user_id);
-				$base_context = $this->build_source_context($applicant_user_id, $profile);
-			} catch (Exception $exception) {
-				// Grant sync can still run on the application record even if the
-				// member profile mirror is missing or the user account disappeared.
-			}
-		}
-
-		$base_context['grant'] = [
-			'application' => $this->normalize_grant_application_context($application, $base_context),
-			'fields' => $this->extract_grant_field_values($application),
-		];
-
-		return $base_context;
-	}
-
-	private function get_grant_application($application_id) {
-		$application_id = (int) $application_id;
-		if ($application_id <= 0 || !class_exists('AAC_Grants_Review_Settings') || !class_exists('AAC_Grants_Review_Repository')) {
-			return [];
-		}
-
-		$repository = new AAC_Grants_Review_Repository(new AAC_Grants_Review_Settings());
-		return $repository->get_application($application_id);
-	}
-
-	private function normalize_grant_application_context($application, $base_context = []) {
-		$normalized_fields = is_array($application['normalized_fields'] ?? null) ? $application['normalized_fields'] : [];
-		$field_values = $this->extract_grant_field_values($application);
-		$aac_member_id = $this->resolve_grant_aac_member_id($application, $base_context);
-
-		return [
-			'review_application_id' => absint($application['id'] ?? 0),
-			'source' => sanitize_key((string) ($application['source'] ?? '')),
-			'source_form_id' => absint($application['source_form_id'] ?? 0),
-			'source_entry_id' => absint($application['source_entry_id'] ?? 0),
-			'applicant_user_id' => absint($application['applicant_user_id'] ?? 0),
-			'aac_member_id' => $aac_member_id,
-			'applicant_name' => sanitize_text_field((string) ($application['applicant_name'] ?? '')),
-			'applicant_email' => sanitize_email((string) ($application['applicant_email'] ?? '')),
-			'grant_name' => sanitize_text_field((string) ($application['grant_name'] ?? '')),
-			'grant_slug' => sanitize_title((string) ($field_values['grant_slug'] ?? '')),
-			'category' => sanitize_text_field((string) ($field_values['grant_category'] ?? $field_values['category'] ?? '')),
-			'project_title' => sanitize_text_field((string) ($application['project_title'] ?? '')),
-			'requested_amount' => round((float) ($application['requested_amount'] ?? 0), 2),
-			'status' => sanitize_text_field($this->get_grant_status_label((string) ($application['workflow_status'] ?? ''))),
-			'status_key' => sanitize_key((string) ($application['workflow_status'] ?? '')),
-			'application_date' => sanitize_text_field((string) ($application['submitted_at'] ?? '')),
-			'reviewed_at' => sanitize_text_field((string) ($application['reviewed_at'] ?? '')),
-			'last_note' => sanitize_textarea_field((string) ($application['last_note'] ?? '')),
-			'normalized_fields' => $normalized_fields,
-		];
-	}
-
-	private function resolve_grant_aac_member_id($application, $base_context = []) {
-		$application_member_id = sanitize_text_field((string) ($application['aac_member_id'] ?? ''));
-		$application_member_id = $this->normalize_member_id_for_salesforce($application_member_id);
-		if ($application_member_id !== '') {
-			return $application_member_id;
-		}
-
-		$profile_member_id = sanitize_text_field((string) ($base_context['member_db']['profile']['profile_info']['member_id'] ?? ''));
-		$profile_member_id = $this->normalize_member_id_for_salesforce($profile_member_id);
-		if ($profile_member_id !== '') {
-			return $profile_member_id;
-		}
-
-		$row_member_id = sanitize_text_field((string) ($base_context['member_db']['profile_row']['member_id'] ?? ''));
-		$row_member_id = $this->normalize_member_id_for_salesforce($row_member_id);
-		if ($row_member_id !== '') {
-			return $row_member_id;
-		}
-
-		$applicant_user_id = absint($application['applicant_user_id'] ?? 0);
-		if ($applicant_user_id > 0) {
-			$user_meta_member_id = sanitize_text_field((string) get_user_meta($applicant_user_id, 'aac_member_id', true));
-			$user_meta_member_id = $this->normalize_member_id_for_salesforce($user_meta_member_id);
-			if ($user_meta_member_id !== '') {
-				return $user_meta_member_id;
-			}
-		}
-
-		return '';
-	}
-
-	private function normalize_member_id_for_salesforce($member_id) {
-		$member_id = sanitize_text_field((string) $member_id);
-		$member_id = trim($member_id);
-		if ($member_id === '') {
-			return '';
-		}
-
-		$member_id = preg_replace('/^AAC[\s\-_]*/i', '', $member_id);
-		$member_id = trim((string) $member_id);
-
-		if ($member_id !== '' && preg_match('/(\d+)/', $member_id, $matches)) {
-			return (string) $matches[1];
-		}
-
-		return $member_id;
-	}
-
-	private function extract_grant_field_values($application) {
-		$values = [];
-		$fields = is_array($application['normalized_fields'] ?? null) ? $application['normalized_fields'] : [];
-
-		foreach ($fields as $field) {
-			if (!is_array($field)) {
-				continue;
-			}
-
-			$field_key = sanitize_key((string) ($field['field_id'] ?? $field['field_key'] ?? ''));
-			if ($field_key === '') {
-				continue;
-			}
-
-			$values[$field_key] = sanitize_textarea_field((string) ($field['value'] ?? ''));
-		}
-
-		return $values;
-	}
-
-	private function get_grant_status_label($status_key) {
-		$status_key = sanitize_key((string) $status_key);
-		if (class_exists('AAC_Grants_Review_Repository')) {
-			$labels = AAC_Grants_Review_Repository::get_workflow_labels();
-			if (isset($labels[$status_key])) {
-				return (string) $labels[$status_key];
-			}
-		}
-
-		return ucwords(str_replace('_', ' ', $status_key));
 	}
 
 	private function get_member_database_context($user_id, $transaction = []) {
@@ -1472,78 +1784,6 @@ class AAC_Salesforce_Sync_Worker {
 		}
 	}
 
-	private function attach_grant_contact_lookup_to_payload($payload, $object_key, $context, $settings, $field_catalog = [], ?AAC_Salesforce_Sync_Salesforce_Client $client = null) {
-		if (!is_array($payload) || !$payload) {
-			return $payload;
-		}
-
-		$lookup = $this->get_grant_contact_lookup_metadata($object_key, $field_catalog);
-		if (!$lookup) {
-			return $payload;
-		}
-
-		$lookup_field = (string) ($lookup['field_name'] ?? '');
-		$relationship_name = (string) ($lookup['relationship_name'] ?? '');
-		if ($lookup_field === '') {
-			return $payload;
-		}
-
-		$raw_lookup_value = $payload[$lookup_field] ?? null;
-		$raw_relationship_value = $relationship_name !== '' ? ($payload[$relationship_name] ?? null) : null;
-
-		if ($this->is_valid_salesforce_lookup_id($raw_lookup_value) || ($relationship_name !== '' && is_array($raw_relationship_value) && !empty($raw_relationship_value))) {
-			return $payload;
-		}
-
-		if ($raw_lookup_value !== null && !$this->is_valid_salesforce_lookup_id($raw_lookup_value)) {
-			unset($payload[$lookup_field]);
-		}
-
-		if ($relationship_name !== '' && $raw_relationship_value !== null && !is_array($raw_relationship_value)) {
-			unset($payload[$relationship_name]);
-		}
-
-		$applicant_user_id = absint($context['grant']['application']['applicant_user_id'] ?? 0);
-		if ($applicant_user_id > 0) {
-			$salesforce_contact_id = sanitize_text_field((string) get_user_meta($applicant_user_id, 'aac_sf_contact_id', true));
-			if ($this->is_valid_salesforce_lookup_id($salesforce_contact_id)) {
-				$payload[$lookup_field] = $salesforce_contact_id;
-				return $payload;
-			}
-		}
-
-		$contact_external_id_field = trim((string) ($settings['salesforce']['contact_external_id_field'] ?? ''));
-		$contact_external_id_value = $contact_external_id_field !== ''
-			? $this->resolve_grant_contact_external_id_value($contact_external_id_field, $context)
-			: '';
-		if ($contact_external_id_field !== '' && $contact_external_id_value !== '') {
-			$contact_external_id_value = $this->normalize_related_contact_field_value($contact_external_id_field, $contact_external_id_value, $field_catalog);
-		}
-
-		$resolved_contact_id = $this->resolve_salesforce_contact_id_from_context(
-			$client,
-			$settings,
-			$context,
-			$field_catalog,
-			'grant'
-		);
-		if ($resolved_contact_id !== '') {
-			$payload[$lookup_field] = $resolved_contact_id;
-			if ($relationship_name !== '') {
-				unset($payload[$relationship_name]);
-			}
-			return $payload;
-		}
-
-		if ($relationship_name !== '' && $contact_external_id_field !== '' && $contact_external_id_value !== '') {
-			$payload[$relationship_name] = [
-				$contact_external_id_field => $contact_external_id_value,
-			];
-		}
-
-		return $payload;
-	}
-
 	private function attach_membership_contact_lookup_to_payload($payload, $object_key, $context, $settings, $field_catalog = [], ?AAC_Salesforce_Sync_Salesforce_Client $client = null) {
 		if (!is_array($payload) || !$payload) {
 			return $payload;
@@ -1712,12 +1952,12 @@ class AAC_Salesforce_Sync_Worker {
 		}
 	}
 
-	private function resolve_salesforce_contact_id_from_context($client, $settings, $context, $field_catalog = [], $mode = 'membership') {
+	private function resolve_salesforce_contact_id_from_context($client, $settings, $context, $field_catalog = []) {
 		if (!$client instanceof AAC_Salesforce_Sync_Salesforce_Client) {
 			return '';
 		}
 
-		foreach ($this->get_contact_lookup_candidates($settings, $context, $field_catalog, $mode) as $candidate) {
+		foreach ($this->get_contact_lookup_candidates($settings, $context, $field_catalog) as $candidate) {
 			$field_name = trim((string) ($candidate['field'] ?? ''));
 			$field_value = $candidate['value'] ?? '';
 			if ($field_name === '' || $field_value === '' || $field_value === null) {
@@ -1739,7 +1979,7 @@ class AAC_Salesforce_Sync_Worker {
 		return '';
 	}
 
-	private function get_contact_lookup_candidates($settings, $context, $field_catalog = [], $mode = 'membership') {
+	private function get_contact_lookup_candidates($settings, $context, $field_catalog = []) {
 		$candidates = [];
 		$push_candidate = function ($field_name, $value) use (&$candidates, $field_catalog) {
 			$field_name = trim((string) $field_name);
@@ -1762,15 +2002,7 @@ class AAC_Salesforce_Sync_Worker {
 		};
 
 		$configured_field = trim((string) ($settings['salesforce']['contact_external_id_field'] ?? ''));
-		if ($mode === 'grant') {
-			$configured_value = $this->resolve_grant_contact_external_id_value($configured_field, $context);
-			$push_candidate($configured_field, $configured_value);
-			$push_candidate('Email', sanitize_email((string) ($context['grant']['application']['applicant_email'] ?? '')));
-			$push_candidate('WordPress_User_ID__c', absint($context['grant']['application']['applicant_user_id'] ?? 0));
-			$push_candidate('Word_Press_User_ID__c', absint($context['grant']['application']['applicant_user_id'] ?? 0));
-			$push_candidate('AAC_Member_ID__c', sanitize_text_field((string) ($context['grant']['application']['aac_member_id'] ?? '')));
-		} else {
-			$member_id = sanitize_text_field((string) $this->resolve_context_path($context, 'member_db.profile_row.member_id'));
+		$member_id = sanitize_text_field((string) $this->resolve_context_path($context, 'member_db.profile_row.member_id'));
 			if ($member_id === '') {
 				$member_id = sanitize_text_field((string) $this->resolve_context_path($context, 'member_db.profile.profile_info.member_id'));
 			}
@@ -1794,7 +2026,6 @@ class AAC_Salesforce_Sync_Worker {
 			$push_candidate('Word_Press_User_ID__c', $user_id > 0 ? (string) $user_id : '');
 			$push_candidate('AAC_Member_ID__c', $member_id);
 			$push_candidate('Email', $email);
-		}
 
 		return array_values($candidates);
 	}
@@ -1887,10 +2118,6 @@ class AAC_Salesforce_Sync_Worker {
 		}
 
 		return (bool) preg_match('/^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$/', $value);
-	}
-
-	private function get_grant_contact_lookup_metadata($object_key, $field_catalog = []) {
-		return $this->get_contact_lookup_metadata($object_key, $field_catalog);
 	}
 
 	private function get_contact_lookup_metadata($object_key, $field_catalog = []) {
@@ -2079,38 +2306,6 @@ class AAC_Salesforce_Sync_Worker {
 			|| strpos($field_name, 'user_id') !== false
 			|| strpos($field_name, 'wordpress_user_id') !== false
 			|| strpos($field_name, 'word_press_user_id') !== false;
-	}
-
-	private function resolve_grant_contact_external_id_value($contact_external_id_field, $context) {
-		$normalized_field = strtolower(trim((string) $contact_external_id_field));
-		$application = isset($context['grant']['application']) && is_array($context['grant']['application'])
-			? $context['grant']['application']
-			: [];
-
-		if (strpos($normalized_field, 'member') !== false) {
-			return sanitize_text_field((string) ($application['aac_member_id'] ?? ''));
-		}
-
-		if (strpos($normalized_field, 'email') !== false) {
-			return sanitize_email((string) ($application['applicant_email'] ?? ''));
-		}
-
-		if (strpos($normalized_field, 'user') !== false || strpos($normalized_field, 'wordpress') !== false) {
-			$applicant_user_id = absint($application['applicant_user_id'] ?? 0);
-			return $applicant_user_id > 0 ? (string) $applicant_user_id : '';
-		}
-
-		$applicant_user_id = absint($application['applicant_user_id'] ?? 0);
-		if ($applicant_user_id > 0) {
-			return (string) $applicant_user_id;
-		}
-
-		$aac_member_id = sanitize_text_field((string) ($application['aac_member_id'] ?? ''));
-		if ($aac_member_id !== '') {
-			return $aac_member_id;
-		}
-
-		return sanitize_email((string) ($application['applicant_email'] ?? ''));
 	}
 
 	private function get_salesforce_field_type($object_key, $salesforce_field, $field_catalog = []) {

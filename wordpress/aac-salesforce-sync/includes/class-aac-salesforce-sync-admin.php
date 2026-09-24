@@ -26,6 +26,16 @@ class AAC_Salesforce_Sync_Admin {
 		add_action('admin_post_aac_salesforce_sync_clear_all_jobs', [$this, 'handle_clear_all_jobs']);
 		add_action('admin_post_aac_salesforce_sync_retry_job', [$this, 'handle_retry_job']);
 		add_action('admin_post_aac_salesforce_sync_export_field_maps_csv', [$this, 'handle_export_field_maps_csv']);
+		add_action('admin_post_aac_salesforce_sync_export_error_log_csv', [$this, 'handle_export_error_log_csv']);
+		add_action('admin_post_aac_salesforce_sync_send_error_report', [$this, 'handle_send_error_report']);
+		add_action('admin_post_aac_salesforce_sync_prune_error_log', [$this, 'handle_prune_error_log']);
+		add_action('admin_post_aac_salesforce_sync_run_pull', [$this, 'handle_run_pull']);
+		add_action('admin_post_aac_salesforce_sync_reset_pull_state', [$this, 'handle_reset_pull_state']);
+		add_action('admin_post_aac_salesforce_sync_run_reconciliation', [$this, 'handle_run_reconciliation']);
+		add_action('admin_post_aac_salesforce_sync_export_reconciliation', [$this, 'handle_export_reconciliation']);
+		add_action('admin_post_aac_salesforce_sync_run_preflight', [$this, 'handle_run_preflight']);
+		add_action('admin_post_aac_salesforce_sync_export_diagnostics', [$this, 'handle_export_diagnostics']);
+		add_action('admin_post_aac_salesforce_sync_retry_dead_letters', [$this, 'handle_retry_dead_letters']);
 	}
 
 	public function register_admin_page() {
@@ -49,6 +59,9 @@ class AAC_Salesforce_Sync_Admin {
 		$input = isset($_POST[AAC_Salesforce_Sync_Settings::OPTION_KEY]) ? wp_unslash($_POST[AAC_Salesforce_Sync_Settings::OPTION_KEY]) : [];
 		$tab = isset($_POST['aac_salesforce_sync_redirect_tab']) ? sanitize_key(wp_unslash($_POST['aac_salesforce_sync_redirect_tab'])) : 'authorize';
 		$updated = AAC_Salesforce_Sync_Settings::update_settings($input);
+		AAC_Salesforce_Sync_Health::record_event('settings_updated', ['actor_user_id' => get_current_user_id()]);
+		AAC_Salesforce_Sync_Error_Log::reschedule_daily_report($updated);
+		AAC_Salesforce_Sync_Pull::reschedule($updated);
 
 		if ($this->oauth_settings_changed($current, $updated)) {
 			AAC_Salesforce_Sync_Settings::clear_auth_state();
@@ -98,7 +111,12 @@ class AAC_Salesforce_Sync_Admin {
 							'type' => sanitize_text_field((string) ($field['type'] ?? 'string')),
 							'relationship_name' => sanitize_text_field((string) ($field['relationshipName'] ?? '')),
 							'reference_to' => array_values(array_filter(array_map('sanitize_text_field', (array) ($field['referenceTo'] ?? [])))),
-							'restricted_picklist' => !empty($field['restrictedPicklist']) ? 1 : 0,
+								'restricted_picklist' => !empty($field['restrictedPicklist']) ? 1 : 0,
+								'external_id' => !empty($field['externalId']) ? 1 : 0,
+								'unique' => !empty($field['unique']) ? 1 : 0,
+								'createable' => !empty($field['createable']) ? 1 : 0,
+								'updateable' => !empty($field['updateable']) ? 1 : 0,
+								'nillable' => !empty($field['nillable']) ? 1 : 0,
 							'picklist_values' => array_values(
 								array_filter(
 									array_map(
@@ -167,15 +185,18 @@ class AAC_Salesforce_Sync_Admin {
 				throw new RuntimeException('Save the Salesforce OAuth settings first, then start the sign-in flow.');
 			}
 			$state = wp_generate_password(32, false, false);
+			$code_verifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
+			$code_challenge = rtrim(strtr(base64_encode(hash('sha256', $code_verifier, true)), '+/', '-_'), '=');
 			set_transient(
 				self::OAUTH_STATE_TRANSIENT . $state,
 				[
 					'user_id' => get_current_user_id(),
 					'created_at' => time(),
+					'code_verifier' => $code_verifier,
 				],
 				10 * MINUTE_IN_SECONDS
 			);
-			wp_redirect($client->get_authorization_url($state), 302, 'AAC Salesforce Sync');
+			wp_redirect($client->get_authorization_url($state, $code_challenge), 302, 'AAC Salesforce Sync');
 			exit;
 		} catch (Exception $exception) {
 			$this->redirect_with_notice('salesforce-connect-error:' . rawurlencode($exception->getMessage()), 'authorize');
@@ -207,7 +228,7 @@ class AAC_Salesforce_Sync_Admin {
 
 		try {
 			$client = new AAC_Salesforce_Sync_Salesforce_Client();
-			$client->exchange_authorization_code($code);
+			$client->exchange_authorization_code($code, (string) ($state_payload['code_verifier'] ?? ''));
 			$this->redirect_with_notice('salesforce-authorized', 'authorize');
 		} catch (Exception $exception) {
 			$this->redirect_with_notice('salesforce-connect-error:' . rawurlencode($exception->getMessage()), 'authorize');
@@ -224,6 +245,7 @@ class AAC_Salesforce_Sync_Admin {
 
 	public function handle_backfill_members() {
 		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_backfill_members');
 
 		$refresh_member_database = !empty($_POST['refresh_member_database']);
 		$include_transactions = !empty($_POST['include_transactions']);
@@ -242,6 +264,7 @@ class AAC_Salesforce_Sync_Admin {
 
 	public function handle_run_queue() {
 		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_run_queue');
 
 		// Manual queue runs should not sit around waiting for timestamp gremlins.
 		// If an admin clicked the button, we make the pending jobs eligible now
@@ -253,6 +276,7 @@ class AAC_Salesforce_Sync_Admin {
 
 	public function handle_clear_all_jobs() {
 		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_clear_all_jobs');
 
 		$deleted = AAC_Salesforce_Sync_Queue::clear_all_jobs();
 		$this->redirect_with_notice('jobs-cleared-' . (int) $deleted, 'queue');
@@ -260,6 +284,7 @@ class AAC_Salesforce_Sync_Admin {
 
 	public function handle_retry_job() {
 		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_retry_job');
 
 		$job_id = isset($_GET['job_id']) ? absint(wp_unslash($_GET['job_id'])) : 0;
 		if ($job_id > 0) {
@@ -311,6 +336,109 @@ class AAC_Salesforce_Sync_Admin {
 		exit;
 	}
 
+	public function handle_export_error_log_csv() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_export_error_log_csv');
+
+		$rows = AAC_Salesforce_Sync_Error_Log::list_rows(5000);
+		AAC_Salesforce_Sync_Error_Log::output_csv($rows);
+	}
+
+	public function handle_send_error_report() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_send_error_report');
+
+		$sent = AAC_Salesforce_Sync_Error_Log::send_daily_report();
+		$this->redirect_with_notice($sent ? 'error-report-sent' : 'error-report-empty-or-failed', 'error-log');
+	}
+
+	public function handle_prune_error_log() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_prune_error_log');
+
+		$settings = AAC_Salesforce_Sync_Settings::get_settings();
+		$retention_days = absint($settings['error_report']['retention_days'] ?? 90);
+		$deleted = AAC_Salesforce_Sync_Error_Log::clear_rows($retention_days);
+		$this->redirect_with_notice('error-log-pruned-' . (int) $deleted, 'error-log');
+	}
+
+	public function handle_run_pull() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_run_pull');
+
+		try {
+			$pull = new AAC_Salesforce_Sync_Pull($this->worker);
+			$results = $pull->run_pull(true);
+			$contact_updated = absint($results['contact']['updated'] ?? 0);
+			$contact_failed = absint($results['contact']['failed'] ?? 0);
+			$membership_updated = absint($results['membership']['updated'] ?? 0);
+			$membership_failed = absint($results['membership']['failed'] ?? 0);
+			$this->redirect_with_notice(
+				sprintf('pull-ran-%d-%d-%d-%d', $contact_updated, $contact_failed, $membership_updated, $membership_failed),
+				'pull'
+			);
+		} catch (Exception $exception) {
+			$this->redirect_with_notice('pull-error:' . rawurlencode($exception->getMessage()), 'pull');
+		}
+	}
+
+	public function handle_reset_pull_state() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_reset_pull_state');
+
+		AAC_Salesforce_Sync_Pull::reset_state();
+		$this->redirect_with_notice('pull-state-reset', 'pull');
+	}
+
+	public function handle_run_reconciliation() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_run_reconciliation');
+		$report = $this->worker->build_reconciliation_report(100);
+		update_option('aac_salesforce_sync_reconciliation_report', $report, false);
+		$this->redirect_with_notice('reconciliation-complete', 'reconciliation');
+	}
+
+	public function handle_export_reconciliation() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_export_reconciliation');
+		$report = get_option('aac_salesforce_sync_reconciliation_report', []);
+		nocache_headers();
+		header('Content-Type: text/csv; charset=utf-8');
+		header('Content-Disposition: attachment; filename=aac-salesforce-reconciliation.csv');
+		$output = fopen('php://output', 'w');
+		fputcsv($output, ['WordPress User ID', 'Email', 'Salesforce Object', 'External Key', 'Salesforce ID', 'Status', 'Error']);
+		foreach ((array) ($report['rows'] ?? []) as $row) {
+			fputcsv($output, [$row['user_id'] ?? '', $row['email'] ?? '', $row['object'] ?? '', $row['external_key'] ?? '', $row['salesforce_id'] ?? '', $row['status'] ?? '', $row['error'] ?? '']);
+		}
+		fclose($output);
+		exit;
+	}
+
+	public function handle_run_preflight() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_run_preflight');
+		$report = AAC_Salesforce_Sync_Release::run_preflight(!empty($_POST['live_test']));
+		$this->redirect_with_notice($report['ready'] ? 'preflight-passed' : 'preflight-failed', 'release');
+	}
+
+	public function handle_export_diagnostics() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_export_diagnostics');
+		nocache_headers();
+		header('Content-Type: application/json; charset=utf-8');
+		header('Content-Disposition: attachment; filename="aac-salesforce-sync-diagnostics-' . gmdate('Ymd-His') . '.json"');
+		echo wp_json_encode(AAC_Salesforce_Sync_Release::diagnostic_snapshot(), JSON_PRETTY_PRINT);
+		exit;
+	}
+
+	public function handle_retry_dead_letters() {
+		$this->assert_admin_request();
+		check_admin_referer('aac_salesforce_sync_retry_dead_letters');
+		$count = AAC_Salesforce_Sync_Queue::retry_dead_letter_jobs(1000);
+		AAC_Salesforce_Sync_Health::record_event('dead_letters_retried', ['status' => 'pending', 'attempts' => $count, 'actor_user_id' => get_current_user_id()]);
+		$this->redirect_with_notice('dead-letters-retried-' . $count, 'release');
+	}
+
 	public function render_admin_page() {
 		if (!current_user_can('manage_options')) {
 			return;
@@ -323,17 +451,83 @@ class AAC_Salesforce_Sync_Admin {
 		$field_definitions = AAC_Salesforce_Sync_Settings::get_field_definitions();
 		$auth_state = AAC_Salesforce_Sync_Settings::get_auth_state();
 		$oauth_debug = AAC_Salesforce_Sync_Settings::get_oauth_debug();
+		$error_stats = AAC_Salesforce_Sync_Error_Log::get_stats();
+		$error_rows = AAC_Salesforce_Sync_Error_Log::list_rows(250);
+		$pull_state = AAC_Salesforce_Sync_Pull::get_state();
 		$notice = isset($_GET[self::NOTICE_QUERY_ARG]) ? sanitize_text_field(wp_unslash($_GET[self::NOTICE_QUERY_ARG])) : '';
 		$current_tab = $this->get_current_tab();
 		$tabs = [
 			'authorize' => 'Authorize',
 			'objects' => 'Objects',
 			'field-maps' => 'Field Maps',
+			'pull' => 'Salesforce Pull',
 			'queue' => 'Queue',
+			'health' => 'Health',
+			'release' => 'Release Readiness',
+			'reconciliation' => 'Reconciliation',
 			'jobs' => 'Jobs',
+			'error-log' => 'Error Log',
 		];
 		?>
-		<div class="wrap">
+		<div class="wrap aac-salesforce-sync-admin">
+			<style>
+				.aac-salesforce-sync-admin {
+					max-width: 100%;
+					overflow-x: hidden;
+				}
+				.aac-salesforce-sync-admin .nav-tab-wrapper {
+					display: flex;
+					flex-wrap: wrap;
+				}
+				.aac-salesforce-sync-admin form,
+				.aac-salesforce-sync-admin table,
+				.aac-salesforce-sync-admin th,
+				.aac-salesforce-sync-admin td {
+					min-width: 0;
+				}
+				.aac-salesforce-sync-admin .form-table {
+					table-layout: fixed;
+					width: 100%;
+				}
+				.aac-salesforce-sync-admin .form-table th {
+					width: 200px;
+				}
+				.aac-salesforce-sync-admin input[type="text"],
+				.aac-salesforce-sync-admin input[type="password"],
+				.aac-salesforce-sync-admin input[type="url"],
+				.aac-salesforce-sync-admin input[type="email"],
+				.aac-salesforce-sync-admin input[type="number"],
+				.aac-salesforce-sync-admin select,
+				.aac-salesforce-sync-admin textarea,
+				.aac-salesforce-sync-admin .regular-text {
+					box-sizing: border-box;
+					max-width: 100%;
+					width: 100%;
+				}
+				.aac-salesforce-sync-admin code {
+					overflow-wrap: anywhere;
+					word-break: break-word;
+				}
+				@media (max-width: 1200px) {
+					.aac-salesforce-sync-admin [style*="grid-template-columns"] {
+						grid-template-columns: minmax(0, 1fr) !important;
+					}
+					.aac-salesforce-sync-admin .form-table,
+					.aac-salesforce-sync-admin .form-table tbody,
+					.aac-salesforce-sync-admin .form-table tr,
+					.aac-salesforce-sync-admin .form-table th,
+					.aac-salesforce-sync-admin .form-table td {
+						display: block;
+						width: 100%;
+					}
+					.aac-salesforce-sync-admin .form-table th {
+						padding-bottom: 4px;
+					}
+					.aac-salesforce-sync-admin .form-table td {
+						padding-top: 4px;
+					}
+				}
+			</style>
 			<h1>AAC Salesforce Sync</h1>
 			<p>Queue-driven Salesforce-first sync layer for AAC Member Portal and Paid Memberships Pro.</p>
 
@@ -356,12 +550,110 @@ class AAC_Salesforce_Sync_Admin {
 				$this->render_objects_tab($settings);
 			} elseif ('field-maps' === $current_tab) {
 				$this->render_field_maps_tab($settings, $field_catalog, $field_definitions);
+			} elseif ('pull' === $current_tab) {
+				$this->render_pull_tab($settings, $pull_state);
 			} elseif ('queue' === $current_tab) {
 				$this->render_queue_tab($settings, $stats);
-			} else {
+			} elseif ('jobs' === $current_tab) {
 				$this->render_jobs_tab($jobs);
+			} elseif ('health' === $current_tab) {
+				$this->render_health_tab($settings);
+			} elseif ('release' === $current_tab) {
+				$this->render_release_tab();
+			} elseif ('reconciliation' === $current_tab) {
+				$this->render_reconciliation_tab();
+			} else {
+				$this->render_error_log_tab($settings, $error_stats, $error_rows);
 			}
 			?>
+		</div>
+		<?php
+	}
+
+	private function render_release_tab() {
+		$report = get_option(AAC_Salesforce_Sync_Release::REPORT_OPTION, []);
+		$checks = (array) ($report['checks'] ?? []);
+		?>
+		<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,380px);gap:24px;align-items:start;">
+			<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+				<h2 style="margin-top:0;">Production Preflight</h2>
+				<p>Validates WordPress, OAuth, cron, inbound security, Salesforce object metadata, and every configured external ID before a release.</p>
+				<?php if (!empty($report['generated_at'])) : ?><p><strong>Last run (UTC):</strong> <?php echo esc_html($report['generated_at']); ?> — <strong><?php echo !empty($report['ready']) ? 'READY' : 'NOT READY'; ?></strong></p><?php endif; ?>
+				<table class="widefat striped"><thead><tr><th>Result</th><th>Check</th><th>Severity</th><th>Detail</th></tr></thead><tbody>
+				<?php if (!$checks) : ?><tr><td colspan="4">No preflight has been run yet.</td></tr><?php else : foreach ($checks as $check) : ?><tr><td><?php echo !empty($check['passed']) ? '✓ Pass' : '✕ Fail'; ?></td><td><?php echo esc_html($check['label'] ?? ''); ?></td><td><?php echo esc_html($check['severity'] ?? ''); ?></td><td><?php echo esc_html($check['detail'] ?? ''); ?></td></tr><?php endforeach; endif; ?>
+				</tbody></table>
+			</div>
+			<div style="display:grid;gap:24px;">
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;"><input type="hidden" name="action" value="aac_salesforce_sync_run_preflight" /><?php wp_nonce_field('aac_salesforce_sync_run_preflight'); ?><h2 style="margin-top:0;">Run Preflight</h2><p><label><input type="checkbox" name="live_test" value="1" checked="checked" /> Include live Salesforce API test</label></p><?php submit_button('Run Production Preflight', 'primary', '', false); ?></form>
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;"><h2 style="margin-top:0;">Support Bundle</h2><p>Downloads sanitized configuration, health, preflight, and audit information. OAuth tokens and shared secrets are excluded.</p><a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg('action', 'aac_salesforce_sync_export_diagnostics', admin_url('admin-post.php')), 'aac_salesforce_sync_export_diagnostics')); ?>">Download Diagnostics JSON</a></div>
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Reset up to 1,000 dead-letter jobs to pending? Confirm the underlying configuration or data issue is fixed first.');" style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;"><input type="hidden" name="action" value="aac_salesforce_sync_retry_dead_letters" /><?php wp_nonce_field('aac_salesforce_sync_retry_dead_letters'); ?><h2 style="margin-top:0;">Recovery</h2><p>Safely resets dead-letter jobs without deleting their payload, immutable event ID, or audit history.</p><?php submit_button('Retry Dead-Letter Jobs', 'secondary', '', false); ?></form>
+			</div>
+		</div>
+		<?php
+	}
+
+	private function render_health_tab($settings) {
+		$report = AAC_Salesforce_Sync_Health::get_report();
+		$audit_rows = AAC_Salesforce_Sync_Health::get_audit_log(100);
+		$ops = (array) ($settings['operations'] ?? []);
+		$status_color = $report['status'] === 'healthy' ? '#008a20' : (in_array($report['status'], ['warning', 'disabled'], true) ? '#996800' : '#b32d2e');
+		?>
+		<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,380px);gap:24px;align-items:start;">
+			<div style="display:grid;gap:24px;">
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<h2 style="margin-top:0;">Operational Health</h2>
+					<p style="font-size:20px;font-weight:700;color:<?php echo esc_attr($status_color); ?>;text-transform:capitalize;"><?php echo esc_html($report['status']); ?></p>
+					<table class="widefat striped"><tbody>
+						<tr><th>Salesforce authorized</th><td><?php echo !empty($report['checks']['authorized']) ? 'Yes' : 'No'; ?></td></tr>
+						<tr><th>Worker scheduled</th><td><?php echo !empty($report['checks']['worker_scheduled']) ? 'Yes' : 'No'; ?></td></tr>
+						<tr><th>Pending jobs</th><td><?php echo esc_html((string) ($report['queue']['pending'] ?? 0)); ?></td></tr>
+						<tr><th>Dead-letter jobs</th><td><?php echo esc_html((string) ($report['queue']['dead_letter'] ?? 0)); ?></td></tr>
+						<tr><th>Completed in last 24 hours</th><td><?php echo esc_html((string) ($report['completed_24h'] ?? 0)); ?></td></tr>
+						<tr><th>Failed in last 24 hours</th><td><?php echo esc_html((string) ($report['failed_24h'] ?? 0)); ?></td></tr>
+						<tr><th>24-hour success rate</th><td><?php echo esc_html((string) ($report['success_rate_24h'] ?? 100)); ?>%</td></tr>
+						<tr><th>Oldest pending (UTC)</th><td><?php echo esc_html($report['oldest_pending'] ?: 'None'); ?></td></tr>
+						<tr><th>Last completed (UTC)</th><td><?php echo esc_html($report['last_completed'] ?: 'None'); ?></td></tr>
+						<tr><th>Next worker run (UTC)</th><td><?php echo esc_html($report['next_worker_run'] ?: 'Not scheduled'); ?></td></tr>
+					</tbody></table>
+				</div>
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<h2 style="margin-top:0;">Audit Trail</h2>
+					<table class="widefat striped"><thead><tr><th>UTC Time</th><th>Event</th><th>Job</th><th>Object / Key</th><th>Status</th><th>Duration</th></tr></thead><tbody>
+					<?php if (!$audit_rows) : ?><tr><td colspan="6">No operational events recorded yet.</td></tr><?php else : foreach ($audit_rows as $row) : $context = (array) ($row['context'] ?? []); ?><tr><td><?php echo esc_html($row['timestamp'] ?? ''); ?></td><td><?php echo esc_html($row['event'] ?? ''); ?></td><td><?php echo esc_html((string) ($context['job_id'] ?? '')); ?></td><td><?php echo esc_html(trim(($context['object_type'] ?? '') . ' ' . ($context['external_key'] ?? ''))); ?></td><td><?php echo esc_html($context['status'] ?? ''); ?></td><td><?php echo isset($context['duration_ms']) ? esc_html((string) $context['duration_ms']) . ' ms' : ''; ?></td></tr><?php endforeach; endif; ?>
+					</tbody></table>
+				</div>
+			</div>
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+				<input type="hidden" name="action" value="aac_salesforce_sync_save_settings" /><input type="hidden" name="aac_salesforce_sync_redirect_tab" value="health" /><?php wp_nonce_field('aac_salesforce_sync_save_settings'); ?>
+				<h2 style="margin-top:0;">SLA & Alerts</h2>
+				<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY); ?>[operations][alerts_enabled]" value="0" />
+				<p><label><input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY); ?>[operations][alerts_enabled]" value="1" <?php checked(!empty($ops['alerts_enabled'])); ?> /> Email critical health alerts</label></p>
+				<p><label>Alert email<br /><input type="email" class="regular-text" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY); ?>[operations][alert_email]" value="<?php echo esc_attr($ops['alert_email'] ?? get_option('admin_email')); ?>" /></label></p>
+				<p><label>Pending job SLA (minutes)<br /><input type="number" min="5" max="1440" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY); ?>[operations][pending_sla_minutes]" value="<?php echo esc_attr((string) ($ops['pending_sla_minutes'] ?? 30)); ?>" /></label></p>
+				<p><label>Dead-letter alert threshold<br /><input type="number" min="1" max="1000" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY); ?>[operations][dead_letter_threshold]" value="<?php echo esc_attr((string) ($ops['dead_letter_threshold'] ?? 1)); ?>" /></label></p>
+				<p><label>Completed-job retention (days)<br /><input type="number" min="1" max="3650" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY); ?>[operations][completed_job_retention_days]" value="<?php echo esc_attr((string) ($ops['completed_job_retention_days'] ?? 30)); ?>" /></label></p>
+				<p style="color:#50575e;">Critical alerts are sent when health first fails, then no more than once every six hours while the problem continues.</p>
+				<?php submit_button('Save Health Settings'); ?>
+			</form>
+		</div>
+		<?php
+	}
+
+	private function render_reconciliation_tab() {
+		$report = get_option('aac_salesforce_sync_reconciliation_report', []);
+		$rows = (array) ($report['rows'] ?? []);
+		?>
+		<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+			<h2 style="margin-top:0;">WordPress ↔ Salesforce Reconciliation</h2>
+			<p>Checks the latest 100 WordPress users against configured Contact and Membership external IDs. This is read-only and does not change either system.</p>
+			<div style="display:flex;gap:12px;align-items:center;margin:18px 0;">
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="aac_salesforce_sync_run_reconciliation" /><?php wp_nonce_field('aac_salesforce_sync_run_reconciliation'); ?><?php submit_button('Run Reconciliation', 'primary', '', false); ?></form>
+				<?php if ($rows) : ?><a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg('action', 'aac_salesforce_sync_export_reconciliation', admin_url('admin-post.php')), 'aac_salesforce_sync_export_reconciliation')); ?>">Export CSV</a><?php endif; ?>
+			</div>
+			<?php if (!empty($report['generated_at'])) : ?><p><strong>Generated (UTC):</strong> <?php echo esc_html($report['generated_at']); ?></p><?php endif; ?>
+			<table class="widefat striped"><thead><tr><th>User</th><th>Email</th><th>Object</th><th>External Key</th><th>Salesforce ID</th><th>Status</th><th>Error</th></tr></thead><tbody>
+			<?php if (!$rows) : ?><tr><td colspan="7">No report has been run yet.</td></tr><?php else : foreach ($rows as $row) : ?><tr><td><?php echo esc_html((string) ($row['user_id'] ?? '')); ?></td><td><?php echo esc_html($row['email'] ?? ''); ?></td><td><?php echo esc_html($row['object'] ?? ''); ?></td><td><code><?php echo esc_html($row['external_key'] ?? ''); ?></code></td><td><?php echo esc_html($row['salesforce_id'] ?? ''); ?></td><td><?php echo esc_html($row['status'] ?? ''); ?></td><td><?php echo esc_html($row['error'] ?? ''); ?></td></tr><?php endforeach; endif; ?>
+			</tbody></table>
 		</div>
 		<?php
 	}
@@ -378,7 +670,7 @@ class AAC_Salesforce_Sync_Admin {
 				<input type="hidden" name="aac_salesforce_sync_redirect_tab" value="authorize" />
 				<?php wp_nonce_field('aac_salesforce_sync_save_settings'); ?>
 
-				<h2 style="margin-top:0;">Salesforce OAuth</h2>
+				<h2 style="margin-top:0;">Salesforce OAuth2</h2>
 				<p>Sign in to your Salesforce org here. This tab holds the connected-app settings and the actual authorization flow.</p>
 				<table class="form-table" role="presentation">
 					<?php $this->render_text_field('Authorize URL', 'salesforce', 'auth_url', $settings['salesforce']['auth_url']); ?>
@@ -400,6 +692,20 @@ class AAC_Salesforce_Sync_Admin {
 			</form>
 
 			<div style="display:grid;gap:24px;">
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<input type="hidden" name="action" value="aac_salesforce_sync_save_settings" />
+					<input type="hidden" name="aac_salesforce_sync_redirect_tab" value="authorize" />
+					<?php wp_nonce_field('aac_salesforce_sync_save_settings'); ?>
+					<h2 style="margin-top:0;">Sync Status</h2>
+					<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][enabled]'); ?>" value="0" />
+					<label style="display:block;margin-bottom:14px;">
+						<input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][enabled]'); ?>" value="1" <?php checked(!empty($settings['general']['enabled'])); ?> />
+						Enable outbound Salesforce sync
+					</label>
+					<p style="margin:0 0 16px;color:#50575e;">When off, WordPress will not queue or process outbound Salesforce jobs. Authorization and mappings remain saved.</p>
+					<?php submit_button('Save Sync Status', 'primary', '', false); ?>
+				</form>
+
 				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
 					<h2 style="margin-top:0;">Authorization Status</h2>
 					<p>
@@ -496,7 +802,6 @@ class AAC_Salesforce_Sync_Admin {
 		$contact_enabled = !empty($settings['general']['sync_contact']);
 		$membership_enabled = !empty($settings['general']['sync_membership']);
 		$transaction_enabled = !empty($settings['general']['sync_transaction']);
-		$grant_enabled = !empty($settings['general']['sync_grant']);
 		$group_labels = AAC_Salesforce_Sync_Settings::get_group_labels();
 		$object_definitions = AAC_Salesforce_Sync_Settings::get_object_definitions($settings);
 		$custom_objects = isset($settings['salesforce']['custom_objects']) && is_array($settings['salesforce']['custom_objects'])
@@ -534,19 +839,15 @@ class AAC_Salesforce_Sync_Admin {
 						<label style="display:block;margin-bottom:8px;"><input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][sync_membership]'); ?>" value="1" <?php checked($membership_enabled); ?> /> Sync Membership jobs</label>
 						<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][sync_transaction]'); ?>" value="0" />
 						<label style="display:block;margin-bottom:8px;"><input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][sync_transaction]'); ?>" value="1" <?php checked($transaction_enabled); ?> /> Sync Transaction jobs</label>
-						<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][sync_grant]'); ?>" value="0" />
-						<label style="display:block;"><input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[general][sync_grant]'); ?>" value="1" <?php checked($grant_enabled); ?> /> Sync Grant jobs</label>
 						<p style="margin:8px 0 0;color:#50575e;">These switches only control which jobs are queued and processed right now. They do not remove your mappings or object setup, so we can safely run Contact-only for the moment and turn the others back on later.</p>
 					</td>
 				</tr>
 				<?php $this->render_text_field('Contact object', 'salesforce', 'contact_object', $settings['salesforce']['contact_object']); ?>
 				<?php $this->render_text_field('Membership Term object', 'salesforce', 'membership_object', $settings['salesforce']['membership_object']); ?>
 				<?php $this->render_text_field('Transaction object', 'salesforce', 'transaction_object', $settings['salesforce']['transaction_object']); ?>
-				<?php $this->render_text_field('Grant object', 'salesforce', 'grant_object', $settings['salesforce']['grant_object']); ?>
 				<?php $this->render_text_field('Contact external ID field', 'salesforce', 'contact_external_id_field', $settings['salesforce']['contact_external_id_field']); ?>
 				<?php $this->render_text_field('Membership Term external ID field', 'salesforce', 'membership_external_id_field', $settings['salesforce']['membership_external_id_field']); ?>
 				<?php $this->render_text_field('Transaction external ID field', 'salesforce', 'transaction_external_id_field', $settings['salesforce']['transaction_external_id_field']); ?>
-				<?php $this->render_text_field('Grant external ID field', 'salesforce', 'grant_external_id_field', $settings['salesforce']['grant_external_id_field']); ?>
 				<?php $this->render_password_field('Shared secret', 'inbound', 'secret', $settings['inbound']['secret']); ?>
 			</table>
 
@@ -672,7 +973,7 @@ class AAC_Salesforce_Sync_Admin {
 			<?php wp_nonce_field('aac_salesforce_sync_save_settings'); ?>
 
 			<h2 style="margin-top:0;">Field Maps</h2>
-			<p>These dropdowns use AAC Member Database fields for contact, membership, and transaction sync, plus grant application fields from the AAC Grants Review workflow. Grant records can now upsert on any workflow status, from <code>Submitted</code> all the way through the final review steps.</p>
+			<p>These dropdowns use AAC Member Database fields for contact, membership, and transaction sync.</p>
 			<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 18px;">
 				<a class="button button-secondary" href="<?php echo esc_url(wp_nonce_url(add_query_arg([
 					'action' => 'aac_salesforce_sync_export_field_maps_csv',
@@ -706,17 +1007,126 @@ class AAC_Salesforce_Sync_Admin {
 				$field_catalog,
 				$settings
 			);
-			$this->render_field_mapping_table(
-				'Grant Field Mapping',
-				'grant',
-				isset($object_definitions['grant']) && is_array($object_definitions['grant']) ? $object_definitions['grant'] : [],
-				$field_definitions,
-				$field_catalog,
-				$settings
-			);
 			?>
 			<?php submit_button('Save Field Maps'); ?>
 		</form>
+		<?php
+	}
+
+	private function render_pull_tab($settings, $pull_state) {
+		$pull = isset($settings['pull']) && is_array($settings['pull']) ? $settings['pull'] : [];
+		$enabled = !empty($pull['enabled']);
+		$sync_contact = !empty($pull['sync_contact']);
+		$sync_membership = !empty($pull['sync_membership']);
+		$interval = sanitize_key((string) ($pull['interval'] ?? 'hourly'));
+		$batch_size = max(1, min(200, absint($pull['batch_size'] ?? 100)));
+		$lookback_hours = max(1, min(720, absint($pull['lookback_hours'] ?? 24)));
+		$next_pull = wp_next_scheduled(AAC_Salesforce_Sync_Pull::CRON_HOOK);
+		$last_result = isset($pull_state['last_result']) && is_array($pull_state['last_result']) ? $pull_state['last_result'] : [];
+		?>
+		<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,380px);gap:24px;align-items:start;">
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+				<input type="hidden" name="action" value="aac_salesforce_sync_save_settings" />
+				<input type="hidden" name="aac_salesforce_sync_redirect_tab" value="pull" />
+				<?php wp_nonce_field('aac_salesforce_sync_save_settings'); ?>
+
+				<h2 style="margin-top:0;">Pull Updates From Salesforce</h2>
+				<p style="margin:0 0 16px;color:#50575e;">
+					This optional mode lets WordPress poll Salesforce for recently changed Contact and Membership Term records. It does not replace the primary WordPress-to-Salesforce queue; it only adds a controlled Salesforce-to-WordPress pull path for profile and membership access data.
+				</p>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row">Enable pull sync</th>
+						<td>
+							<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][enabled]'); ?>" value="0" />
+							<label>
+								<input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][enabled]'); ?>" value="1" <?php checked($enabled); ?> />
+								Let WordPress pull changed records from Salesforce on a schedule
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Objects to pull</th>
+						<td>
+							<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][sync_contact]'); ?>" value="0" />
+							<label style="display:block;margin-bottom:8px;">
+								<input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][sync_contact]'); ?>" value="1" <?php checked($sync_contact); ?> />
+								Pull Salesforce Contact updates into WordPress profile fields
+							</label>
+							<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][sync_membership]'); ?>" value="0" />
+							<label style="display:block;">
+								<input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][sync_membership]'); ?>" value="1" <?php checked($sync_membership); ?> />
+								Pull Salesforce Membership Term updates into WordPress membership access fields
+							</label>
+							<p style="margin:8px 0 0;color:#50575e;">Transactions, Stripe IDs, donations, and PMPro payment records remain WordPress-to-Salesforce only.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="aac-salesforce-pull-interval">Schedule</label></th>
+						<td>
+							<select id="aac-salesforce-pull-interval" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][interval]'); ?>">
+								<option value="aac_salesforce_sync_five_minutes" <?php selected($interval, 'aac_salesforce_sync_five_minutes'); ?>>Every 5 minutes</option>
+								<option value="hourly" <?php selected($interval, 'hourly'); ?>>Hourly</option>
+								<option value="twicedaily" <?php selected($interval, 'twicedaily'); ?>>Twice daily</option>
+								<option value="daily" <?php selected($interval, 'daily'); ?>>Daily</option>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="aac-salesforce-pull-batch">Batch size</label></th>
+						<td>
+							<input type="number" min="1" max="200" id="aac-salesforce-pull-batch" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][batch_size]'); ?>" value="<?php echo esc_attr((string) $batch_size); ?>" />
+							<p style="margin:8px 0 0;color:#50575e;">Maximum changed Salesforce records queried per object per pull run.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="aac-salesforce-pull-lookback">Initial lookback hours</label></th>
+						<td>
+							<input type="number" min="1" max="720" id="aac-salesforce-pull-lookback" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[pull][lookback_hours]'); ?>" value="<?php echo esc_attr((string) $lookback_hours); ?>" />
+							<p style="margin:8px 0 0;color:#50575e;">Used only before a successful pull timestamp exists, or after the pull state is reset.</p>
+						</td>
+					</tr>
+				</table>
+				<?php submit_button('Save Pull Settings'); ?>
+			</form>
+
+			<div style="display:grid;gap:24px;">
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<h2 style="margin-top:0;">Pull Status</h2>
+					<ul style="margin:0;padding-left:18px;">
+						<li>Status: <?php echo esc_html($enabled ? 'Enabled' : 'Disabled'); ?></li>
+						<li>Next scheduled pull: <?php echo $next_pull ? esc_html(wp_date('Y-m-d H:i:s', (int) $next_pull)) : 'Not scheduled'; ?></li>
+						<li>Last run: <?php echo !empty($pull_state['last_run_at']) ? esc_html((string) $pull_state['last_run_at']) : 'Never'; ?></li>
+						<li>Contact last success: <?php echo !empty($pull_state['contact_last_success_at']) ? esc_html((string) $pull_state['contact_last_success_at']) : 'Never'; ?></li>
+						<li>Membership last success: <?php echo !empty($pull_state['membership_last_success_at']) ? esc_html((string) $pull_state['membership_last_success_at']) : 'Never'; ?></li>
+					</ul>
+					<?php if ($last_result) : ?>
+						<h3 style="margin:16px 0 8px;">Last Result</h3>
+						<ul style="margin:0;padding-left:18px;">
+							<li>Contact: <?php echo esc_html(absint($last_result['contact']['updated'] ?? 0) . ' updated, ' . absint($last_result['contact']['failed'] ?? 0) . ' failed, ' . absint($last_result['contact']['queried'] ?? 0) . ' queried'); ?></li>
+							<li>Membership: <?php echo esc_html(absint($last_result['membership']['updated'] ?? 0) . ' updated, ' . absint($last_result['membership']['failed'] ?? 0) . ' failed, ' . absint($last_result['membership']['queried'] ?? 0) . ' queried'); ?></li>
+						</ul>
+					<?php endif; ?>
+				</div>
+
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<h2 style="margin-top:0;">Manual Controls</h2>
+					<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+						<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+							<input type="hidden" name="action" value="aac_salesforce_sync_run_pull" />
+							<?php wp_nonce_field('aac_salesforce_sync_run_pull'); ?>
+							<?php submit_button('Run Pull Now', 'primary', '', false); ?>
+						</form>
+						<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Reset Salesforce pull timestamps? The next pull will use the configured initial lookback window.');">
+							<input type="hidden" name="action" value="aac_salesforce_sync_reset_pull_state" />
+							<?php wp_nonce_field('aac_salesforce_sync_reset_pull_state'); ?>
+							<?php submit_button('Reset Pull State', 'secondary', '', false); ?>
+						</form>
+					</div>
+					<p style="margin:12px 0 0;color:#50575e;">Manual pulls use the same mappings and safeguards as scheduled pulls. Failures are written to the Error Log tab.</p>
+				</div>
+			</div>
+		</div>
 		<?php
 	}
 
@@ -730,9 +1140,6 @@ class AAC_Salesforce_Sync_Admin {
 		}
 		if (!empty($settings['general']['sync_transaction'])) {
 			$enabled_objects[] = 'Transaction';
-		}
-		if (!empty($settings['general']['sync_grant'])) {
-			$enabled_objects[] = 'Grant';
 		}
 		?>
 		<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,360px);gap:24px;align-items:start;">
@@ -852,6 +1259,142 @@ class AAC_Salesforce_Sync_Admin {
 		<?php
 	}
 
+	private function render_error_log_tab($settings, $stats, $rows) {
+		$error_report = isset($settings['error_report']) && is_array($settings['error_report']) ? $settings['error_report'] : [];
+		$recipient = sanitize_email((string) ($error_report['recipient_email'] ?? get_option('admin_email')));
+		$daily_hour = max(0, min(23, absint($error_report['daily_hour'] ?? 6)));
+		$retention_days = max(1, absint($error_report['retention_days'] ?? 90));
+		$next_report = wp_next_scheduled(AAC_Salesforce_Sync_Error_Log::DAILY_REPORT_HOOK);
+		?>
+		<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,380px);gap:24px;align-items:start;max-width:100%;">
+			<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;min-width:0;overflow:hidden;">
+				<h2 style="margin-top:0;">Failed Field Error Log</h2>
+				<p style="margin:0 0 16px;color:#50575e;">
+					Each failed Salesforce sync job is logged one field per row, including the log row ID, job ID, external key, Salesforce field, value being passed, error message, and failure date.
+				</p>
+				<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:18px;">
+					<a class="button button-secondary" href="<?php echo esc_url(wp_nonce_url(add_query_arg([
+						'action' => 'aac_salesforce_sync_export_error_log_csv',
+					], admin_url('admin-post.php')), 'aac_salesforce_sync_export_error_log_csv')); ?>">
+						Download Error CSV
+					</a>
+					<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;margin:0;">
+						<input type="hidden" name="action" value="aac_salesforce_sync_send_error_report" />
+						<?php wp_nonce_field('aac_salesforce_sync_send_error_report'); ?>
+						<?php submit_button('Send Report Now', 'secondary', '', false); ?>
+					</form>
+				</div>
+				<div style="max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;">
+				<table class="widefat striped" style="min-width:900px;table-layout:auto;">
+					<thead>
+						<tr>
+							<th>ID</th>
+							<th>Failure Date</th>
+							<th>Job</th>
+							<th>External Key</th>
+							<th>Object</th>
+							<th>Field</th>
+							<th>Value</th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php if (!$rows) : ?>
+							<tr><td colspan="7">No Salesforce sync field errors have been logged yet.</td></tr>
+						<?php else : ?>
+							<?php foreach ($rows as $row) : ?>
+								<tr>
+									<td><?php echo esc_html((string) ($row['id'] ?? '')); ?></td>
+									<td><?php echo esc_html((string) ($row['failed_at'] ?? '')); ?></td>
+									<td>
+										<code><?php echo esc_html((string) ($row['job_id'] ?? '')); ?></code>
+										<div style="color:#50575e;"><?php echo esc_html((string) ($row['job_type'] ?? '')); ?></div>
+									</td>
+									<td><code><?php echo esc_html((string) ($row['external_key'] ?? '')); ?></code></td>
+									<td><?php echo esc_html((string) ($row['salesforce_object'] ?? '')); ?></td>
+									<td><code><?php echo esc_html((string) ($row['salesforce_field'] ?? '')); ?></code></td>
+									<td>
+										<code style="white-space:normal;word-break:break-word;">
+											<?php echo esc_html(wp_html_excerpt((string) ($row['field_value'] ?? ''), 160, '...')); ?>
+										</code>
+									</td>
+								</tr>
+								<?php if (!empty($row['error_message'])) : ?>
+									<tr>
+										<td></td>
+										<td colspan="6" style="color:#b32d2e;"><?php echo esc_html(wp_html_excerpt((string) $row['error_message'], 260, '...')); ?></td>
+									</tr>
+								<?php endif; ?>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</tbody>
+				</table>
+				</div>
+			</div>
+
+			<div style="display:grid;gap:24px;">
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<input type="hidden" name="action" value="aac_salesforce_sync_save_settings" />
+					<input type="hidden" name="aac_salesforce_sync_redirect_tab" value="error-log" />
+					<?php wp_nonce_field('aac_salesforce_sync_save_settings'); ?>
+
+					<h2 style="margin-top:0;">Daily Error Report</h2>
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row">Email report</th>
+							<td>
+								<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[error_report][enabled]'); ?>" value="0" />
+								<label>
+									<input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[error_report][enabled]'); ?>" value="1" <?php checked(!empty($error_report['enabled'])); ?> />
+									Send a daily CSV when failed field rows exist
+								</label>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aac-salesforce-error-recipient">Recipient email</label></th>
+							<td><input type="email" class="regular-text" id="aac-salesforce-error-recipient" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[error_report][recipient_email]'); ?>" value="<?php echo esc_attr($recipient); ?>" /></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aac-salesforce-error-hour">Daily send hour</label></th>
+							<td>
+								<input type="number" min="0" max="23" id="aac-salesforce-error-hour" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[error_report][daily_hour]'); ?>" value="<?php echo esc_attr((string) $daily_hour); ?>" />
+								<p style="margin:8px 0 0;color:#50575e;">0-23 in the WordPress site timezone. Example: 6 sends around 6:00 AM.</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="aac-salesforce-error-retention">Retention days</label></th>
+							<td><input type="number" min="1" max="3650" id="aac-salesforce-error-retention" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[error_report][retention_days]'); ?>" value="<?php echo esc_attr((string) $retention_days); ?>" /></td>
+						</tr>
+					</table>
+					<?php submit_button('Save Error Report Settings'); ?>
+				</form>
+
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<h2 style="margin-top:0;">Error Log Summary</h2>
+					<ul style="margin:0;padding-left:18px;">
+						<li>Total failed field rows: <?php echo esc_html((string) ($stats['total'] ?? 0)); ?></li>
+						<li>Failed field rows in last 24 hours: <?php echo esc_html((string) ($stats['last_24_hours'] ?? 0)); ?></li>
+					</ul>
+					<?php if ($next_report) : ?>
+						<p style="margin:12px 0 0;color:#50575e;">Next daily report: <?php echo esc_html(wp_date('Y-m-d H:i:s', (int) $next_report)); ?></p>
+					<?php else : ?>
+						<p style="margin:12px 0 0;color:#50575e;">Daily report is not scheduled.</p>
+					<?php endif; ?>
+				</div>
+
+				<div style="background:#fff;padding:24px;border:1px solid #dcdcde;border-radius:8px;">
+					<h2 style="margin-top:0;">Retention Cleanup</h2>
+					<p style="margin:0 0 16px;color:#50575e;">Deletes rows older than the configured retention window. CSV exports should be downloaded before cleanup if you need long-term archives.</p>
+					<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+						<input type="hidden" name="action" value="aac_salesforce_sync_prune_error_log" />
+						<?php wp_nonce_field('aac_salesforce_sync_prune_error_log'); ?>
+						<?php submit_button('Delete Old Error Rows', 'delete', '', false); ?>
+					</form>
+				</div>
+			</div>
+		</div>
+		<?php
+	}
+
 	private function render_text_field($label, $group, $field, $value) {
 		$name = AAC_Salesforce_Sync_Settings::OPTION_KEY . '[' . $group . '][' . $field . ']';
 		?>
@@ -925,6 +1468,28 @@ class AAC_Salesforce_Sync_Admin {
 			return 'Queue cleared. Removed jobs: ' . absint(substr($notice, strlen('jobs-cleared-')));
 		}
 
+		if (0 === strpos($notice, 'error-log-pruned-')) {
+			return 'Salesforce sync error log cleanup complete. Removed rows: ' . absint(substr($notice, strlen('error-log-pruned-')));
+		}
+
+		if (0 === strpos($notice, 'pull-ran-')) {
+			$counts = explode('-', substr($notice, strlen('pull-ran-')));
+			return sprintf(
+				'Salesforce pull completed. Contact: %d updated, %d failed. Membership: %d updated, %d failed.',
+				absint($counts[0] ?? 0),
+				absint($counts[1] ?? 0),
+				absint($counts[2] ?? 0),
+				absint($counts[3] ?? 0)
+			);
+		}
+
+		if (0 === strpos($notice, 'pull-error:')) {
+			return 'Salesforce pull failed: ' . rawurldecode(substr($notice, strlen('pull-error:')));
+		}
+		if (0 === strpos($notice, 'dead-letters-retried-')) {
+			return 'Dead-letter jobs reset to pending: ' . absint(substr($notice, strlen('dead-letters-retried-')));
+		}
+
 		$messages = [
 			'settings-saved' => 'Salesforce sync settings saved.',
 			'settings-saved-reauthorize' => 'Salesforce settings saved. OAuth details changed, so the old authorization was cleared. Sign in again so the plugin does not keep trusting yesterday’s badge.',
@@ -932,6 +1497,12 @@ class AAC_Salesforce_Sync_Admin {
 			'salesforce-connected' => 'Salesforce connection succeeded and field metadata was refreshed.',
 			'salesforce-authorized' => 'Salesforce sign-in succeeded.',
 			'salesforce-disconnected' => 'Salesforce authorization was cleared.',
+			'error-report-sent' => 'Daily Salesforce sync error report sent.',
+			'error-report-empty-or-failed' => 'No Salesforce sync error report was sent. There may be no failed field rows from the last 24 hours, or WordPress mail could not send the attachment.',
+			'pull-state-reset' => 'Salesforce pull timestamps were reset. The next pull will use the configured initial lookback window.',
+			'reconciliation-complete' => 'Salesforce reconciliation report completed.',
+			'preflight-passed' => 'Production preflight passed.',
+			'preflight-failed' => 'Production preflight found critical items that must be fixed.',
 		];
 
 		return $messages[$notice] ?? 'Settings updated.';
@@ -939,7 +1510,7 @@ class AAC_Salesforce_Sync_Admin {
 
 	private function get_current_tab() {
 		$tab = isset($_GET[self::TAB_QUERY_ARG]) ? sanitize_key(wp_unslash($_GET[self::TAB_QUERY_ARG])) : 'authorize';
-		$allowed_tabs = ['authorize', 'objects', 'field-maps', 'queue', 'jobs'];
+		$allowed_tabs = ['authorize', 'objects', 'field-maps', 'pull', 'queue', 'jobs', 'health', 'release', 'reconciliation', 'error-log'];
 		return in_array($tab, $allowed_tabs, true) ? $tab : 'authorize';
 	}
 
@@ -1136,15 +1707,19 @@ class AAC_Salesforce_Sync_Admin {
 						<tr>
 							<th style="width:30%;">Member Database Field</th>
 							<th style="width:14%;">Field Type</th>
-							<th style="width:22%;">Salesforce Object</th>
-							<th>Salesforce Field</th>
+								<th style="width:18%;">Salesforce Object</th>
+								<th>Salesforce Field</th>
+								<th style="width:12%;">Authority</th>
+								<th style="width:9%;">Clear Empty</th>
 						</tr>
 					</thead>
 					<tbody>
 						<?php foreach ($definitions as $field_key => $definition) : ?>
 							<?php $selected_mapping = AAC_Salesforce_Sync_Settings::normalize_mapping_entry($selected_fields[$field_key] ?? [], $group); ?>
 							<?php $selected_object_key = (string) ($selected_mapping['object'] ?? ''); ?>
-							<?php $selected_salesforce_field = (string) ($selected_mapping['field'] ?? ''); ?>
+								<?php $selected_salesforce_field = (string) ($selected_mapping['field'] ?? ''); ?>
+								<?php $selected_direction = (string) ($selected_mapping['direction'] ?? 'bidirectional'); ?>
+								<?php $clear_empty = !empty($selected_mapping['clear_empty']); ?>
 							<tr>
 								<td>
 									<strong><?php echo esc_html((string) ($definition['label'] ?? $field_key)); ?></strong>
@@ -1165,11 +1740,22 @@ class AAC_Salesforce_Sync_Admin {
 										<?php endforeach; ?>
 									</select>
 								</td>
-								<td>
-									<select class="aac-salesforce-field-select" data-selected="<?php echo esc_attr($selected_salesforce_field); ?>" data-field-options="<?php echo esc_attr(wp_json_encode($object_fields_map)); ?>" style="min-width:320px;max-width:100%;" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[field_mappings][' . $group . '][' . $field_key . '][field]'); ?>" <?php disabled(!$has_salesforce_fields); ?>>
-										<option value=""><?php echo esc_html($has_salesforce_fields ? 'Select a Salesforce field' : 'Authorize and refresh Salesforce fields first'); ?></option>
-									</select>
-								</td>
+									<td>
+										<select class="aac-salesforce-field-select" data-selected="<?php echo esc_attr($selected_salesforce_field); ?>" data-field-options="<?php echo esc_attr(wp_json_encode($object_fields_map)); ?>" style="min-width:320px;max-width:100%;" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[field_mappings][' . $group . '][' . $field_key . '][field]'); ?>" <?php disabled(!$has_salesforce_fields); ?>>
+											<option value=""><?php echo esc_html($has_salesforce_fields ? 'Select a Salesforce field' : 'Authorize and refresh Salesforce fields first'); ?></option>
+										</select>
+									</td>
+									<td>
+										<select name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[field_mappings][' . $group . '][' . $field_key . '][direction]'); ?>">
+											<option value="bidirectional" <?php selected($selected_direction, 'bidirectional'); ?>>Both</option>
+											<option value="outbound" <?php selected($selected_direction, 'outbound'); ?>>WordPress</option>
+											<option value="inbound" <?php selected($selected_direction, 'inbound'); ?>>Salesforce</option>
+										</select>
+									</td>
+									<td style="text-align:center;">
+										<input type="hidden" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[field_mappings][' . $group . '][' . $field_key . '][clear_empty]'); ?>" value="0" />
+										<input type="checkbox" name="<?php echo esc_attr(AAC_Salesforce_Sync_Settings::OPTION_KEY . '[field_mappings][' . $group . '][' . $field_key . '][clear_empty]'); ?>" value="1" <?php checked($clear_empty); ?> />
+									</td>
 							</tr>
 						<?php endforeach; ?>
 					</tbody>

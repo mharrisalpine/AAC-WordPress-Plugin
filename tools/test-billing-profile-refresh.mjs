@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import { bindBillingProfileRefresh } from '../src/lib/billingProfileRefresh.js';
+import { getAutoRenewalControl } from '../src/lib/autoRenewalControl.js';
+const windowTarget = new EventTarget();
+const documentTarget = new EventTarget();
+documentTarget.visibilityState = 'visible';
+let calls = 0;
+let resolve;
+let profile = { membership_actions: { current_subscription_id: 123 } };
+let serverSubscription = 123;
+const checks = [];
+const cleanup = bindBillingProfileRefresh({ windowTarget, documentTarget,
+  onChecking: (value) => checks.push(value),
+  refresh: () => {
+    calls++;
+    const subscription = serverSubscription;
+    return new Promise((done) => { resolve = () => { profile = { membership_actions: { current_subscription_id: subscription } }; done(); }; });
+  },
+});
+const settle = async () => { resolve(); await Promise.resolve(); await Promise.resolve(); };
+assert.equal(calls, 1, 'Billing entry fetches fresh profile');
+await settle();
+assert.equal(getAutoRenewalControl(profile, '/cancel').hasAutoRenewal, true);
+serverSubscription = null;
+windowTarget.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+assert.equal(calls, 2, 'Back/forward cache return triggers refresh');
+await settle();
+assert.equal(getAutoRenewalControl(profile, '/cancel').hasAutoRenewal, false, 'Confirmed server cancellation turns toggle off without reload');
+assert.equal(getAutoRenewalControl(profile, '/cancel').disabled, true);
+windowTarget.dispatchEvent(new Event('focus'));
+windowTarget.dispatchEvent(new Event('focus'));
+assert.equal(calls, 3, 'Only one request in flight');
+await settle();
+assert.equal(calls, 4, 'Return during an old request queues reconciliation');
+await settle();
+documentTarget.visibilityState = 'hidden';
+documentTarget.dispatchEvent(new Event('visibilitychange'));
+assert.equal(calls, 4, 'Hidden tabs do not fetch');
+documentTarget.visibilityState = 'visible';
+documentTarget.dispatchEvent(new Event('visibilitychange'));
+assert.equal(calls, 5, 'Returning from another tab refreshes');
+await settle();
+windowTarget.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+assert.equal(calls, 5, 'Initial pageshow does not duplicate initial refresh');
+cleanup();
+windowTarget.dispatchEvent(new Event('focus'));
+documentTarget.dispatchEvent(new Event('visibilitychange'));
+assert.equal(calls, 5, 'Listeners removed on unmount');
+assert.equal(checks.at(-1), false);
+console.log('PASS: Billing entry, BFCache return, cancellation status, focus/visibility refresh, deduplication and cleanup.');

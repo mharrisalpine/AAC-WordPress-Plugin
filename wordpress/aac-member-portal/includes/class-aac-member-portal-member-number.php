@@ -25,6 +25,42 @@ final class AAC_Member_Portal_Member_Number {
 		add_action('pmpro_after_change_membership_level', [$this, 'assign_after_membership_change'], 8, 2);
 		add_action('added_user_meta', [$this, 'observe_member_number'], 5, 4);
 		add_action('updated_user_meta', [$this, 'observe_member_number'], 5, 4);
+		add_filter('pmpro_email_data', [$this, 'add_member_number_to_pmpro_email_data'], 10, 2);
+	}
+
+	/**
+	 * Expose the stable AAC member number to PMPro email templates as
+	 * {{ aac_member_id }} (or !!aac_member_id!! in legacy templates).
+	 */
+	public function add_member_number_to_pmpro_email_data($data, $email) {
+		if (!is_array($data)) {
+			return $data;
+		}
+
+		$user_id = isset($data['user_id']) ? absint($data['user_id']) : 0;
+		if (!$user_id && is_object($email) && isset($email->user_id)) {
+			$user_id = absint($email->user_id);
+		}
+
+		if (!$user_id) {
+			$email_address = '';
+			if (!empty($data['user_email'])) {
+				$email_address = sanitize_email((string) $data['user_email']);
+			} elseif (is_object($email) && !empty($email->email)) {
+				$email_address = sanitize_email((string) $email->email);
+			}
+
+			if ($email_address !== '') {
+				$user = get_user_by('email', $email_address);
+				$user_id = $user instanceof WP_User ? (int) $user->ID : 0;
+			}
+		}
+
+		$data['aac_member_id'] = $user_id > 0
+			? trim((string) get_user_meta($user_id, 'aac_member_id', true))
+			: '';
+
+		return $data;
 	}
 
 	public function maybe_install() {

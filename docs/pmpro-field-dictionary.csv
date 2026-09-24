@@ -1,0 +1,142 @@
+table,field,type,key_or_index,description,sensitivity,notes
+pmpro_membership_levels,id,int unsigned,primary key,Membership level ID used by PMPro checkout and member assignments,Internal identifier,Core PMPro level table
+pmpro_membership_levels,name,varchar(255),indexed,Admin-facing membership level name,Low,Examples: Supporter Partner Leader Advocate
+pmpro_membership_levels,description,longtext,,Level description shown or used by templates,Low,
+pmpro_membership_levels,confirmation,longtext,,Confirmation text for the level,Low,
+pmpro_membership_levels,initial_payment,decimal(18,8),indexed,Initial checkout charge for the level,Financial,
+pmpro_membership_levels,billing_amount,decimal(18,8),,Recurring billing amount,Financial,
+pmpro_membership_levels,cycle_number,int,,Recurring billing cycle count,Low,Example: 1
+pmpro_membership_levels,cycle_period,varchar(10),,Recurring billing cycle period,Low,Usually Day Week Month or Year
+pmpro_membership_levels,billing_limit,int,,Number of billing cycles before billing stops,Low,0 typically means no limit
+pmpro_membership_levels,trial_amount,decimal(18,8),,Trial period amount,Financial,
+pmpro_membership_levels,trial_limit,int,,Number of trial cycles,Low,
+pmpro_membership_levels,allow_signups,tinyint,indexed,Whether checkout signups are allowed for this level,Low,1 enabled 0 disabled
+pmpro_membership_levels,expiration_number,int unsigned,,Membership expiration count,Low,Used with expiration_period
+pmpro_membership_levels,expiration_period,varchar(10),,Membership expiration unit,Low,Usually Day Week Month or Year
+pmpro_membership_orders,id,bigint unsigned,primary key,PMPro order ID,Internal identifier,Primary transaction/order record
+pmpro_membership_orders,code,varchar(32),unique,PMPro order code,Internal identifier,Not necessarily the promo code
+pmpro_membership_orders,session_id,varchar(64),indexed,Checkout session identifier,Internal identifier,
+pmpro_membership_orders,user_id,bigint unsigned,indexed,WordPress user ID associated with the order,Personal data,References wp_users.ID
+pmpro_membership_orders,membership_id,int unsigned,indexed,Membership level purchased on the order,Internal identifier,References pmpro_membership_levels.id
+pmpro_membership_orders,paypal_token,varchar(64),,PayPal token for legacy PayPal flows,Sensitive token,Gateway-specific
+pmpro_membership_orders,billing_name,varchar(128),,Billing full name,Personal data,
+pmpro_membership_orders,billing_street,varchar(128),,Billing street address line 1,Personal data,
+pmpro_membership_orders,billing_street2,varchar(128),,Billing street address line 2,Personal data,Added in PMPro 3.2
+pmpro_membership_orders,billing_city,varchar(128),,Billing city,Personal data,
+pmpro_membership_orders,billing_state,varchar(32),,Billing state or region,Personal data,
+pmpro_membership_orders,billing_zip,varchar(16),,Billing postal code,Personal data,
+pmpro_membership_orders,billing_country,varchar(128),,Billing country,Personal data,
+pmpro_membership_orders,billing_phone,varchar(32),,Billing phone number,Personal data,
+pmpro_membership_orders,subtotal,varchar(16),,Order subtotal,Financial,Stored as string in PMPro schema
+pmpro_membership_orders,tax,varchar(16),,Tax amount,Financial,Stored as string in PMPro schema
+pmpro_membership_orders,checkout_id,bigint,indexed,Checkout attempt ID,Internal identifier,
+pmpro_membership_orders,total,varchar(16),,Order total,Financial,Stored as string in PMPro schema
+pmpro_membership_orders,payment_type,varchar(64),,Payment method type label,Payment metadata,Example: Credit Card
+pmpro_membership_orders,cardtype,varchar(32),,Card brand/type label,Payment metadata,Non-sensitive if limited to brand
+pmpro_membership_orders,accountnumber,varchar(32),,Masked card account value or last four,Payment metadata,Treat as sensitive-adjacent; should not contain full PAN
+pmpro_membership_orders,expirationmonth,char(2),,Card expiration month,Payment metadata,Non-sensitive card metadata
+pmpro_membership_orders,expirationyear,varchar(4),,Card expiration year,Payment metadata,Non-sensitive card metadata
+pmpro_membership_orders,status,varchar(32),indexed,Order status,Low,Examples: success pending review error
+pmpro_membership_orders,gateway,varchar(64),indexed,Payment gateway slug,Low,Example: stripe
+pmpro_membership_orders,gateway_environment,varchar(64),indexed,Gateway environment,Low,Example: sandbox live
+pmpro_membership_orders,payment_transaction_id,varchar(64),indexed,Gateway payment transaction ID,Payment metadata,Example Stripe PaymentIntent or charge-related ID depending gateway/version
+pmpro_membership_orders,subscription_transaction_id,varchar(64),indexed,Gateway subscription ID,Payment metadata,Example Stripe subscription ID
+pmpro_membership_orders,timestamp,datetime,indexed,Order timestamp,Low,
+pmpro_membership_orders,affiliate_id,varchar(32),indexed,Affiliate ID,Internal identifier,Only populated if affiliate integration is used
+pmpro_membership_orders,affiliate_subid,varchar(32),indexed,Affiliate sub ID,Internal identifier,Only populated if affiliate integration is used
+pmpro_membership_orders,notes,text,,Order notes,Potentially sensitive,Free text can contain admin/user-entered data
+pmpro_memberships_categories,membership_id,int unsigned,primary key part,Membership level ID with category access,Internal identifier,Content restriction relationship
+pmpro_memberships_categories,category_id,bigint unsigned,primary key part,WordPress category ID restricted to the level,Internal identifier,References wp_terms/term taxonomy context
+pmpro_memberships_categories,modified,timestamp,,Last modified timestamp,Low,
+pmpro_memberships_pages,membership_id,int unsigned,unique key part,Membership level ID with page access,Internal identifier,Content restriction relationship
+pmpro_memberships_pages,page_id,bigint unsigned,primary key part,WordPress page/post ID restricted to the level,Internal identifier,References wp_posts.ID
+pmpro_memberships_pages,modified,timestamp,,Last modified timestamp,Low,
+pmpro_memberships_users,id,bigint unsigned,primary key,Membership assignment row ID,Internal identifier,Represents current or historical membership assignment
+pmpro_memberships_users,user_id,bigint unsigned,indexed,WordPress user ID,Personal data,References wp_users.ID
+pmpro_memberships_users,membership_id,int unsigned,indexed,Membership level ID assigned to the user,Internal identifier,References pmpro_membership_levels.id
+pmpro_memberships_users,code_id,bigint unsigned,indexed,Discount code ID used for this assignment,Internal identifier,References pmpro_discount_codes.id when present
+pmpro_memberships_users,initial_payment,decimal(18,8),,Initial payment amount copied to assignment,Financial,
+pmpro_memberships_users,billing_amount,decimal(18,8),,Recurring billing amount copied to assignment,Financial,
+pmpro_memberships_users,cycle_number,int,,Recurring cycle count,Low,
+pmpro_memberships_users,cycle_period,varchar(10),,Recurring cycle period,Low,
+pmpro_memberships_users,billing_limit,int,,Recurring billing cycle limit,Low,
+pmpro_memberships_users,trial_amount,decimal(18,8),,Trial billing amount,Financial,
+pmpro_memberships_users,trial_limit,int,,Trial cycle limit,Low,
+pmpro_memberships_users,status,varchar(20),indexed,Membership assignment status,Low,Common values include active inactive cancelled expired admin_cancelled
+pmpro_memberships_users,startdate,datetime,,Membership start date,Low,
+pmpro_memberships_users,enddate,datetime,indexed,Membership end/expiration date,Low,NULL for no fixed end date
+pmpro_memberships_users,modified,timestamp,indexed,Last modified timestamp,Low,
+pmpro_discount_codes,id,bigint unsigned,primary key,Discount code ID,Internal identifier,
+pmpro_discount_codes,code,varchar(32),unique,Discount code text entered at checkout,Sensitive business data,Treat as controlled promotional data
+pmpro_discount_codes,starts,date,indexed,Discount start date,Low,
+pmpro_discount_codes,expires,date,indexed,Discount expiration date,Low,
+pmpro_discount_codes,uses,int,,Maximum number of uses,Low,
+pmpro_discount_codes,one_use_per_user,tinyint,,Whether each user can use this code once,Low,Added in PMPro 3.3
+pmpro_discount_codes_levels,code_id,bigint unsigned,primary key part,Discount code ID,Internal identifier,References pmpro_discount_codes.id
+pmpro_discount_codes_levels,level_id,int unsigned,primary key part,Membership level ID the discount applies to,Internal identifier,References pmpro_membership_levels.id
+pmpro_discount_codes_levels,initial_payment,decimal(18,8),indexed,Discounted initial checkout amount,Financial,
+pmpro_discount_codes_levels,billing_amount,decimal(18,8),,Discounted recurring billing amount,Financial,
+pmpro_discount_codes_levels,cycle_number,int,,Discounted recurring cycle count,Low,
+pmpro_discount_codes_levels,cycle_period,varchar(10),,Discounted recurring cycle period,Low,
+pmpro_discount_codes_levels,billing_limit,int,,Discounted recurring billing cycle limit,Low,
+pmpro_discount_codes_levels,trial_amount,decimal(18,8),,Discounted trial amount,Financial,
+pmpro_discount_codes_levels,trial_limit,int,,Discounted trial cycle limit,Low,
+pmpro_discount_codes_levels,expiration_number,int unsigned,,Discounted membership expiration count,Low,
+pmpro_discount_codes_levels,expiration_period,varchar(10),,Discounted membership expiration period,Low,
+pmpro_discount_codes_uses,id,bigint unsigned,primary key,Discount code use row ID,Internal identifier,
+pmpro_discount_codes_uses,code_id,bigint unsigned,,Discount code ID used,Internal identifier,References pmpro_discount_codes.id
+pmpro_discount_codes_uses,user_id,bigint unsigned,indexed,WordPress user ID that used the code,Personal data,References wp_users.ID
+pmpro_discount_codes_uses,order_id,bigint unsigned,,PMPro order ID for the use,Internal identifier,References pmpro_membership_orders.id
+pmpro_discount_codes_uses,timestamp,timestamp,indexed,When the discount use row was created/updated,Low,
+pmpro_membership_levelmeta,meta_id,bigint unsigned,primary key,Level meta row ID,Internal identifier,WordPress-style meta table
+pmpro_membership_levelmeta,pmpro_membership_level_id,int unsigned,indexed,Membership level ID,Internal identifier,References pmpro_membership_levels.id
+pmpro_membership_levelmeta,meta_key,varchar(255),indexed,Meta key name,Varies,Keys are dynamic and addon-dependent
+pmpro_membership_levelmeta,meta_value,longtext,,Meta value,Varies,Can contain serialized data or addon settings
+pmpro_subscriptions,id,bigint unsigned,primary key,PMPro subscription row ID,Internal identifier,Added in PMPro 3.0
+pmpro_subscriptions,user_id,bigint unsigned,indexed,WordPress user ID associated with subscription,Personal data,References wp_users.ID
+pmpro_subscriptions,membership_level_id,int unsigned,,Membership level for subscription,Internal identifier,References pmpro_membership_levels.id
+pmpro_subscriptions,gateway,varchar(64),unique key part,Gateway slug,Low,Example: stripe
+pmpro_subscriptions,gateway_environment,varchar(64),unique key part,Gateway environment,Low,Example: sandbox live
+pmpro_subscriptions,subscription_transaction_id,varchar(64),unique key part,Gateway subscription ID,Payment metadata,Example Stripe subscription ID
+pmpro_subscriptions,status,varchar(20),,Subscription status,Low,Common values include active cancelled
+pmpro_subscriptions,startdate,datetime,,Subscription start date,Low,
+pmpro_subscriptions,enddate,datetime,,Subscription end/cancel date,Low,
+pmpro_subscriptions,next_payment_date,datetime,indexed,Next expected recurring payment date,Financial,
+pmpro_subscriptions,billing_amount,decimal(18,8),,Recurring billing amount,Financial,
+pmpro_subscriptions,cycle_number,int,,Recurring billing cycle count,Low,
+pmpro_subscriptions,cycle_period,varchar(10),,Recurring billing cycle period,Low,
+pmpro_subscriptions,billing_limit,int,,Number of billing cycles before subscription stops,Low,
+pmpro_subscriptions,trial_amount,decimal(18,8),,Trial billing amount,Financial,
+pmpro_subscriptions,trial_limit,int,,Trial cycle limit,Low,
+pmpro_subscriptions,modified,timestamp,,Last modified timestamp,Low,
+pmpro_membership_ordermeta,meta_id,bigint unsigned,primary key,Order meta row ID,Internal identifier,WordPress-style meta table
+pmpro_membership_ordermeta,pmpro_membership_order_id,bigint unsigned,indexed,PMPro order ID,Internal identifier,References pmpro_membership_orders.id
+pmpro_membership_ordermeta,meta_key,varchar(255),indexed,Meta key name,Varies,Keys are dynamic and addon/gateway-dependent
+pmpro_membership_ordermeta,meta_value,longtext,,Meta value,Varies,PMPro has upgrade checks for sensitive values here; treat as potentially sensitive
+pmpro_subscriptionmeta,meta_id,bigint unsigned,primary key,Subscription meta row ID,Internal identifier,WordPress-style meta table
+pmpro_subscriptionmeta,pmpro_subscription_id,bigint unsigned,indexed,PMPro subscription ID,Internal identifier,References pmpro_subscriptions.id
+pmpro_subscriptionmeta,meta_key,varchar(255),indexed,Meta key name,Varies,Keys are dynamic and addon/gateway-dependent
+pmpro_subscriptionmeta,meta_value,longtext,,Meta value,Varies,Can contain serialized data or gateway/addon metadata
+pmpro_groups,id,int unsigned,primary key,Membership level group ID,Internal identifier,PMPro level grouping
+pmpro_groups,name,varchar(255),indexed,Group name,Low,
+pmpro_groups,allow_multiple_selections,tinyint,,Whether members can select multiple levels in the group,Low,
+pmpro_groups,displayorder,int,,Display sort order,Low,
+pmpro_membership_levels_groups,id,int unsigned,primary key,Membership-level-to-group relationship row ID,Internal identifier,
+pmpro_membership_levels_groups,level,int unsigned,indexed,Membership level ID,Internal identifier,References pmpro_membership_levels.id
+pmpro_membership_levels_groups,group,int unsigned,indexed,Group ID,Internal identifier,References pmpro_groups.id
+pmpro_email_log,id,bigint unsigned,primary key,Email log row ID,Internal identifier,Core PMPro email log table
+pmpro_email_log,user_id,bigint unsigned,indexed,WordPress user ID associated with email,Personal data,References wp_users.ID; 0 if not associated
+pmpro_email_log,email_to,varchar(255),indexed,Recipient email address,Personal data,
+pmpro_email_log,email_to_full,text,,Full recipient header/name,Personal data,
+pmpro_email_log,email_from,varchar(255),,Sender email address,Low,
+pmpro_email_log,from_name,varchar(255),,Sender display name,Low,
+pmpro_email_log,subject,varchar(255),indexed,Email subject,Potentially sensitive,Can reveal membership/payment context
+pmpro_email_log,body,longtext,,Email body,Potentially sensitive,May contain member/payment/order details
+pmpro_email_log,template,varchar(100),indexed,PMPro email template slug,Low,
+pmpro_email_log,headers,text,,Email headers,Potentially sensitive,May contain routing/recipient data
+pmpro_email_log,reply_to,varchar(255),,Reply-to email address,Low,
+pmpro_email_log,cc,text,,CC recipients,Personal data,
+pmpro_email_log,bcc,text,,BCC recipients,Personal data,
+pmpro_email_log,status,varchar(20),indexed,Email send status,Low,Default sent
+pmpro_email_log,error_message,text,,Send failure/error message,Potentially sensitive,May expose SMTP/provider details
+pmpro_email_log,timestamp,datetime,indexed,Email send timestamp,Low,

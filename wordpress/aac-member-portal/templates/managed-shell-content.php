@@ -6719,7 +6719,9 @@ const defaultPublicationCardImages = {
 		const syncPmproStateDropdown = () => {
 			const countryField = getCheckoutCountryControl();
 			const stateField = getCheckoutStateControl();
-			const stateMap = window.pmprosd_states;
+			const stateMap = window.pmprosd_states || <?php echo wp_json_encode(
+				$portal_plugin instanceof AAC_Member_Portal_Plugin ? $portal_plugin->get_checkout_state_options() : []
+			); ?>;
 			if (!countryField || !stateField || !stateMap || typeof stateMap !== 'object') {
 				return;
 			}

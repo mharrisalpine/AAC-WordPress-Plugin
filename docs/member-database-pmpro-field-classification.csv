@@ -44,7 +44,6 @@ benefits_info.rescue_amount,Preferences / Benefits,AAC rescue benefit layer,raw_
 benefits_info.medical_amount,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
 benefits_info.mortal_remains_amount,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
 benefits_info.rescue_reimbursement_process,Preferences / Benefits,AAC rescue benefit layer,raw_profile benefits_info,Custom keep,,keep custom,Not a PMPro field.
-grant_applications,Grant Applications,AAC Grants Review plugin,aac_grants_review tables / Member Database tab,Custom keep,,keep custom,Separate domain object; should not move into PMPro user fields.
 membership_history_rows,Membership History,Mirrored PMPro records,aac_member_db_membership_history,PMPro mirror,,keep as reporting mirror,These rows reflect PMPro history and should stay mirrored for reporting/review.
 subscription_rows,Subscriptions,Mirrored PMPro records,aac_member_db_subscriptions,PMPro mirror,,keep as reporting mirror,These rows reflect PMPro subscription records and should stay mirrored.
 transaction_rows,Transactions,Mirrored PMPro records,aac_member_db_transactions,PMPro mirror,,keep as reporting mirror,These rows reflect PMPro order records and should stay mirrored.

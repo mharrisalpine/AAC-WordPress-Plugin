@@ -5,6 +5,55 @@
   let pending = false;
   let replay = false;
   let readyUntil = 0;
+
+  const syncStateControl = () => {
+    const country = document.querySelector('#bcountry, #pmpro_scountry');
+    const current = document.querySelector('#bstate, #pmpro_sstate');
+    if (!country || !current) return;
+
+    const options = config.states?.[country.value] || {};
+    const shouldSelect = Object.keys(options).length > 0;
+    const currentValue = current.value || '';
+    let replacement = current;
+
+    if (shouldSelect && current.tagName !== 'SELECT') {
+      replacement = document.createElement('select');
+      replacement.append(new Option('Select state', ''));
+      Object.entries(options).forEach(([value, label]) => replacement.append(new Option(label, value)));
+    } else if (!shouldSelect && current.tagName === 'SELECT') {
+      replacement = document.createElement('input');
+      replacement.type = 'text';
+    }
+
+    if (replacement !== current) {
+      replacement.id = current.id;
+      replacement.name = current.name;
+      replacement.required = current.required;
+      replacement.autocomplete = current.autocomplete;
+      replacement.className = current.className
+        .replace(/pmpro_form_input-(?:text|select)/g, '')
+        .trim();
+      replacement.classList.add(`pmpro_form_input-${shouldSelect ? 'select' : 'text'}`);
+      current.replaceWith(replacement);
+      replacement.closest('.pmpro_form_field')?.classList.toggle('pmpro_form_field-select', shouldSelect);
+      replacement.closest('.pmpro_form_field')?.classList.toggle('pmpro_form_field-text', !shouldSelect);
+    }
+
+    if (shouldSelect) {
+      replacement.value = Object.prototype.hasOwnProperty.call(options, currentValue)
+        ? currentValue
+        : (Object.entries(options).find(([, label]) => label === currentValue)?.[0] || '');
+    } else {
+      replacement.value = currentValue;
+    }
+  };
+
+  syncStateControl();
+  document.addEventListener('DOMContentLoaded', syncStateControl, { once: true });
+  document.addEventListener('change', event => {
+    if (event.target?.matches('#bcountry, #pmpro_scountry')) syncStateControl();
+  });
+
   const showError = (form, message) => {
     let notice = form.querySelector('[data-aac-security-error]');
     if (!notice) {

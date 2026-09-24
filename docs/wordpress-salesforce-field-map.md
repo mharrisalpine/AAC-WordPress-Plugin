@@ -74,25 +74,6 @@ Stored under the serialized user meta key `aac_benefits_info`.
 | Mortal Remains Amount | `aac_benefits_info.mortal_remains_amount` | integer | `wp_usermeta` |
 | Rescue Reimbursement Process Included | `aac_benefits_info.rescue_reimbursement_process` | boolean | `wp_usermeta` |
 
-## AAC Grant Applications User Meta
-
-Stored under the serialized user meta key `aac_grant_applications`.
-
-| Field Name | API Name | Field Type | Storage |
-| --- | --- | --- | --- |
-| Grant Application ID | `aac_grant_applications[].id` | string | `wp_usermeta` |
-| Grant Slug | `aac_grant_applications[].grant_slug` | string | `wp_usermeta` |
-| Grant Name | `aac_grant_applications[].grant_name` | string | `wp_usermeta` |
-| Category | `aac_grant_applications[].category` | string | `wp_usermeta` |
-| Application Date | `aac_grant_applications[].application_date` | datetime string | `wp_usermeta` |
-| Application Status | `aac_grant_applications[].status` | string | `wp_usermeta` |
-| Project Title | `aac_grant_applications[].project_title` | string | `wp_usermeta` |
-| Requested Amount | `aac_grant_applications[].requested_amount` | string | `wp_usermeta` |
-| Objective Location | `aac_grant_applications[].objective_location` | string | `wp_usermeta` |
-| Discipline | `aac_grant_applications[].discipline` | string | `wp_usermeta` |
-| Team Name | `aac_grant_applications[].team_name` | string | `wp_usermeta` |
-| Summary | `aac_grant_applications[].summary` | text | `wp_usermeta` |
-
 ## AAC Family Configuration User Meta
 
 Stored under the serialized user meta key `aac_partner_family_config`.

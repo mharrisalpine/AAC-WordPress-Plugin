@@ -20,7 +20,6 @@ class AAC_Salesforce_Sync_Settings {
 				'sync_contact' => 1,
 				'sync_membership' => 1,
 				'sync_transaction' => 1,
-				'sync_grant' => 1,
 			],
 			'salesforce' => [
 				'auth_url' => 'https://login.salesforce.com/services/oauth2/authorize',
@@ -33,15 +32,34 @@ class AAC_Salesforce_Sync_Settings {
 				'contact_object' => 'Contact',
 				'membership_object' => 'Membership_Term__c',
 				'transaction_object' => 'Payment_Transaction__c',
-				'grant_object' => 'Grant_Application__c',
 				'contact_external_id_field' => 'WordPress_User_ID__c',
 				'membership_external_id_field' => 'AAC_External_Key__c',
-				'transaction_external_id_field' => 'PMPro_Order_ID__c',
-				'grant_external_id_field' => 'Grant_Review_Application_ID__c',
+				'transaction_external_id_field' => 'PMPro_Order_Line_Key__c',
 				'custom_objects' => [],
 			],
 			'inbound' => [
 				'secret' => '',
+			],
+			'error_report' => [
+				'enabled' => 0,
+				'recipient_email' => sanitize_email(get_option('admin_email')),
+				'daily_hour' => 6,
+				'retention_days' => 90,
+			],
+			'operations' => [
+				'alerts_enabled' => 1,
+				'alert_email' => sanitize_email(get_option('admin_email')),
+				'pending_sla_minutes' => 30,
+				'dead_letter_threshold' => 1,
+				'completed_job_retention_days' => 30,
+			],
+			'pull' => [
+				'enabled' => 0,
+				'sync_contact' => 1,
+				'sync_membership' => 1,
+				'interval' => 'hourly',
+				'batch_size' => 100,
+				'lookback_hours' => 24,
 			],
 			'field_mappings' => self::get_default_field_mappings(),
 		];
@@ -94,9 +112,17 @@ class AAC_Salesforce_Sync_Settings {
 				'member_db_profile_account_role' => self::build_mapping_entry('membership', 'Family_Account_Role__c'),
 			],
 			'transaction' => [
+				'member_db_transaction_line_key' => self::build_mapping_entry('transaction', 'PMPro_Order_Line_Key__c'),
+				'member_db_transaction_line_product_type' => self::build_mapping_entry('transaction', 'Product_Type__c'),
+				'member_db_transaction_line_label' => self::build_mapping_entry('transaction', 'Product_Name__c'),
+				'member_db_transaction_line_amount' => self::build_mapping_entry('transaction', 'Amount__c'),
+				'member_db_transaction_line_gross_membership_amount' => self::build_mapping_entry('transaction', 'Gross_Membership_Amount__c'),
+				'member_db_transaction_line_discount_amount' => self::build_mapping_entry('transaction', 'Discount_Amount__c'),
+				'member_db_transaction_line_net_membership_amount' => self::build_mapping_entry('transaction', 'Net_Membership_Amount__c'),
+				'member_db_transaction_line_discount_code' => self::build_mapping_entry('transaction', 'Discount_Code__c'),
+				'member_db_transaction_line_discount_type' => self::build_mapping_entry('transaction', 'Discount_Type__c'),
 				'member_db_transaction_record_id' => self::build_mapping_entry('transaction', 'PMPro_Order_ID__c'),
 				'member_db_transaction_record_user_id' => self::build_mapping_entry('transaction', 'WordPress_User_ID__c'),
-				'member_db_transaction_record_total' => self::build_mapping_entry('transaction', 'Amount__c'),
 				'member_db_transaction_row_source_status' => self::build_mapping_entry('transaction', 'Status__c'),
 				'member_db_transaction_record_gateway' => self::build_mapping_entry('transaction', 'Gateway__c'),
 				'member_db_transaction_record_timestamp' => self::build_mapping_entry('transaction', 'Transaction_Date__c'),
@@ -104,19 +130,6 @@ class AAC_Salesforce_Sync_Settings {
 				'member_db_transaction_record_code' => self::build_mapping_entry('transaction', 'Code__c'),
 				'member_db_transaction_record_payment_transaction_id' => self::build_mapping_entry('transaction', 'Payment_Transaction_ID__c'),
 				'member_db_transaction_record_subscription_transaction_id' => self::build_mapping_entry('transaction', 'Subscription_Transaction_ID__c'),
-			],
-			'grant' => [
-				'grant_application_review_application_id' => self::build_mapping_entry('grant', 'Grant_Review_Application_ID__c'),
-				'grant_application_applicant_user_id' => self::build_mapping_entry('grant', 'Grant_WordPress_User_ID__c'),
-				'grant_application_aac_member_id' => self::build_mapping_entry('grant', 'Grant_AAC_Member_ID__c'),
-				'grant_application_applicant_name' => self::build_mapping_entry('grant', 'Grant_Applicant_Name__c'),
-				'grant_application_applicant_email' => self::build_mapping_entry('grant', 'Grant_Applicant_Email__c'),
-				'grant_application_grant_name' => self::build_mapping_entry('grant', 'Grant_Name__c'),
-				'grant_application_project_title' => self::build_mapping_entry('grant', 'Grant_Project_Title__c'),
-				'grant_application_requested_amount' => self::build_mapping_entry('grant', 'Grant_Requested_Amount__c'),
-				'grant_application_status' => self::build_mapping_entry('grant', 'Grant_Status__c'),
-				'grant_application_application_date' => self::build_mapping_entry('grant', 'Grant_Submitted_Date__c'),
-				'grant_application_reviewed_at' => self::build_mapping_entry('grant', 'Grant_Reviewed_At__c'),
 			],
 		];
 	}
@@ -126,7 +139,6 @@ class AAC_Salesforce_Sync_Settings {
 			'contact' => 'Contact',
 			'membership' => 'Membership Term',
 			'transaction' => 'Transaction',
-			'grant' => 'Grant',
 		];
 	}
 
@@ -208,8 +220,8 @@ class AAC_Salesforce_Sync_Settings {
 		$settings = self::migrate_contact_member_id_mapping($settings);
 		$settings = self::migrate_contact_communication_preference_mappings($settings);
 		$settings = self::migrate_contact_membership_snapshot_mappings($settings);
-		$settings = self::migrate_grant_mapping_api_names($settings);
-		return self::migrate_membership_term_defaults($settings);
+		$settings = self::migrate_membership_term_defaults($settings);
+		return self::migrate_transaction_line_defaults($settings);
 	}
 
 	public static function update_settings($input) {
@@ -221,6 +233,9 @@ class AAC_Salesforce_Sync_Settings {
 		$general = isset($input['general']) && is_array($input['general']) ? $input['general'] : [];
 		$salesforce = isset($input['salesforce']) && is_array($input['salesforce']) ? $input['salesforce'] : [];
 		$inbound = isset($input['inbound']) && is_array($input['inbound']) ? $input['inbound'] : [];
+		$error_report = isset($input['error_report']) && is_array($input['error_report']) ? $input['error_report'] : [];
+		$operations = isset($input['operations']) && is_array($input['operations']) ? $input['operations'] : [];
+		$pull = isset($input['pull']) && is_array($input['pull']) ? $input['pull'] : [];
 		$field_mappings = isset($input['field_mappings']) && is_array($input['field_mappings']) ? $input['field_mappings'] : [];
 
 		if (array_key_exists('enabled', $general)) {
@@ -241,9 +256,6 @@ class AAC_Salesforce_Sync_Settings {
 		if (array_key_exists('sync_transaction', $general)) {
 			$settings['general']['sync_transaction'] = empty($general['sync_transaction']) ? 0 : 1;
 		}
-		if (array_key_exists('sync_grant', $general)) {
-			$settings['general']['sync_grant'] = empty($general['sync_grant']) ? 0 : 1;
-		}
 
 		$text_fields = [
 			'auth_url',
@@ -256,11 +268,9 @@ class AAC_Salesforce_Sync_Settings {
 			'contact_object',
 			'membership_object',
 			'transaction_object',
-			'grant_object',
 			'contact_external_id_field',
 			'membership_external_id_field',
 			'transaction_external_id_field',
-			'grant_external_id_field',
 		];
 
 		foreach ($text_fields as $field) {
@@ -276,6 +286,56 @@ class AAC_Salesforce_Sync_Settings {
 
 		if (array_key_exists('secret', $inbound)) {
 			$settings['inbound']['secret'] = sanitize_text_field((string) $inbound['secret']);
+		}
+
+		if (array_key_exists('enabled', $error_report)) {
+			$settings['error_report']['enabled'] = empty($error_report['enabled']) ? 0 : 1;
+		}
+		if (array_key_exists('recipient_email', $error_report)) {
+			$email = sanitize_email((string) $error_report['recipient_email']);
+			$settings['error_report']['recipient_email'] = $email && is_email($email) ? $email : sanitize_email(get_option('admin_email'));
+		}
+		if (array_key_exists('daily_hour', $error_report)) {
+			$settings['error_report']['daily_hour'] = max(0, min(23, absint($error_report['daily_hour'])));
+		}
+		if (array_key_exists('retention_days', $error_report)) {
+			$settings['error_report']['retention_days'] = max(1, min(3650, absint($error_report['retention_days'])));
+		}
+		if (array_key_exists('alerts_enabled', $operations)) {
+			$settings['operations']['alerts_enabled'] = empty($operations['alerts_enabled']) ? 0 : 1;
+		}
+		if (array_key_exists('alert_email', $operations)) {
+			$email = sanitize_email((string) $operations['alert_email']);
+			$settings['operations']['alert_email'] = $email && is_email($email) ? $email : sanitize_email(get_option('admin_email'));
+		}
+		if (array_key_exists('pending_sla_minutes', $operations)) {
+			$settings['operations']['pending_sla_minutes'] = max(5, min(1440, absint($operations['pending_sla_minutes'])));
+		}
+		if (array_key_exists('dead_letter_threshold', $operations)) {
+			$settings['operations']['dead_letter_threshold'] = max(1, min(1000, absint($operations['dead_letter_threshold'])));
+		}
+		if (array_key_exists('completed_job_retention_days', $operations)) {
+			$settings['operations']['completed_job_retention_days'] = max(1, min(3650, absint($operations['completed_job_retention_days'])));
+		}
+
+		if (array_key_exists('enabled', $pull)) {
+			$settings['pull']['enabled'] = empty($pull['enabled']) ? 0 : 1;
+		}
+		if (array_key_exists('sync_contact', $pull)) {
+			$settings['pull']['sync_contact'] = empty($pull['sync_contact']) ? 0 : 1;
+		}
+		if (array_key_exists('sync_membership', $pull)) {
+			$settings['pull']['sync_membership'] = empty($pull['sync_membership']) ? 0 : 1;
+		}
+		if (array_key_exists('interval', $pull)) {
+			$interval = sanitize_key((string) $pull['interval']);
+			$settings['pull']['interval'] = in_array($interval, ['aac_salesforce_sync_five_minutes', 'hourly', 'twicedaily', 'daily'], true) ? $interval : 'hourly';
+		}
+		if (array_key_exists('batch_size', $pull)) {
+			$settings['pull']['batch_size'] = max(1, min(200, absint($pull['batch_size'])));
+		}
+		if (array_key_exists('lookback_hours', $pull)) {
+			$settings['pull']['lookback_hours'] = max(1, min(720, absint($pull['lookback_hours'])));
 		}
 
 		if (array_key_exists('custom_objects_present', $salesforce)) {
@@ -443,66 +503,6 @@ class AAC_Salesforce_Sync_Settings {
 		return $settings;
 	}
 
-	private static function migrate_grant_mapping_api_names($settings) {
-		if (!is_array($settings)) {
-			return $settings;
-		}
-
-		$grant_field_map = [
-			'grant_application_review_application_id' => [
-				'old' => 'AAC_Grant_Review_ID__c',
-				'new' => 'Grant_Review_Application_ID__c',
-			],
-			'grant_application_applicant_user_id' => [
-				'old' => 'WordPress_User_ID__c',
-				'new' => 'Grant_WordPress_User_ID__c',
-			],
-			'grant_application_applicant_name' => [
-				'old' => 'Applicant_Name__c',
-				'new' => 'Grant_Applicant_Name__c',
-			],
-			'grant_application_applicant_email' => [
-				'old' => 'Applicant_Email__c',
-				'new' => 'Grant_Applicant_Email__c',
-			],
-			'grant_application_project_title' => [
-				'old' => 'Project_Title__c',
-				'new' => 'Grant_Project_Title__c',
-			],
-			'grant_application_requested_amount' => [
-				'old' => 'Requested_Amount__c',
-				'new' => 'Grant_Requested_Amount__c',
-			],
-			'grant_application_status' => [
-				'old' => 'Status__c',
-				'new' => 'Grant_Status__c',
-			],
-			'grant_application_application_date' => [
-				'old' => 'Submitted_At__c',
-				'new' => 'Grant_Submitted_Date__c',
-			],
-			'grant_application_reviewed_at' => [
-				'old' => 'Reviewed_At__c',
-				'new' => 'Grant_Reviewed_At__c',
-			],
-		];
-
-		foreach ($grant_field_map as $field_key => $rename) {
-			$current_mapping = $settings['field_mappings']['grant'][$field_key] ?? [];
-			$current_field = sanitize_text_field((string) ($current_mapping['field'] ?? ''));
-			if ($current_field === $rename['old']) {
-				$settings['field_mappings']['grant'][$field_key] = self::build_mapping_entry('grant', $rename['new']);
-			}
-		}
-
-		$current_external_id = sanitize_text_field((string) ($settings['salesforce']['grant_external_id_field'] ?? ''));
-		if ($current_external_id === 'AAC_Grant_Review_ID__c') {
-			$settings['salesforce']['grant_external_id_field'] = 'Grant_Review_Application_ID__c';
-		}
-
-		return $settings;
-	}
-
 	private static function migrate_membership_term_defaults($settings) {
 		if (!is_array($settings)) {
 			return $settings;
@@ -591,10 +591,47 @@ class AAC_Salesforce_Sync_Settings {
 		return $settings;
 	}
 
+	private static function migrate_transaction_line_defaults($settings) {
+		if (!is_array($settings)) {
+			return $settings;
+		}
+
+		$current_external_id = sanitize_text_field((string) ($settings['salesforce']['transaction_external_id_field'] ?? ''));
+		if ($current_external_id === '' || $current_external_id === 'PMPro_Order_ID__c') {
+			$settings['salesforce']['transaction_external_id_field'] = 'PMPro_Order_Line_Key__c';
+		}
+
+		$default_transaction_field_map = [
+			'member_db_transaction_line_key' => 'PMPro_Order_Line_Key__c',
+			'member_db_transaction_line_product_type' => 'Product_Type__c',
+			'member_db_transaction_line_label' => 'Product_Name__c',
+			'member_db_transaction_line_amount' => 'Amount__c',
+			'member_db_transaction_line_gross_membership_amount' => 'Gross_Membership_Amount__c',
+			'member_db_transaction_line_discount_amount' => 'Discount_Amount__c',
+			'member_db_transaction_line_net_membership_amount' => 'Net_Membership_Amount__c',
+			'member_db_transaction_line_discount_code' => 'Discount_Code__c',
+			'member_db_transaction_line_discount_type' => 'Discount_Type__c',
+			'member_db_transaction_record_id' => 'PMPro_Order_ID__c',
+		];
+
+		foreach ($default_transaction_field_map as $field_key => $target_field) {
+			$current_mapping = $settings['field_mappings']['transaction'][$field_key] ?? [];
+			$current_field = sanitize_text_field((string) ($current_mapping['field'] ?? ''));
+			if ($current_field === '') {
+				$settings['field_mappings']['transaction'][$field_key] = self::build_mapping_entry('transaction', $target_field);
+			}
+		}
+
+		return $settings;
+	}
+
 	private static function build_mapping_entry($object_key, $field_name) {
+		$object_key = sanitize_key((string) $object_key);
 		return [
-			'object' => sanitize_key((string) $object_key),
+			'object' => $object_key,
 			'field' => sanitize_text_field((string) $field_name),
+			'direction' => $object_key === 'transaction' ? 'outbound' : 'bidirectional',
+			'clear_empty' => 0,
 		];
 	}
 
@@ -663,17 +700,7 @@ class AAC_Salesforce_Sync_Settings {
 					'group' => 'transaction',
 					'label' => 'Primary Transaction',
 					'object_name' => sanitize_text_field((string) ($salesforce['transaction_object'] ?? 'Payment_Transaction__c')),
-					'external_id_field' => sanitize_text_field((string) ($salesforce['transaction_external_id_field'] ?? 'PMPro_Order_ID__c')),
-					'is_default' => true,
-				],
-			],
-			'grant' => [
-				'grant' => [
-					'key' => 'grant',
-					'group' => 'grant',
-					'label' => 'Primary Grant Application',
-					'object_name' => sanitize_text_field((string) ($salesforce['grant_object'] ?? 'Grant_Application__c')),
-					'external_id_field' => sanitize_text_field((string) ($salesforce['grant_external_id_field'] ?? 'Grant_Review_Application_ID__c')),
+					'external_id_field' => sanitize_text_field((string) ($salesforce['transaction_external_id_field'] ?? 'PMPro_Order_Line_Key__c')),
 					'is_default' => true,
 				],
 			],
@@ -698,7 +725,7 @@ class AAC_Salesforce_Sync_Settings {
 
 			$raw_key = sanitize_key((string) ($row['key'] ?? ''));
 			$key = $raw_key !== '' ? $raw_key : sanitize_key($group . '_' . $object_name);
-			if ($key === '' || in_array($key, ['contact', 'membership', 'transaction', 'grant'], true)) {
+			if ($key === '' || in_array($key, ['contact', 'membership', 'transaction'], true)) {
 				$key = sanitize_key('custom_' . $group . '_' . $object_name);
 			}
 
@@ -726,16 +753,20 @@ class AAC_Salesforce_Sync_Settings {
 	public static function normalize_mapping_entry($entry, $default_object_key = '') {
 		if (is_string($entry)) {
 			$field = sanitize_text_field($entry);
-			return [
-				'object' => $field !== '' ? sanitize_key((string) $default_object_key) : '',
-				'field' => $field,
-			];
+				return [
+					'object' => $field !== '' ? sanitize_key((string) $default_object_key) : '',
+					'field' => $field,
+					'direction' => $default_object_key === 'transaction' ? 'outbound' : 'bidirectional',
+					'clear_empty' => 0,
+				];
 		}
 
 		if (!is_array($entry)) {
 			return [
 				'object' => '',
 				'field' => '',
+				'direction' => 'bidirectional',
+				'clear_empty' => 0,
 			];
 		}
 
@@ -744,10 +775,16 @@ class AAC_Salesforce_Sync_Settings {
 		if ($field !== '' && $object === '') {
 			$object = sanitize_key((string) $default_object_key);
 		}
+		$direction = sanitize_key((string) ($entry['direction'] ?? 'bidirectional'));
+		if (!in_array($direction, ['outbound', 'inbound', 'bidirectional'], true)) {
+			$direction = 'bidirectional';
+		}
 
 		return [
 			'object' => $object,
 			'field' => $field,
+			'direction' => $direction,
+			'clear_empty' => empty($entry['clear_empty']) ? 0 : 1,
 		];
 	}
 
@@ -806,6 +843,12 @@ class AAC_Salesforce_Sync_Settings {
 			'member_db.transaction_record',
 			self::get_pmpro_transaction_fallback_paths()
 		);
+		$transaction_line_fields = self::build_path_field_definitions(
+			'transaction_line',
+			'Member Database Transaction Line',
+			'member_db.transaction_line',
+			self::get_transaction_line_fallback_paths()
+		);
 
 		$contact_fields = array_merge($profile_payload_fields, $profile_row_fields);
 		$membership_fields = array_merge($profile_payload_fields, $profile_row_fields, $membership_record_fields, $subscription_record_fields);
@@ -819,218 +862,8 @@ class AAC_Salesforce_Sync_Settings {
 		return [
 			'contact' => $contact_fields,
 			'membership' => $membership_fields,
-			'transaction' => array_merge($transaction_row_fields, $transaction_record_fields),
-			'grant' => self::get_grant_field_definitions(),
+			'transaction' => array_merge($transaction_row_fields, $transaction_record_fields, $transaction_line_fields),
 		];
-	}
-
-	private static function get_grant_field_definitions() {
-		$definitions = [
-			'grant_application_review_application_id' => [
-				'label' => 'Grant Application: Review Application ID',
-				'source_path' => 'grant.application.review_application_id',
-				'type' => 'integer',
-			],
-			'grant_application_source' => [
-				'label' => 'Grant Application: Source',
-				'source_path' => 'grant.application.source',
-				'type' => 'string',
-			],
-			'grant_application_source_form_id' => [
-				'label' => 'Grant Application: Source Form ID',
-				'source_path' => 'grant.application.source_form_id',
-				'type' => 'integer',
-			],
-			'grant_application_source_entry_id' => [
-				'label' => 'Grant Application: Source Entry ID',
-				'source_path' => 'grant.application.source_entry_id',
-				'type' => 'integer',
-			],
-			'grant_application_applicant_user_id' => [
-				'label' => 'Grant Application: WordPress User ID',
-				'source_path' => 'grant.application.applicant_user_id',
-				'type' => 'integer',
-			],
-			'grant_application_aac_member_id' => [
-				'label' => 'Grant Application: AAC Member ID',
-				'source_path' => 'grant.application.aac_member_id',
-				'type' => 'string',
-			],
-			'grant_application_applicant_name' => [
-				'label' => 'Grant Application: Applicant Name',
-				'source_path' => 'grant.application.applicant_name',
-				'type' => 'string',
-			],
-			'grant_application_applicant_email' => [
-				'label' => 'Grant Application: Applicant Email',
-				'source_path' => 'grant.application.applicant_email',
-				'type' => 'email',
-			],
-			'grant_application_grant_name' => [
-				'label' => 'Grant Application: Grant Name',
-				'source_path' => 'grant.application.grant_name',
-				'type' => 'string',
-			],
-			'grant_application_grant_slug' => [
-				'label' => 'Grant Application: Grant Slug',
-				'source_path' => 'grant.application.grant_slug',
-				'type' => 'string',
-			],
-			'grant_application_category' => [
-				'label' => 'Grant Application: Category',
-				'source_path' => 'grant.application.category',
-				'type' => 'string',
-			],
-			'grant_application_project_title' => [
-				'label' => 'Grant Application: Project Title',
-				'source_path' => 'grant.application.project_title',
-				'type' => 'string',
-			],
-			'grant_application_requested_amount' => [
-				'label' => 'Grant Application: Requested Amount',
-				'source_path' => 'grant.application.requested_amount',
-				'type' => 'decimal',
-			],
-			'grant_application_status' => [
-				'label' => 'Grant Application: Workflow Status',
-				'source_path' => 'grant.application.status',
-				'type' => 'string',
-			],
-			'grant_application_status_key' => [
-				'label' => 'Grant Application: Workflow Status Key',
-				'source_path' => 'grant.application.status_key',
-				'type' => 'string',
-			],
-			'grant_application_application_date' => [
-				'label' => 'Grant Application: Submitted Date',
-				'source_path' => 'grant.application.application_date',
-				'type' => 'datetime',
-			],
-			'grant_application_reviewed_at' => [
-				'label' => 'Grant Application: Reviewed At',
-				'source_path' => 'grant.application.reviewed_at',
-				'type' => 'datetime',
-			],
-			'grant_application_last_note' => [
-				'label' => 'Grant Application: Last Reviewer Note',
-				'source_path' => 'grant.application.last_note',
-				'type' => 'string',
-			],
-		];
-
-		foreach (self::get_portal_grant_form_field_definitions($definitions) as $field_key => $definition) {
-			$definitions[$field_key] = $definition;
-		}
-
-		ksort($definitions);
-		return $definitions;
-	}
-
-	private static function get_portal_grant_form_field_definitions($existing_definitions = []) {
-		$fields = [];
-		$builder_fields = [];
-		$existing_paths = [];
-		$existing_labels = [];
-		$reserved_field_keys = [
-			'review_application_id',
-			'source',
-			'source_form_id',
-			'source_entry_id',
-			'applicant_user_id',
-			'applicant_name',
-			'applicant_email',
-			'grant_name',
-			'grant_slug',
-			'category',
-			'project_title',
-			'requested_amount',
-			'status',
-			'status_key',
-			'application_date',
-			'reviewed_at',
-			'last_note',
-		];
-
-		foreach ((array) $existing_definitions as $definition) {
-			if (!is_array($definition)) {
-				continue;
-			}
-
-			$source_path = sanitize_text_field((string) ($definition['source_path'] ?? ''));
-			$label = sanitize_text_field((string) ($definition['label'] ?? ''));
-			if ($source_path !== '') {
-				$existing_paths[$source_path] = true;
-			}
-			if ($label !== '') {
-				$existing_labels[self::normalize_grant_field_label($label)] = true;
-			}
-		}
-
-		if (class_exists('AAC_Grants_Review_Settings')) {
-			$settings = new AAC_Grants_Review_Settings();
-			if (method_exists($settings, 'get_portal_grant_form_fields')) {
-				$builder_fields = $settings->get_portal_grant_form_fields();
-			}
-		}
-
-		if (empty($builder_fields)) {
-			$portal_settings = class_exists('AAC_Member_Portal_Admin') && method_exists('AAC_Member_Portal_Admin', 'get_settings')
-				? AAC_Member_Portal_Admin::get_settings()
-				: get_option('aac_member_portal_settings', []);
-			$content = isset($portal_settings['content']) && is_array($portal_settings['content']) ? $portal_settings['content'] : [];
-			$builder_fields = isset($content['grant_form_fields']) && is_array($content['grant_form_fields']) ? $content['grant_form_fields'] : [];
-		}
-
-		foreach ((array) $builder_fields as $field) {
-			if (!is_array($field)) {
-				continue;
-			}
-
-			$field_key = sanitize_key((string) ($field['field_key'] ?? ''));
-			$label = sanitize_text_field((string) ($field['label'] ?? ''));
-			if ($field_key === '' || $label === '') {
-				continue;
-			}
-
-			if (in_array($field_key, $reserved_field_keys, true)) {
-				continue;
-			}
-
-			$source_path = 'grant.fields.' . $field_key;
-			$normalized_label = self::normalize_grant_field_label($label);
-			if (isset($existing_paths[$source_path]) || isset($existing_labels[$normalized_label]) || isset($fields['grant_field_' . $field_key])) {
-				continue;
-			}
-
-			$fields['grant_field_' . $field_key] = [
-				'label' => 'Grant Field: ' . $label,
-				'source_path' => $source_path,
-				'type' => self::normalize_grant_builder_field_type((string) ($field['type'] ?? 'text')),
-			];
-			$existing_paths[$source_path] = true;
-			$existing_labels[$normalized_label] = true;
-		}
-
-		return $fields;
-	}
-
-	private static function normalize_grant_field_label($label) {
-		$label = strtolower(sanitize_text_field((string) $label));
-		$label = str_replace(['grant application:', 'grant field:', 'grant:'], '', $label);
-		$label = preg_replace('/\s+/', ' ', trim((string) $label));
-		return (string) $label;
-	}
-
-	private static function normalize_grant_builder_field_type($type) {
-		$type = sanitize_key($type);
-		if ($type === 'email') {
-			return 'email';
-		}
-		if ($type === 'number') {
-			return 'decimal';
-		}
-
-		return 'string';
 	}
 
 	private static function build_mirror_row_field_definitions($field_prefix, $label_prefix, $source_prefix, $table_name, $excluded_columns = []) {
@@ -1150,6 +983,12 @@ class AAC_Salesforce_Sync_Settings {
 			'family_membership.mode' => 'string',
 			'family_membership.additional_adult' => 'boolean',
 			'family_membership.dependent_count' => 'integer',
+			'group_account.id' => 'integer',
+			'group_account.checkout_code' => 'string',
+			'group_account.total_seats' => 'integer',
+			'group_account.active_members' => 'integer',
+			'group_account.parent_user_id' => 'integer',
+			'group_account.account_role' => 'string',
 			'linked_parent_account.name' => 'string',
 		];
 	}
@@ -1245,6 +1084,26 @@ class AAC_Salesforce_Sync_Settings {
 			'source_record_id' => 'integer',
 			'source_status' => 'string',
 			'source_date' => 'datetime',
+		];
+	}
+
+	private static function get_transaction_line_fallback_paths() {
+		return [
+			'line_key' => 'string',
+			'line_type' => 'string',
+			'product_type' => 'string',
+			'label' => 'string',
+			'amount' => 'decimal',
+			'gross_membership_amount' => 'decimal',
+			'discount_amount' => 'decimal',
+			'net_membership_amount' => 'decimal',
+			'donation_amount' => 'decimal',
+			'discount_code' => 'string',
+			'discount_type' => 'string',
+			'pmpro_order_id' => 'integer',
+			'pmpro_order_code' => 'string',
+			'payment_transaction_id' => 'string',
+			'subscription_transaction_id' => 'string',
 		];
 	}
 

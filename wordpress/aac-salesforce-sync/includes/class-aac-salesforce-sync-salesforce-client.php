@@ -4,6 +4,25 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
+class AAC_Salesforce_Sync_Exception extends RuntimeException {
+	private $retryable;
+	private $retry_after;
+
+	public function __construct($message, $retryable = true, $retry_after = 0, $code = 0, ?Throwable $previous = null) {
+		parent::__construct((string) $message, (int) $code, $previous);
+		$this->retryable = (bool) $retryable;
+		$this->retry_after = max(0, (int) $retry_after);
+	}
+
+	public function is_retryable() {
+		return $this->retryable;
+	}
+
+	public function get_retry_after() {
+		return $this->retry_after;
+	}
+}
+
 class AAC_Salesforce_Sync_Salesforce_Client {
 	const TOKEN_TRANSIENT = 'aac_salesforce_sync_access_token';
 
@@ -31,7 +50,7 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 		delete_transient(self::TOKEN_TRANSIENT);
 	}
 
-	public function get_authorization_url($state) {
+	public function get_authorization_url($state, $code_challenge = '') {
 		if (!$this->can_authorize()) {
 			throw new RuntimeException('Salesforce OAuth settings are incomplete.');
 		}
@@ -44,25 +63,36 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 			'scope' => trim((string) ($this->settings['salesforce']['oauth_scope'] ?? 'api refresh_token offline_access')),
 		];
 
+		if ('' !== trim((string) $code_challenge)) {
+			$query['code_challenge'] = (string) $code_challenge;
+			$query['code_challenge_method'] = 'S256';
+		}
+
 		return add_query_arg($query, $this->settings['salesforce']['auth_url']);
 	}
 
-	public function exchange_authorization_code($code) {
+	public function exchange_authorization_code($code, $code_verifier = '') {
 		if (!$this->can_authorize()) {
 			throw new RuntimeException('Salesforce OAuth settings are incomplete.');
+		}
+
+		$body = [
+			'grant_type' => 'authorization_code',
+			'code' => $code,
+			'client_id' => $this->settings['salesforce']['client_id'],
+			'client_secret' => $this->settings['salesforce']['client_secret'],
+			'redirect_uri' => AAC_Salesforce_Sync_Settings::get_oauth_redirect_uri(),
+		];
+
+		if ('' !== trim((string) $code_verifier)) {
+			$body['code_verifier'] = (string) $code_verifier;
 		}
 
 		$response = wp_remote_post(
 			$this->settings['salesforce']['token_url'],
 			[
 				'timeout' => 20,
-				'body' => [
-					'grant_type' => 'authorization_code',
-					'code' => $code,
-					'client_id' => $this->settings['salesforce']['client_id'],
-					'client_secret' => $this->settings['salesforce']['client_secret'],
-					'redirect_uri' => AAC_Salesforce_Sync_Settings::get_oauth_redirect_uri(),
-				],
+				'body' => $body,
 			]
 		);
 
@@ -223,7 +253,7 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 		return $this->request('PATCH', $path, $payload);
 	}
 
-	public function request($method, $path, $body = null) {
+	public function request($method, $path, $body = null, $allow_auth_retry = true) {
 		$token = $this->get_access_token();
 		$url = untrailingslashit($this->get_instance_url()) . $path;
 		$args = [
@@ -242,19 +272,30 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 
 		$response = wp_remote_request($url, $args);
 		if (is_wp_error($response)) {
-			throw new RuntimeException($response->get_error_message());
+			throw new AAC_Salesforce_Sync_Exception($response->get_error_message(), true);
 		}
 
 		$status_code = (int) wp_remote_retrieve_response_code($response);
 		$raw_body = wp_remote_retrieve_body($response);
 
+		if ($status_code === 401 && $allow_auth_retry) {
+			$this->invalidate_access_token();
+			return $this->request($method, $path, $body, false);
+		}
+
 		if ($status_code >= 400) {
-			$message = $raw_body ?: 'Unknown Salesforce API error.';
+			$message = $this->summarize_salesforce_error_response($raw_body);
+			if ($message === '') {
+				$message = 'Unknown Salesforce API error.';
+			}
 			$debug_payload = $this->summarize_debug_payload($body);
 			if ($debug_payload !== '') {
-				$message .= ' | Payload: ' . $debug_payload;
+				$message .= ' | Request ' . $debug_payload;
 			}
-			throw new RuntimeException('Salesforce API error: ' . $message);
+			$error_code = $this->extract_salesforce_error_code($raw_body);
+			$retryable = $this->is_retryable_response($status_code, $error_code);
+			$retry_after = $this->parse_retry_after(wp_remote_retrieve_header($response, 'retry-after'));
+			throw new AAC_Salesforce_Sync_Exception('Salesforce API error: ' . $message, $retryable, $retry_after, $status_code);
 		}
 
 		if (!$raw_body) {
@@ -263,6 +304,55 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 
 		$decoded = json_decode($raw_body, true);
 		return is_array($decoded) ? $decoded : ['raw' => $raw_body];
+	}
+
+	private function invalidate_access_token() {
+		$auth_state = AAC_Salesforce_Sync_Settings::get_auth_state();
+		if (is_array($auth_state)) {
+			$auth_state['access_token'] = '';
+			$auth_state['expires_at'] = 0;
+			AAC_Salesforce_Sync_Settings::update_auth_state($auth_state);
+		}
+		self::clear_cached_token();
+	}
+
+	private function extract_salesforce_error_code($raw_body) {
+		$decoded = json_decode((string) $raw_body, true);
+		if (!is_array($decoded)) {
+			return '';
+		}
+		$errors = $this->is_list_array($decoded) ? $decoded : [$decoded];
+		foreach ($errors as $error) {
+			if (!is_array($error)) {
+				continue;
+			}
+			$code = sanitize_key((string) ($error['errorCode'] ?? ($error['error'] ?? '')));
+			if ($code !== '') {
+				return strtoupper($code);
+			}
+		}
+		return '';
+	}
+
+	private function is_retryable_response($status_code, $error_code = '') {
+		$status_code = (int) $status_code;
+		$error_code = strtoupper((string) $error_code);
+		if (in_array($error_code, ['REQUEST_LIMIT_EXCEEDED', 'SERVER_UNAVAILABLE', 'UNKNOWN_EXCEPTION'], true)) {
+			return true;
+		}
+		return in_array($status_code, [401, 408, 409, 425, 429], true) || $status_code >= 500;
+	}
+
+	private function parse_retry_after($value) {
+		$value = trim((string) $value);
+		if ($value === '') {
+			return 0;
+		}
+		if (ctype_digit($value)) {
+			return min(DAY_IN_SECONDS, absint($value));
+		}
+		$timestamp = strtotime($value);
+		return $timestamp ? min(DAY_IN_SECONDS, max(0, $timestamp - time())) : 0;
 	}
 
 	private function get_access_token() {
@@ -364,16 +454,137 @@ class AAC_Salesforce_Sync_Salesforce_Client {
 			return '';
 		}
 
-		$encoded = wp_json_encode($payload);
-		if (!is_string($encoded) || $encoded === '') {
+		$fields = $this->collect_payload_field_names($payload);
+		if (!$fields) {
 			return '';
 		}
 
-		if (strlen($encoded) > 1800) {
-			$encoded = substr($encoded, 0, 1800) . '...';
+		$extra_count = max(0, count($fields) - 50);
+		$fields = array_slice($fields, 0, 50);
+
+		$summary = 'fields: ' . implode(', ', $fields);
+		if ($extra_count > 0) {
+			$summary .= ', +' . $extra_count . ' more';
 		}
 
-		return $encoded;
+		return $summary;
+	}
+
+	private function summarize_salesforce_error_response($raw_body) {
+		$raw_body = trim((string) $raw_body);
+		if ($raw_body === '') {
+			return '';
+		}
+
+		$decoded = json_decode($raw_body, true);
+		if (!is_array($decoded)) {
+			return $this->redact_error_message($raw_body);
+		}
+
+		$errors = $this->is_list_array($decoded) ? $decoded : [$decoded];
+		$parts = [];
+
+		foreach ($errors as $error) {
+			if (!is_array($error)) {
+				continue;
+			}
+
+			$code = isset($error['errorCode']) ? sanitize_text_field((string) $error['errorCode']) : '';
+			if ($code === '' && isset($error['error'])) {
+				$code = sanitize_text_field((string) $error['error']);
+			}
+
+			$message = isset($error['message']) ? $this->redact_error_message((string) $error['message']) : '';
+			if ($message === '' && isset($error['error_description'])) {
+				$message = $this->redact_error_message((string) $error['error_description']);
+			}
+
+			$fields = [];
+			if (isset($error['fields']) && is_array($error['fields'])) {
+				foreach ($error['fields'] as $field) {
+					$field = $this->sanitize_debug_field_name((string) $field);
+					if ($field !== '') {
+						$fields[] = $field;
+					}
+				}
+			}
+
+			$entry = trim($code . ($message !== '' ? ': ' . $message : ''), ': ');
+			if ($fields) {
+				$entry .= ' (fields: ' . implode(', ', array_values(array_unique($fields))) . ')';
+			}
+
+			if ($entry !== '') {
+				$parts[] = $entry;
+			}
+		}
+
+		return implode(' | ', array_slice($parts, 0, 5));
+	}
+
+	private function collect_payload_field_names($value, $prefix = '') {
+		if (!is_array($value)) {
+			return $prefix !== '' ? [$prefix] : [];
+		}
+
+		$fields = [];
+		$is_list = $this->is_list_array($value);
+
+		foreach ($value as $key => $child_value) {
+			$child_prefix = $prefix;
+			if ($is_list) {
+				$child_prefix .= '[]';
+			} else {
+				$key = $this->sanitize_debug_field_name((string) $key);
+				if ($key === '') {
+					continue;
+				}
+				$child_prefix = $prefix !== '' ? $prefix . '.' . $key : $key;
+			}
+
+			$fields = array_merge($fields, $this->collect_payload_field_names($child_value, $child_prefix));
+		}
+
+		return array_values(array_unique(array_filter($fields)));
+	}
+
+	private function sanitize_debug_field_name($field) {
+		$field = trim((string) $field);
+		if ($field === '') {
+			return '';
+		}
+
+		$field = preg_replace('/[^A-Za-z0-9_\\.\\[\\]]/', '', $field);
+		return is_string($field) ? substr($field, 0, 120) : '';
+	}
+
+	private function redact_error_message($message) {
+		$message = wp_strip_all_tags((string) $message);
+		$message = preg_replace('/[A-Z0-9._%+\\-]+@[A-Z0-9.\\-]+\\.[A-Z]{2,}/i', '[redacted-email]', $message);
+		$message = preg_replace('/\\b(?:\\+?1[\\s.\\-]?)?(?:\\(?\\d{3}\\)?[\\s.\\-]?)\\d{3}[\\s.\\-]?\\d{4}\\b/', '[redacted-phone]', $message);
+		$message = preg_replace('/\\b(?:sk|pk|rk|whsec)_(?:live|test)_[A-Za-z0-9_]+\\b/', '[redacted-token]', $message);
+		$message = preg_replace('/\\bBearer\\s+[A-Za-z0-9._\\-]+/i', 'Bearer [redacted-token]', $message);
+		$message = preg_replace('/\\s+/', ' ', $message);
+
+		$message = trim((string) $message);
+		if (strlen($message) > 600) {
+			$message = substr($message, 0, 600) . '...';
+		}
+
+		return $message;
+	}
+
+	private function is_list_array($value) {
+		if (!is_array($value)) {
+			return false;
+		}
+
+		if ($value === []) {
+			return true;
+		}
+
+		$keys = array_keys($value);
+		return $keys === range(0, count($value) - 1);
 	}
 
 	private function sanitize_soql_identifier($identifier) {

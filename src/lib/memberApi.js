@@ -11,7 +11,7 @@ const withOptionalFakeBackend = async (remoteCall, fallbackCall) => {
 
 export const getCurrentMember = () =>
   withOptionalFakeBackend(
-    () => apiRequest('/me'),
+    () => apiRequest('/me', { cache: 'no-store' }),
     () => fakeAuthDb.getCurrentMember()
   );
 

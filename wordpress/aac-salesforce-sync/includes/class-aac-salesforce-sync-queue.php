@@ -6,6 +6,12 @@ if (!defined('ABSPATH')) {
 
 class AAC_Salesforce_Sync_Queue {
 	private static $runner_kicked = false;
+	const WORKER_LOCK_OPTION = 'aac_salesforce_sync_worker_lock';
+	const WORKER_LOCK_TTL = 20 * MINUTE_IN_SECONDS;
+
+	private static function utc_now() {
+		return current_time('mysql', true);
+	}
 
 	public static function table_name() {
 		global $wpdb;
@@ -20,8 +26,21 @@ class AAC_Salesforce_Sync_Queue {
 		}
 
 		$settings = AAC_Salesforce_Sync_Settings::get_settings();
-		$now = current_time('mysql');
+		$now = self::utc_now();
 		$available_at = $available_at ?: $now;
+		$payload = is_array($payload) ? $payload : [];
+		$incoming_sync = isset($payload['_sync']) && is_array($payload['_sync']) ? $payload['_sync'] : [];
+		$event_id = sanitize_text_field((string) ($incoming_sync['event_id'] ?? wp_generate_uuid4()));
+		$schema_version = sanitize_text_field((string) ($incoming_sync['schema_version'] ?? '2.0'));
+		$operation = sanitize_key((string) ($incoming_sync['operation'] ?? 'upsert')) ?: 'upsert';
+		$source_modified_at = sanitize_text_field((string) ($incoming_sync['source_modified_at'] ?? $now));
+		$payload['_sync'] = [
+			'event_id' => $event_id,
+			'schema_version' => $schema_version,
+			'operation' => $operation,
+			'source_modified_at' => $source_modified_at,
+			'source' => sanitize_key($source),
+		];
 
 		$inserted = (bool) $wpdb->insert(
 			self::table_name(),
@@ -30,6 +49,10 @@ class AAC_Salesforce_Sync_Queue {
 				'object_type' => sanitize_key($object_type),
 				'object_id' => absint($object_id),
 				'external_key' => sanitize_text_field((string) $external_key),
+				'event_id' => $event_id,
+				'schema_version' => $schema_version,
+				'operation' => $operation,
+				'source_modified_at' => $source_modified_at,
 				'payload' => wp_json_encode($payload),
 				'status' => 'pending',
 				'attempts' => 0,
@@ -41,7 +64,7 @@ class AAC_Salesforce_Sync_Queue {
 				'created_at' => $now,
 				'updated_at' => $now,
 			],
-			['%s', '%s', '%d', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
+			['%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
 		);
 
 		if (
@@ -65,7 +88,7 @@ class AAC_Salesforce_Sync_Queue {
 		}
 
 		$table = self::table_name();
-		$now = current_time('mysql');
+		$now = self::utc_now();
 		$allowed_job_types = array_values(array_filter(array_map('sanitize_key', (array) $allowed_job_types)));
 		$type_sql = '';
 		if ($allowed_job_types) {
@@ -88,18 +111,22 @@ class AAC_Salesforce_Sync_Queue {
 			return null;
 		}
 
+		$lock_token = wp_generate_uuid4();
+		$locked_by = php_uname('n') . ':' . getmypid();
 		$updated = $wpdb->update(
 			$table,
 			[
 				'status' => 'processing',
 				'locked_at' => $now,
+				'lock_token' => $lock_token,
+				'locked_by' => sanitize_text_field($locked_by),
 				'updated_at' => $now,
 			],
 			[
 				'id' => (int) $job['id'],
 				'status' => 'pending',
 			],
-			['%s', '%s', '%s'],
+			['%s', '%s', '%s', '%s', '%s'],
 			['%d', '%s']
 		);
 
@@ -109,18 +136,22 @@ class AAC_Salesforce_Sync_Queue {
 
 		$job['status'] = 'processing';
 		$job['locked_at'] = $now;
+		$job['lock_token'] = $lock_token;
+		$job['locked_by'] = sanitize_text_field($locked_by);
 		return $job;
 	}
 
-	public static function complete($job_id) {
-		self::update_job((int) $job_id, [
+	public static function complete($job_id, $lock_token = '') {
+		self::update_owned_job((int) $job_id, (string) $lock_token, [
 			'status' => 'completed',
 			'locked_at' => null,
-			'updated_at' => current_time('mysql'),
+			'lock_token' => '',
+			'locked_by' => '',
+			'updated_at' => self::utc_now(),
 		]);
 	}
 
-	public static function release_with_retry($job, $error_message) {
+	public static function release_with_retry($job, $error_message, $retryable = true, $retry_after = 0) {
 		global $wpdb;
 
 		if (!$wpdb || empty($job['id'])) {
@@ -129,8 +160,8 @@ class AAC_Salesforce_Sync_Queue {
 
 		$attempts = (int) $job['attempts'] + 1;
 		$max_attempts = (int) $job['max_attempts'];
-		$status = $attempts >= $max_attempts ? 'dead_letter' : 'pending';
-		$delay = $attempts >= $max_attempts ? 0 : self::retry_delay_seconds($attempts);
+		$status = !$retryable || $attempts >= $max_attempts ? 'dead_letter' : 'pending';
+		$delay = $status === 'dead_letter' ? 0 : max(absint($retry_after), self::retry_delay_seconds($attempts));
 		$available_at = gmdate('Y-m-d H:i:s', time() + $delay);
 
 		$wpdb->update(
@@ -140,12 +171,14 @@ class AAC_Salesforce_Sync_Queue {
 				'attempts' => $attempts,
 				'available_at' => $available_at,
 				'locked_at' => null,
+				'lock_token' => '',
+				'locked_by' => '',
 				'last_error' => wp_strip_all_tags((string) $error_message),
-				'updated_at' => current_time('mysql'),
+				'updated_at' => self::utc_now(),
 			],
-			['id' => (int) $job['id']],
-			['%s', '%d', '%s', '%s', '%s', '%s'],
-			['%d']
+			['id' => (int) $job['id'], 'status' => 'processing', 'lock_token' => (string) ($job['lock_token'] ?? '')],
+			['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s'],
+			['%d', '%s', '%s']
 		);
 	}
 
@@ -153,11 +186,26 @@ class AAC_Salesforce_Sync_Queue {
 		self::update_job((int) $job_id, [
 			'status' => 'pending',
 			'attempts' => 0,
-			'available_at' => current_time('mysql'),
+			'available_at' => self::utc_now(),
 			'locked_at' => null,
+			'lock_token' => '',
+			'locked_by' => '',
 			'last_error' => null,
-			'updated_at' => current_time('mysql'),
+			'updated_at' => self::utc_now(),
 		]);
+	}
+
+	public static function retry_dead_letter_jobs($limit = 1000) {
+		global $wpdb;
+		if (!$wpdb) {
+			return 0;
+		}
+		$limit = max(1, min(5000, absint($limit)));
+		$ids = $wpdb->get_col("SELECT id FROM " . self::table_name() . " WHERE status = 'dead_letter' ORDER BY id ASC LIMIT {$limit}"); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- internal table and bounded integer.
+		foreach ((array) $ids as $id) {
+			self::retry_job((int) $id);
+		}
+		return count($ids);
 	}
 
 	public static function make_pending_jobs_available_now() {
@@ -167,7 +215,7 @@ class AAC_Salesforce_Sync_Queue {
 			return 0;
 		}
 
-		$now = current_time('mysql');
+		$now = self::utc_now();
 		$updated = $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE " . self::table_name() . " SET available_at = %s, updated_at = %s WHERE status = %s",
@@ -192,13 +240,47 @@ class AAC_Salesforce_Sync_Queue {
 
 		$wpdb->query(
 			$wpdb->prepare(
-				"UPDATE {$table} SET status = %s, locked_at = NULL, updated_at = %s WHERE status = %s AND locked_at IS NOT NULL AND locked_at < %s",
-				'pending',
-				current_time('mysql'),
+					"UPDATE {$table} SET status = %s, locked_at = NULL, lock_token = '', locked_by = '', updated_at = %s WHERE status = %s AND locked_at IS NOT NULL AND locked_at < %s",
+					'pending',
+					self::utc_now(),
 				'processing',
 				$cutoff
 			)
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	public static function acquire_worker_lock() {
+		$token = wp_generate_uuid4();
+		$lock = ['token' => $token, 'expires_at' => time() + self::WORKER_LOCK_TTL];
+		if (add_option(self::WORKER_LOCK_OPTION, $lock, '', false)) {
+			return $token;
+		}
+
+		$current = get_option(self::WORKER_LOCK_OPTION, []);
+		if (is_array($current) && (int) ($current['expires_at'] ?? 0) < time()) {
+			delete_option(self::WORKER_LOCK_OPTION);
+			if (add_option(self::WORKER_LOCK_OPTION, $lock, '', false)) {
+				return $token;
+			}
+		}
+
+		return '';
+	}
+
+	public static function release_worker_lock($token) {
+		$current = get_option(self::WORKER_LOCK_OPTION, []);
+		if (is_array($current) && hash_equals((string) ($current['token'] ?? ''), (string) $token)) {
+			delete_option(self::WORKER_LOCK_OPTION);
+		}
+	}
+
+	public static function refresh_worker_lock($token) {
+		$current = get_option(self::WORKER_LOCK_OPTION, []);
+		if (!is_array($current) || !hash_equals((string) ($current['token'] ?? ''), (string) $token)) {
+			return false;
+		}
+		$current['expires_at'] = time() + self::WORKER_LOCK_TTL;
+		return update_option(self::WORKER_LOCK_OPTION, $current, false);
 	}
 
 	public static function get_stats() {
@@ -281,6 +363,26 @@ class AAC_Salesforce_Sync_Queue {
 		}
 
 		$wpdb->update(self::table_name(), $fields, ['id' => $job_id], $format, ['%d']);
+	}
+
+	private static function update_owned_job($job_id, $lock_token, $fields) {
+		global $wpdb;
+		if (!$wpdb || $job_id <= 0 || $lock_token === '') {
+			return false;
+		}
+
+		$format = [];
+		foreach ($fields as $value) {
+			$format[] = is_int($value) ? '%d' : '%s';
+		}
+
+		return 1 === (int) $wpdb->update(
+			self::table_name(),
+			$fields,
+			['id' => $job_id, 'status' => 'processing', 'lock_token' => $lock_token],
+			$format,
+			['%d', '%s', '%s']
+		);
 	}
 
 	private static function retry_delay_seconds($attempts) {

@@ -1,6 +1,6 @@
 :root {
-  --aac-page-bg: #f7f1e3;
-  --aac-panel-bg: #fffbf4;
+  --aac-page-bg: #ffffff;
+  --aac-panel-bg: #ffffff;
   --aac-panel-border: rgba(16, 10, 7, 0.1);
   --aac-ink: #030000;
   --aac-ink-soft: #39312d;
@@ -15,9 +15,8 @@ html {
 
 body.aac-portal-theme {
   margin: 0;
-  background:
-    radial-gradient(circle at top, rgba(248, 194, 53, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffbf4 0%, #efe7da 100%);
+  background: #ffffff;
+  background-image: none;
   color: var(--aac-ink);
   font-family: futura-pt, Futura, "Futura PT", "Century Gothic", "Trebuchet MS", "Gill Sans", sans-serif;
   letter-spacing: 0.02em;
@@ -252,6 +251,8 @@ body.aac-portal-theme {
 .aac-theme-main {
   min-height: calc(100vh - var(--aac-header-height));
   padding-top: var(--aac-header-height);
+  background: #ffffff;
+  background-image: none;
 }
 
 .aac-hero {
@@ -356,6 +357,8 @@ body.aac-portal-theme {
 .aac-section,
 .aac-page-shell {
   padding: 4.5rem 1.25rem;
+  background: #ffffff;
+  background-image: none;
 }
 
 .blog .aac-theme-main {
@@ -419,9 +422,7 @@ body.aac-portal-theme {
 
 .aac-card {
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,249,239,0.99)),
-    linear-gradient(135deg, #fffefe 0%, #f5efe4 100%);
+  background: #ffffff;
   border: 1px solid rgba(16, 10, 7, 0.08);
   box-shadow: 0 22px 60px rgba(16, 10, 7, 0.08);
   border-radius: 0;
@@ -912,9 +913,7 @@ body.aac-portal-theme {
 }
 
 .aac-prose-card {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,249,239,0.99)),
-    linear-gradient(135deg, #fffefe 0%, #f5efe4 100%);
+  background: #ffffff;
   border: 1px solid rgba(16, 10, 7, 0.08);
   box-shadow: 0 22px 60px rgba(16, 10, 7, 0.08);
   padding: 2rem;

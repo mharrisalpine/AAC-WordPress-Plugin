@@ -19,6 +19,7 @@ import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getMemberTransactions } from '@/lib/memberApi';
 import { normalizeAccountInfo } from '@/lib/memberProfile';
 import { getAutoRenewalControl } from '@/lib/autoRenewalControl';
+import { bindBillingProfileRefresh } from '@/lib/billingProfileRefresh';
 import {
   MEMBERSHIP_PLAN_DETAILS,
   MEMBERSHIP_PLAN_ORDER,
@@ -181,7 +182,7 @@ const TransactionList = ({ transactions, loading }) => {
 const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const {
     getMembershipActionUrl,
     openMembershipAction,
@@ -198,6 +199,16 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   const [upgradeCheckoutHeight, setUpgradeCheckoutHeight] = React.useState(900);
   const billingFrameRef = React.useRef(null);
   const upgradeFrameRef = React.useRef(null);
+  const [checkingRenewal, setCheckingRenewal] = React.useState(true);
+
+  React.useEffect(() => {
+    return bindBillingProfileRefresh({
+      windowTarget: window,
+      documentTarget: document,
+      refresh: () => refreshProfile({ showLoading: false }),
+      onChecking: setCheckingRenewal,
+    });
+  }, [refreshProfile, location.key]);
 
   React.useEffect(() => {
     if (requestedTab === 'change' && !standaloneUpgrade) {
@@ -303,7 +314,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   }, []);
 
   const handleAutoRenewalToggle = () => {
-    if (autoRenewDisabled) return;
+    if (autoRenewDisabled || checkingRenewal) return;
     window.location.assign(autoRenewDisableUrl);
   };
 
@@ -419,7 +430,8 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
               <button
                 type="button"
                 onClick={handleAutoRenewalToggle}
-                disabled={autoRenewDisabled}
+                disabled={autoRenewDisabled || checkingRenewal}
+                aria-busy={checkingRenewal}
                 role="switch"
                 aria-checked={hasAutoRenewal}
                 aria-describedby="auto-renewal-help"
@@ -436,7 +448,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
               </button>
             </div>
             <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-stone-950">
-              {hasAutoRenewal ? 'On' : 'Off'}
+              {checkingRenewal ? 'Checking…' : hasAutoRenewal ? 'On' : 'Off'}
             </p>
           </div>
         </div>

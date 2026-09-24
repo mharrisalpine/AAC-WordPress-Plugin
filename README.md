@@ -1,190 +1,182 @@
-# AAC Member Portal App
+# AAC Member App
 
-This repository contains the AAC member experience built as a React app and packaged into a WordPress plugin.
+The AAC Member App is the American Alpine Club's member-facing React application and its WordPress plugin backend. It provides an app-style interface while WordPress and Paid Memberships Pro (PMPro) remain responsible for authentication, membership records, checkout, billing, and subscriptions.
 
-At a high level, the project combines:
+## What the app provides
 
-- a React/Vite frontend for the public homepage, signup flow, sign-in flow, and member profile
-- a WordPress plugin wrapper that mounts the app inside WordPress
-- Paid Memberships Pro (PMPro) as the live membership, billing, checkout, and subscription engine
-- optional supporting plugins and integrations, including the separate Salesforce sync scaffold in `wordpress/aac-salesforce-sync/`
+- Public membership landing and join experiences
+- WordPress sign-in, password reset, and account security
+- Member profile and membership management
+- Membership upgrades, renewals, cancellation, and billing links
+- Family plans and linked member accounts
+- Member benefits, discounts, publications, and rescue coverage
+- AAC-branded PMPro checkout and account screens
+- WordPress administration for portal content, settings, imports, and member reporting
 
-## What This App Does
+## Architecture
 
-The portal is designed to give AAC members a branded, app-like experience while still using WordPress and PMPro as the operational backend.
+### React frontend
 
-Current responsibilities include:
+The frontend lives in `src/` and uses React, Vite, React Router, Tailwind CSS, and Radix UI components.
 
-- public homepage and signup experience
-- member sign-in and authentication against WordPress users
-- member profile, account, publications, discounts, rescue, and linked-account screens
-- PMPro checkout customization for AAC-specific pricing, discounts, family logic, and preferences
-- WordPress admin settings for portal content, navigation, rescue levels, discounts, and other editable content
-- a mirrored AAC member database inside the plugin for admin review and reporting
+WordPress injects runtime configuration when it loads the app. The frontend then calls the plugin's REST endpoints using the member's WordPress session and a WordPress REST nonce. During standalone local development, selected API calls can fall back to the fake member database in `src/lib/fakeMemberDb.js`.
 
-## How It Works
+Important frontend areas:
 
-### Frontend
-
-The frontend lives in `src/` and is built with:
-
-- React
-- Vite
-- Tailwind CSS
-- React Router
-
-The React app handles the member-facing UI and calls WordPress REST endpoints for login, profile data, account updates, and related portal actions.
+- `src/main.jsx` — application bootstrap and routes
+- `src/App.jsx` — primary application shell
+- `src/pages/` — route-level member experiences
+- `src/components/` — shared interface components
+- `src/contexts/AppAuthContext.jsx` — authentication and profile state
+- `src/lib/memberApi.js` — member REST API calls
+- `src/lib/backendConfig.js` — WordPress runtime/API configuration
+- `src/lib/portalSettings.js` — portal content and design defaults
 
 ### WordPress plugin
 
-The main plugin lives in `wordpress/aac-member-portal/`.
+The installable plugin lives in `wordpress/aac-member-portal/`. It:
 
-It is responsible for:
+- Registers the `[aac_member_portal]` shortcode
+- Loads the compiled React assets from `wordpress/aac-member-portal/app/`
+- Provides authenticated REST endpoints for the frontend
+- Normalizes WordPress user data and PMPro membership data
+- Customizes PMPro checkout and managed account pages
+- Implements linked family-account behavior
+- Provides AAC Portal administration, imports, exports, settings, and diagnostics
 
-- registering the shortcode and shell output
-- injecting runtime config into the frontend
-- exposing AAC REST API endpoints
-- reading PMPro membership, billing, and transaction data
-- customizing PMPro checkout and managed pages
-- providing the `AAC Portal` admin screens
+Important backend files:
 
-### PMPro
+- `aac-member-portal.php` — plugin bootstrap, hooks, checkout behavior, and routing
+- `includes/class-aac-member-portal-api.php` — REST endpoints and member payloads
+- `includes/class-aac-member-portal-admin.php` — WordPress administration
+- `includes/class-aac-member-portal-pmpro.php` — PMPro integration
+- `includes/class-aac-member-portal-member-database.php` — reporting database and exports
+- `includes/class-aac-member-portal-group-accounts.php` — family and linked accounts
+- `templates/` — AAC wrappers for checkout and managed PMPro pages
 
-PMPro remains the source of operational membership behavior inside WordPress for:
+### Paid Memberships Pro
 
-- membership levels
-- renewals and expiration
-- payment processing
-- billing/subscription management
-- orders and transaction history
+PMPro is the operational membership system inside WordPress. It owns membership levels, orders, payments, renewals, expiration, subscription state, and billing management. The AAC plugin adds the club-specific presentation and business rules around those capabilities.
 
-The portal layers AAC-specific UI and business rules on top of PMPro.
+### Data flow
 
-## Main Project Areas
+For a signed-in member:
 
-### `src/`
+1. WordPress renders the portal shortcode and injects runtime configuration.
+2. The React bundle starts and requests the current member profile.
+3. The plugin combines WordPress user metadata, AAC profile records, and PMPro membership/order data.
+4. The API returns a normalized member payload.
+5. React renders the appropriate profile, membership, publication, benefit, and linked-account screens.
 
-Frontend app code.
+For checkout:
 
-Important files:
+1. A visitor selects a membership option in the React app.
+2. The app opens the corresponding PMPro checkout flow.
+3. The plugin applies AAC-specific layout, fields, discounts, family-plan rules, and preferences.
+4. PMPro processes the order and stores the membership and subscription state.
+5. The portal reads that updated state on the member's next profile request.
 
-- `src/main.jsx`: app bootstrap and routes
-- `src/App.jsx`: main app shell and authenticated layout
-- `src/contexts/AppAuthContext.jsx`: session and authentication state
-- `src/pages/`: route-level pages
-- `src/components/`: reusable UI and member portal components
-- `src/lib/memberApi.js`: frontend calls into the WordPress backend
-- `src/lib/portalSettings.js`: runtime settings shaping and defaults
+Salesforce synchronization is maintained separately in [`mharrisalpine/AAC-Hardened-SF-Sync`](https://github.com/mharrisalpine/AAC-Hardened-SF-Sync). The earlier [`mharrisalpine/aac-salesforce-sync`](https://github.com/mharrisalpine/aac-salesforce-sync) repository remains unchanged as a fallback.
 
-### `wordpress/aac-member-portal/`
+## Requirements
 
-Installable WordPress plugin for the member portal.
+- Node.js (the expected version is recorded in `.nvmrc`)
+- npm
+- WordPress
+- Paid Memberships Pro
+- A local WordPress environment or access to a staging site for integration testing
 
-Important files:
+Some checkout features depend on separately licensed/configured PMPro add-ons. See `wordpress/aac-member-portal/README.md` for the current list.
 
-- `wordpress/aac-member-portal/aac-member-portal.php`: main plugin bootstrap and checkout logic
-- `wordpress/aac-member-portal/includes/class-aac-member-portal-api.php`: REST API and member payload assembly
-- `wordpress/aac-member-portal/includes/class-aac-member-portal-admin.php`: WordPress admin settings and content tools
-- `wordpress/aac-member-portal/includes/class-aac-member-portal-pmpro.php`: PMPro-specific reads and helpers
-- `wordpress/aac-member-portal/includes/class-aac-member-portal-member-database.php`: mirrored member database admin tooling
-- `wordpress/aac-member-portal/templates/`: AAC shell templates around PMPro content
-- `wordpress/aac-member-portal/app/`: packaged frontend assets copied from the latest Vite build
+## Local development
 
-### `wordpress/aac-salesforce-sync/`
-
-Separate plugin scaffold for WordPress-to-Salesforce sync.
-
-This is intentionally separate from the member portal plugin so CRM sync concerns do not get tightly coupled to the member UI plugin.
-
-### `docs/`
-
-Project documentation and implementation notes.
-
-Helpful starting points:
-
-- `docs/codebase-reference.md`
-- `docs/wordpress-hosting.md`
-- `docs/wordpress-endpoints.md`
-- `docs/change-management.md`
-- `docs/family-membership.md`
-
-## Data Flow
-
-Typical member flow:
-
-1. WordPress renders the shortcode or portal shell.
-2. The plugin injects runtime config into the page.
-3. The React app boots and reads that config.
-4. The frontend calls AAC REST endpoints for login and member data.
-5. The backend assembles member profile data from WordPress user meta plus PMPro membership and transaction data.
-6. The frontend renders the member experience from that normalized payload.
-
-Typical signup/checkout flow:
-
-1. A visitor selects a membership level in the portal UI.
-2. The AAC-managed PMPro checkout page loads.
-3. The plugin reshapes PMPro checkout, applies AAC pricing rules, and stores extra profile/preference fields.
-4. PMPro processes payment and stores the membership/subscription state.
-5. The member later signs in to the portal and sees that normalized data in their profile.
-
-## Build and Packaging
-
-Install dependencies if needed:
+Install dependencies:
 
 ```bash
-npm install
+npm ci
 ```
 
-Run the app locally:
+Start the Vite development server:
 
 ```bash
 npm run dev
 ```
 
-Build the frontend:
+Create a production frontend build:
 
 ```bash
 npm run build
 ```
 
-Package the WordPress plugin with the latest frontend assets:
+## Build the WordPress plugin
+
+Run:
 
 ```bash
 npm run package:wordpress
 ```
 
-That copies the current frontend build into:
+This command:
 
-- `wordpress/aac-member-portal/app/`
+1. Builds the React frontend into `dist/`.
+2. Replaces `wordpress/aac-member-portal/app/` with the new build.
+3. Creates stable JavaScript, CSS, and media aliases used by the plugin.
+4. Produces `wordpress/aac-member-portal.zip` for installation.
 
-## WordPress Installation
+The ZIP is ignored by Git; GitHub should contain the source and packaged app assets, not a collection of historical release archives.
 
-To use the member portal plugin in WordPress:
+## WordPress installation
 
-1. Install and activate Paid Memberships Pro.
-2. Build/package this repo with `npm run package:wordpress`.
-3. Zip and upload `wordpress/aac-member-portal/`, or upload the packaged plugin zip if one has already been created.
-4. Activate `AAC Member Portal`.
-5. Add the portal to a page using the shortcode:
+1. Install and configure Paid Memberships Pro.
+2. Run `npm run package:wordpress`.
+3. In WordPress, open **Plugins → Add New → Upload Plugin**.
+4. Upload `wordpress/aac-member-portal.zip` and activate **AAC Member Portal**.
+5. Create a WordPress page containing a Shortcode block with:
 
 ```text
 [aac_member_portal]
 ```
 
-For more detailed WordPress setup guidance, see:
+6. Configure the portal under **AAC Portal** in WordPress administration.
+7. Clear WordPress, CDN, and browser caches after replacing frontend assets.
 
-- `wordpress/aac-member-portal/README.md`
+Deploy to staging and test authentication, profile updates, checkout, renewals, family accounts, benefits, and administrative functions before deploying the same build to production.
 
-## Notes for Future Developers
+## Repository layout
 
-- The portal has a lot of PMPro-aware UI shaping. When PMPro updates its checkout markup, shell templates may need maintenance.
-- The React app should treat the normalized member payload from the backend as the main source of truth.
-- The WordPress plugin stores both nested profile/meta blobs and flattened reporting meta.
-- Large content/design changes are increasingly meant to be handled through the `AAC Portal` admin settings instead of code changes.
-- CRM or external-system sync should stay in a separate plugin or integration layer when possible.
+```text
+.
+├── src/                         React application
+├── public/                      Static frontend assets
+├── wordpress/aac-member-portal WordPress plugin source and built app
+├── docs/                        Architecture and operating documentation
+├── tools/                       Frontend generation and plugin packaging
+├── package.json                 npm commands and dependencies
+└── vite.config.js               Vite production/development configuration
+```
 
-## Related Docs
+## Documentation
 
-- [Portal plugin README](/Users/mharris/Desktop/WordPress%20Page%20Matched%20Web%20App/wordpress/aac-member-portal/README.md)
-- [Codebase reference](/Users/mharris/Desktop/WordPress%20Page%20Matched%20Web%20App/docs/codebase-reference.md)
-- [Change management](/Users/mharris/Desktop/WordPress%20Page%20Matched%20Web%20App/docs/change-management.md)
+- [Comprehensive app, PMPro, administration, and operations guide](docs/AAC_MEMBER_APP_OPERATIONS_GUIDE.md)
+- [WordPress plugin guide](wordpress/aac-member-portal/README.md)
+- [Codebase reference](docs/codebase-reference.md)
+- [Change-management and testing guide](docs/change-management.md)
+- [WordPress hosting](docs/wordpress-hosting.md)
+- [WordPress endpoints](docs/wordpress-endpoints.md)
+- [Family memberships](docs/family-membership.md)
+- [Mobile build notes](docs/mobile-build.md)
+
+## Development workflow
+
+Use a branch and pull request for each change:
+
+```bash
+git checkout -b feature/short-description
+npm ci
+npm run build
+git add <changed-files>
+git commit -m "Describe the change"
+git push -u origin feature/short-description
+```
+
+Never commit WordPress passwords, API credentials, Salesforce secrets, payment information, member exports, database dumps, or production configuration. Use GitHub Actions secrets or the hosting provider's secret manager for deployment credentials.

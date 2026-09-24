@@ -47,9 +47,6 @@ class AAC_Salesforce_Sync_REST {
 		}
 
 		$provided = (string) $request->get_header('X-AAC-SF-Secret');
-		if ($provided === '') {
-			$provided = (string) $request->get_param('secret');
-		}
 
 		if (!hash_equals($expected, $provided)) {
 			return new WP_Error('aac_salesforce_sync_forbidden', 'Forbidden', ['status' => 403]);
@@ -126,7 +123,7 @@ class AAC_Salesforce_Sync_REST {
 
 		try {
 			$client = new AAC_Salesforce_Sync_Salesforce_Client();
-			$client->exchange_authorization_code($code);
+			$client->exchange_authorization_code($code, (string) ($state_payload['code_verifier'] ?? ''));
 			AAC_Salesforce_Sync_Settings::update_oauth_debug([
 				'last_seen_at' => current_time('mysql'),
 				'callback_url' => AAC_Salesforce_Sync_Settings::get_oauth_redirect_uri(),

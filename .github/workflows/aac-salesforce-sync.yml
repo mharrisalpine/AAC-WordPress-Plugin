@@ -1,0 +1,32 @@
+name: AAC Salesforce Sync
+
+on:
+  push:
+    paths:
+      - 'wordpress/aac-salesforce-sync/**'
+      - '.github/workflows/aac-salesforce-sync.yml'
+  pull_request:
+    paths:
+      - 'wordpress/aac-salesforce-sync/**'
+      - '.github/workflows/aac-salesforce-sync.yml'
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['7.4', '8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - name: Lint plugin PHP
+        run: find wordpress/aac-salesforce-sync -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Reject merge markers
+        run: '! grep -R -n -E ''^(<<<<<<<|=======|>>>>>>>)'' wordpress/aac-salesforce-sync'
+      - name: Validate plugin version consistency
+        run: |
+          header_version=$(sed -n 's/^ \* Version: //p' wordpress/aac-salesforce-sync/aac-salesforce-sync.php)
+          constant_version=$(sed -n "s/define('AAC_SALESFORCE_SYNC_VERSION', '\([^']*\)');/\1/p" wordpress/aac-salesforce-sync/aac-salesforce-sync.php)
+          test "$header_version" = "$constant_version"

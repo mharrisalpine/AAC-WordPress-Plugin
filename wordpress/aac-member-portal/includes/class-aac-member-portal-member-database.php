@@ -347,6 +347,13 @@ class AAC_Member_Portal_Member_Database {
 			];
 		}
 
+		if (class_exists('AAC_Member_Portal_Koha_Sync')) {
+			$tools[AAC_Member_Portal_Koha_Sync::MENU_SLUG] = [
+				'label' => 'Koha Library Sync',
+				'url' => admin_url('admin.php?page=' . AAC_Member_Portal_Koha_Sync::MENU_SLUG),
+			];
+		}
+
 		if (class_exists('AAC_Member_Portal_Import_Manager')) {
 			$tools[AAC_Member_Portal_Import_Manager::PAGE_SLUG] = [
 				'label' => 'Member Import Manager',

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Salesforce Sync
  * Description: Queue-based Salesforce sync plugin for AAC Member Portal and Paid Memberships Pro.
- * Version: 0.1.1
+ * Version: 0.6.3
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_SALESFORCE_SYNC_VERSION', '0.1.1');
+define('AAC_SALESFORCE_SYNC_VERSION', '0.6.3');
 define('AAC_SALESFORCE_SYNC_FILE', __FILE__);
 define('AAC_SALESFORCE_SYNC_DIR', plugin_dir_path(__FILE__));
 define('AAC_SALESFORCE_SYNC_URL', plugin_dir_url(__FILE__));
@@ -18,8 +18,12 @@ define('AAC_SALESFORCE_SYNC_URL', plugin_dir_url(__FILE__));
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-settings.php';
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-installer.php';
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-queue.php';
+require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-error-log.php';
+require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-health.php';
+require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-release.php';
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-salesforce-client.php';
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-worker.php';
+require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-pull.php';
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-rest.php';
 require_once AAC_SALESFORCE_SYNC_DIR . 'includes/class-aac-salesforce-sync-admin.php';
 
@@ -38,12 +42,16 @@ final class AAC_Salesforce_Sync_Plugin {
 	private function __construct() {
 		$this->worker = new AAC_Salesforce_Sync_Worker();
 
+		AAC_Salesforce_Sync_Error_Log::init();
+		AAC_Salesforce_Sync_Health::init();
+		AAC_Salesforce_Sync_Release::init($this->worker);
+		new AAC_Salesforce_Sync_Pull($this->worker);
 		new AAC_Salesforce_Sync_REST($this->worker);
 		new AAC_Salesforce_Sync_Admin($this->worker);
 	}
 }
 
 register_activation_hook(AAC_SALESFORCE_SYNC_FILE, ['AAC_Salesforce_Sync_Installer', 'activate']);
-register_deactivation_hook(AAC_SALESFORCE_SYNC_FILE, ['AAC_Salesforce_Sync_Worker', 'deactivate']);
+register_deactivation_hook(AAC_SALESFORCE_SYNC_FILE, ['AAC_Salesforce_Sync_Installer', 'deactivate']);
 
 AAC_Salesforce_Sync_Plugin::get_instance();
