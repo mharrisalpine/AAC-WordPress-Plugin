@@ -155,7 +155,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                       scope="col"
                       className={cn(
                         'border-b-2 border-r border-black p-0 align-top last:border-r-0',
-                        selected ? 'bg-[#ffc72c]' : 'bg-white',
+                        selected ? '!border-b-0 bg-[#ffc72c]' : 'bg-white',
                       )}
                     >
                       <button
@@ -211,7 +211,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                         onClick={() => onSelect(tier.id)}
                         className={cn(
                           'cursor-pointer border-r border-t border-stone-300 px-3 py-2.5 text-center last:border-r-0',
-                          selected && 'bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]',
+                          selected && '!border-t-0 bg-[#ffc72c] shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000]',
                           selected && rowIndex === matrixBenefitRows.length - 1 && 'shadow-[inset_2px_0_0_#000,inset_-2px_0_0_#000,inset_0_-2px_0_#000]',
                         )}
                       >
