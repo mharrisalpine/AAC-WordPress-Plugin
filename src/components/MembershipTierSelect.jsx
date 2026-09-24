@@ -4,6 +4,36 @@ import { MEMBERSHIP_TIER_OPTIONS, isOneTimeMembershipTierId, isPublicMembershipT
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
+const MATRIX_BENEFIT_ROWS = [
+  { id: 'aac-support', label: 'Support AAC advocacy, education, and member services', match: /^support for aac/i },
+  { id: 'tshirt', label: 'AAC T-shirt', match: /^aac t-shirt/i },
+  { id: 'discounts', label: 'Gear, gym, and guide discounts', match: /^discounts?:/i },
+  { id: 'library', label: 'AAC Library', match: /^aac library/i },
+  { id: 'rescue', label: 'Rescue coverage', match: /^rescue coverage/i },
+  { id: 'medical', label: 'Medical expense coverage', match: /^medical expense coverage/i },
+  { id: 'mortal-remains', label: 'Mortal remains transport', match: /^mortal remains transport/i },
+  { id: 'publications', label: 'AAC publications', match: /^aac publications/i },
+  { id: 'hardcover-aaj', label: 'Limited Edition Hardcover AAJ', match: /^limited edition hardcover aaj/i },
+];
+
+function getPriceLabel(tier) {
+  return tier.priceCents === 0
+    ? 'Free'
+    : `$${(tier.priceCents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+function getBenefitCell(benefits, row) {
+  const benefit = benefits.find((item) => row.match.test(String(item || '').trim()));
+  if (!benefit) return null;
+
+  const detail = String(benefit)
+    .replace(row.match, '')
+    .replace(/^\s*[:\-–—]\s*/, '')
+    .trim();
+
+  return { detail: detail.includes('$') ? detail : '' };
+}
+
 function TierBenefitsList({ benefits, dense, maxItems }) {
   if (!benefits?.length) {
     return null;
@@ -57,52 +87,143 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
 
   if (variant === 'full') {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" role="radiogroup" aria-label="Membership level">
-        {visibleTiers.map((t) => {
-          const selected = selectedId === t.id;
-          const priceLabel =
-            t.priceCents === 0
-              ? 'Free'
-              : `$${(t.priceCents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onSelect(t.id)}
-              role="radio"
-              aria-checked={selected}
-              className={cn(
-                'aac-membership-tier-card flex min-h-[320px] flex-col rounded-none border p-5 text-left shadow-sm transition',
-                selected
-                  ? 'border-[3px] border-[#ffc72c] bg-white'
-                  : 'border border-black bg-white hover:border-black hover:shadow-md',
-              )}
-            >
-              <div className="flex flex-1 flex-col">
-                <span className="text-lg font-bold text-stone-900">{t.label}</span>
+      <div role="radiogroup" aria-label="Membership level">
+        <div className="grid grid-cols-1 gap-4 lg:hidden">
+          {visibleTiers.map((tier) => {
+            const selected = selectedId === tier.id;
+            const priceLabel = getPriceLabel(tier);
+            return (
+              <button
+                key={tier.id}
+                type="button"
+                onClick={() => onSelect(tier.id)}
+                role="radio"
+                aria-checked={selected}
+                className={cn(
+                  'aac-membership-tier-card relative flex min-h-0 flex-col rounded-none border bg-white p-5 text-left shadow-sm transition',
+                  selected
+                    ? 'border-[3px] border-[#ffc72c] shadow-md'
+                    : 'border border-black hover:border-black hover:shadow-md',
+                )}
+              >
                 <span
                   className={cn(
-                    'aac-membership-tier-card__price mt-2 w-fit text-[26px] font-semibold leading-8 tracking-tight',
-                    selected ? 'bg-[#ffc72c] px-3 py-1.5 text-black' : 'text-[#8f1515]',
+                    'absolute right-4 top-4 flex h-7 w-7 items-center justify-center rounded-full border-2 transition',
+                    selected ? 'border-[#8f1515] bg-[#8f1515] text-white' : 'border-stone-300 bg-white text-transparent',
                   )}
+                  aria-hidden
                 >
+                  <Check className="h-4 w-4" strokeWidth={3} />
+                </span>
+                <span className="pr-10 text-xl font-bold text-stone-900">{tier.label}</span>
+                <span className="aac-membership-tier-card__price mt-2 text-[26px] font-semibold leading-8 tracking-tight text-[#8f1515]">
                   <span className="aac-membership-tier-card__price-value">{priceLabel}</span>
-                  {t.priceCents === 0 ? null : isOneTimeMembershipTierId(t.id) ? (
-                    <span className={cn('text-sm font-medium', selected ? 'text-black' : 'text-stone-500')}> one-time</span>
+                  {tier.priceCents === 0 ? null : isOneTimeMembershipTierId(tier.id) ? (
+                    <span className="text-sm font-medium text-stone-500"> one-time</span>
                   ) : (
-                    <span className={cn('text-sm font-medium', selected ? 'text-black' : 'text-stone-500')}>/yr</span>
+                    <span className="text-sm font-medium text-stone-500">/yr</span>
                   )}
                 </span>
-                <TierBenefitsList benefits={t.benefits} />
-                {selected ? (
-                  <span className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#8f1515]">Selected</span>
-                ) : (
-                  <span className="mt-4 text-xs font-medium text-stone-400">Tap to select</span>
-                )}
-              </div>
-            </button>
-          );
-        })}
+                <p className="mt-2 pr-8 text-sm leading-5 text-stone-600">{tier.blurb}</p>
+                <TierBenefitsList benefits={tier.benefits} />
+                <span className={cn('mt-4 text-xs font-semibold uppercase tracking-wide', selected ? 'text-[#8f1515]' : 'text-stone-400')}>
+                  {selected ? 'Selected' : `Select ${tier.label}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="hidden overflow-x-auto border border-black bg-white lg:block">
+          <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
+            <caption className="sr-only">Compare and select an AAC membership level</caption>
+            <colgroup>
+              <col className="w-[28%]" />
+              {visibleTiers.map((tier) => <col key={tier.id} />)}
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col" className="border-b border-r border-stone-300 bg-stone-100 px-5 py-5 align-bottom">
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-stone-600">Benefits</span>
+                </th>
+                {visibleTiers.map((tier) => {
+                  const selected = selectedId === tier.id;
+                  return (
+                    <th
+                      key={tier.id}
+                      scope="col"
+                      className={cn(
+                        'border-b border-r border-stone-300 p-0 align-top last:border-r-0',
+                        selected ? 'bg-[#fff8dc]' : 'bg-white',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onSelect(tier.id)}
+                        role="radio"
+                        aria-checked={selected}
+                        className={cn(
+                          'relative flex min-h-[176px] w-full flex-col items-center justify-center px-4 py-5 text-center transition hover:bg-stone-50 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
+                          selected && 'bg-[#fff8dc] shadow-[inset_0_4px_0_#ffc72c]',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'mb-3 flex h-8 w-8 items-center justify-center rounded-full border-2',
+                            selected ? 'border-[#8f1515] bg-[#8f1515] text-white' : 'border-stone-300 bg-white text-transparent',
+                          )}
+                          aria-hidden
+                        >
+                          <Check className="h-5 w-5" strokeWidth={3} />
+                        </span>
+                        <span className="text-xl font-bold text-stone-950">{tier.label}</span>
+                        <span className="mt-2 text-[26px] font-bold leading-none text-[#8f1515]">
+                          {getPriceLabel(tier)}
+                          {tier.priceCents > 0 ? <span className="text-sm font-medium text-stone-500">/yr</span> : null}
+                        </span>
+                        <span className={cn('mt-3 text-[11px] font-bold uppercase tracking-[0.12em]', selected ? 'text-[#8f1515]' : 'text-stone-500')}>
+                          {selected ? 'Selected' : `Select ${tier.label}`}
+                        </span>
+                      </button>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {MATRIX_BENEFIT_ROWS.map((row, rowIndex) => (
+                <tr key={row.id} className={rowIndex % 2 ? 'bg-stone-50' : 'bg-white'}>
+                  <th scope="row" className="border-r border-t border-stone-300 px-5 py-4 text-sm font-semibold leading-5 text-stone-800">
+                    {row.label}
+                  </th>
+                  {visibleTiers.map((tier) => {
+                    const benefit = getBenefitCell(tier.benefits, row);
+                    const selected = selectedId === tier.id;
+                    return (
+                      <td
+                        key={tier.id}
+                        onClick={() => onSelect(tier.id)}
+                        className={cn(
+                          'cursor-pointer border-r border-t border-stone-300 px-3 py-4 text-center last:border-r-0',
+                          selected && 'bg-[#fff8dc]',
+                        )}
+                      >
+                        {benefit ? (
+                          <span className="inline-flex flex-col items-center gap-1 text-sm font-semibold text-stone-800">
+                            <Check className="h-5 w-5 text-[#8f1515]" strokeWidth={3} aria-label="Included" />
+                            {benefit.detail ? <span className="text-xs leading-4 text-stone-600">{benefit.detail}</span> : null}
+                          </span>
+                        ) : (
+                          <span className="text-stone-300" aria-label="Not included">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
