@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.657
+ * Version: 1.0.675
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.657');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.675');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -271,7 +271,7 @@ final class AAC_Member_Portal_Plugin {
 
 		$replacements = [
 			'Are you sure you want to cancel your %s membership?' => 'Turn off automatic renewal for your %s membership?',
-			'Your subscription will be cancelled. You will not be billed again. Your membership will remain active until %s.' => 'Turning off automatic renewal stops future billing. Your membership will remain active through %s, its current expiration date.',
+			'Your subscription will be cancelled. You will not be billed again. Your membership will remain active until %s.' => 'Your membership will remain active through %s, its current expiration date. After that date, it will not renew automatically and no future renewal payment will be charged.',
 			'Your subscription will be cancelled.' => '',
 			'What made you cancel? Please share your reason below and click the button to confirm cancellation.' => '',
 			'What made you cancel?' => 'Why are you turning off automatic renewal?',
@@ -1317,21 +1317,21 @@ final class AAC_Member_Portal_Plugin {
 			: ($is_account_section
 			? 'Membership Account'
 			: ($is_cancel_page
-				? 'Membership Cancellation'
+				? 'Turn Off Automatic Renewal'
 				: ($is_confirmation_page ? 'Membership Confirmation' : 'Membership Checkout')));
 		$page_kicker = $is_billing_page
 			? 'Member Account'
 			: ($is_account_section
 			? 'Account Overview'
 			: ($is_cancel_page
-				? 'Membership Options'
+				? 'Membership Renewal'
 				: ($is_confirmation_page ? 'Confirmation' : 'Secure Checkout')));
 		$page_description = $is_billing_page
 			? 'Update the billing address and payment method used for your membership renewal.'
 			: ($is_account_section
 			? 'Review your current membership, billing summary, renewal timing, and recent account activity in the same AAC portal shell.'
 			: ($is_cancel_page
-				? 'Review cancellation options for any membership level without leaving the AAC portal shell.'
+				? 'Your membership remains active through its current expiration date. Turning off automatic renewal prevents the next renewal payment.'
 				: ($is_confirmation_page
 					? 'Your membership receipt and payment summary.'
 					: '')));
@@ -1625,7 +1625,7 @@ final class AAC_Member_Portal_Plugin {
 
 	private function build_pmpro_publication_preferences_markup($cards) {
 		$markup = '<div class="aac-server-member-preferences">';
-		$markup .= '<p class="aac-member-preferences__intro">' . esc_html__('Select a publication to receive a print copy. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.', 'aac-member-portal') . '</p>';
+		$markup .= '<p class="aac-member-preferences__intro">' . esc_html__('Unselect a publication to receive a digital copy only. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.', 'aac-member-portal') . '</p>';
 		$markup .= '<div class="aac-member-preferences__grid">';
 
 		foreach ($cards as $card) {
@@ -2352,7 +2352,7 @@ final class AAC_Member_Portal_Plugin {
 			.aac-simple-checkout-wizard__step-mark { display: inline-flex; flex: 0 0 28px; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #ede9e4; }
 			.aac-simple-checkout-wizard__step[aria-current="step"] .aac-simple-checkout-wizard__step-mark { background: #a7191f; color: #fff; }
 			.aac-simple-checkout-wizard__panel[hidden] { display: none !important; }
-			.aac-simple-checkout-wizard__nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
+			.aac-simple-checkout-wizard__nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 24px 0 28px; }
 			.aac-simple-checkout-wizard__back,
 			.aac-simple-checkout-wizard__continue { min-width: 132px; padding: 14px 22px; border: 1px solid #a7191f; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 			.aac-simple-checkout-wizard__back { border: 3px solid #111 !important; background: #fff !important; color: #111 !important; }
@@ -3040,6 +3040,8 @@ final class AAC_Member_Portal_Plugin {
 					row.append(phoneField, shirtField);
 				}
 
+				syncCheckoutTshirtAvailability();
+
 				if (personal) {
 					personal.hidden = true;
 					personal.style.display = 'none';
@@ -3052,6 +3054,74 @@ final class AAC_Member_Portal_Plugin {
 				) {
 					publicationPreferences.parentNode.insertBefore(memberInformation, publicationPreferences);
 				}
+			}
+
+			function getCheckoutCountryControls() {
+				return Array.from(document.querySelectorAll(
+					'select[name="pmpro_scountry"], select#pmpro_scountry, select[name="scountry"], select#scountry, select[name="bcountry"], select#bcountry'
+				)).filter(function (control, index, controls) {
+					return controls.indexOf(control) === index;
+				});
+			}
+
+			function getCheckoutTshirtField() {
+				const control = document.querySelector(
+					'select[name="t_shirt_sizet_shirt"], select#t_shirt_sizet_shirt, select[name="t_shirt"], select#t_shirt, select[name="tshirt"], select[name="t_shirt_size"], select[name="tshirt_size"], select[name="shirt_size"]'
+				);
+				return control?.closest('.pmpro_form_field') || null;
+			}
+
+			function syncCheckoutTshirtAvailability(preferredCountryControl) {
+				const controls = getCheckoutCountryControls();
+				const countryControl = controls.includes(preferredCountryControl)
+					? preferredCountryControl
+					: (
+						controls.find(function (control) { return control.offsetParent !== null && !control.disabled; })
+						|| controls.find(function (control) { return control.id === 'bcountry' || control.name === 'bcountry'; })
+						|| controls[0]
+					);
+				const shirtField = getCheckoutTshirtField();
+				if (!countryControl || !shirtField) return;
+
+				const country = String(countryControl.value || '').trim().toUpperCase();
+				const showTshirt = ['', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(country);
+				shirtField.hidden = !showTshirt;
+				shirtField.style.setProperty('display', showTshirt ? '' : 'none', 'important');
+
+				const row = shirtField.closest('[data-aac-phone-shirt-row]');
+				if (row) {
+					row.dataset.aacTshirtVisible = showTshirt ? 'true' : 'false';
+					if (showTshirt) {
+						row.style.removeProperty('grid-template-columns');
+					} else {
+						row.style.setProperty('grid-template-columns', 'minmax(0, 1fr)', 'important');
+					}
+				}
+
+				if (!showTshirt) {
+					const shirtControl = shirtField.querySelector('select, input:not([type="checkbox"]):not([type="radio"])');
+					if (shirtControl) {
+						const noShirtOption = Array.from(shirtControl.options || []).find(function (option) {
+							return /no\s*t-?shirt|none/i.test(String(option.textContent || option.value || ''));
+						});
+						shirtControl.value = noShirtOption?.value || 'No T-shirt';
+						shirtControl.dispatchEvent(new Event('change', { bubbles: true }));
+					}
+					const canonicalInput = document.querySelector('input[name="t_shirt"]');
+					if (canonicalInput) canonicalInput.value = 'No T-shirt';
+				}
+			}
+
+			function bindCheckoutTshirtAvailability() {
+				if (document.documentElement.dataset.aacTshirtCountryBound !== 'true') {
+					document.addEventListener('change', function (event) {
+						if (event.target?.matches?.('select[name="pmpro_scountry"], select#pmpro_scountry, select[name="scountry"], select#scountry, select[name="bcountry"], select#bcountry')) {
+							syncCheckoutTshirtAvailability(event.target);
+						}
+					}, true);
+					document.documentElement.dataset.aacTshirtCountryBound = 'true';
+				}
+				syncCheckoutTshirtAvailability();
 			}
 
 			function enhanceDonation() {
@@ -3134,12 +3204,14 @@ final class AAC_Member_Portal_Plugin {
 			document.addEventListener('DOMContentLoaded', enhanceDonation);
 			document.addEventListener('DOMContentLoaded', syncPublicationCardControls);
 			document.addEventListener('DOMContentLoaded', organizeMemberDetails);
+			document.addEventListener('DOMContentLoaded', bindCheckoutTshirtAvailability);
 			document.addEventListener('DOMContentLoaded', syncOrderSummary);
 			document.addEventListener('DOMContentLoaded', function () { window.setTimeout(enhanceSimpleCheckoutWizard, 100); });
 			window.addEventListener('load', syncDiscountDetailPanels);
 			window.addEventListener('load', enhanceDonation);
 			window.addEventListener('load', syncPublicationCardControls);
 			window.addEventListener('load', organizeMemberDetails);
+			window.addEventListener('load', bindCheckoutTshirtAvailability);
 			window.addEventListener('load', syncOrderSummary);
 			window.addEventListener('load', function () { window.setTimeout(enhanceSimpleCheckoutWizard, 100); });
 			window.setTimeout(syncDiscountDetailPanels, 500);
@@ -4960,8 +5032,12 @@ final class AAC_Member_Portal_Plugin {
 			return $this->render_pmpro_confirmation_fallback($user_id);
 		}
 
-		if (!empty($context['is_cancel_page']) && (!$this->is_pmpro_cancel_review_request() || $this->should_replace_pmpro_cancel_content($content))) {
-			return $this->render_pmpro_cancel_fallback($user_id, $primary_membership, $membership_actions);
+		if (!empty($context['is_cancel_page'])) {
+			if (!$this->is_pmpro_cancel_review_request() || $this->should_replace_pmpro_cancel_content($content)) {
+				return $this->render_pmpro_cancel_fallback($user_id, $primary_membership, $membership_actions);
+			}
+
+			return $this->rewrite_pmpro_cancel_review_content($content);
 		}
 
 		if (!empty($context['is_billing_page'])) {
@@ -5077,6 +5153,35 @@ final class AAC_Member_Portal_Plugin {
 			|| strpos($plain_text, 'membership cancellation') !== false;
 
 		return !$has_cancel_marker || strpos($content, 'pmpro_account-profile') !== false || strpos($plain_text, 'order history') !== false;
+	}
+
+	private function rewrite_pmpro_cancel_review_content($content) {
+		$content = (string) $content;
+		if ($content === '') {
+			return $content;
+		}
+
+		$content = preg_replace(
+			'/Are you sure you want to cancel your\s+(.*?)\s+membership\?/i',
+			'Turn off automatic renewal for your $1 membership?',
+			$content
+		);
+		$content = preg_replace(
+			'/Your subscription will be cancelled\.\s*You will not be billed again\.\s*Your membership will remain active until\s+([^<]+)\./i',
+			'Your membership will remain active through $1. After that date, it will not renew automatically and no future renewal payment will be charged.',
+			$content
+		);
+
+		$replacements = [
+			'Your subscription will be cancelled. You will not be billed again. Your membership will remain active until' => 'Your membership will remain active through',
+			'What made you cancel? Please share your reason below and click the button to confirm cancellation.' => '',
+			'What made you cancel?' => 'Why are you turning off automatic renewal?',
+			'Cancel Membership' => 'Turn Off Automatic Renewal',
+			'Yes, cancel this membership' => 'Turn Off Automatic Renewal',
+			'Yes, cancel my membership' => 'Turn Off Automatic Renewal',
+		];
+
+		return str_replace(array_keys($replacements), array_values($replacements), $content);
 	}
 
 	private function is_pmpro_cancel_review_request() {
@@ -5274,10 +5379,10 @@ final class AAC_Member_Portal_Plugin {
 							echo esc_html(
 								$has_active_auto_renewal
 									? sprintf(
-										__('Your account is not being cancelled today. Turning off automatic renewal prevents future billing, while your membership remains fully active through %s. It will expire at the end of that subscription period unless you renew it.', 'aac-member-portal'),
+										__('Your membership remains fully active through %s. After that date, it will not renew automatically and no future renewal payment will be charged unless you turn automatic renewal back on.', 'aac-member-portal'),
 										$this->format_pmpro_display_date($expiration_date, __('the end of your current term', 'aac-member-portal'))
 									)
-									: __('Automatic renewal is already off. No cancellation is needed; paid membership access remains available through the current term.', 'aac-member-portal')
+									: __('Automatic renewal is already off. Your membership remains active through the current term and will not renew automatically afterward.', 'aac-member-portal')
 							);
 							?>
 						</p>
@@ -5285,7 +5390,7 @@ final class AAC_Member_Portal_Plugin {
 					<div class="pmpro_card_actions aac-cancel-fallback-actions">
 						<a class="pmpro_card_action aac-cancel-fallback-button aac-cancel-fallback-button--return" href="<?php echo esc_url($account_url); ?>"><?php esc_html_e('Return to Account', 'aac-member-portal'); ?></a>
 						<?php if ($current_level_id && $has_active_auto_renewal) : ?>
-							<a class="pmpro_card_action aac-cancel-fallback-button aac-cancel-fallback-button--continue" href="<?php echo esc_url($cancel_url); ?>"><?php esc_html_e('Review Automatic Renewal', 'aac-member-portal'); ?></a>
+							<a class="pmpro_card_action aac-cancel-fallback-button aac-cancel-fallback-button--continue" href="<?php echo esc_url($cancel_url); ?>"><?php esc_html_e('Continue to Turn Off Renewal', 'aac-member-portal'); ?></a>
 						<?php endif; ?>
 					</div>
 				</div>
@@ -11030,10 +11135,10 @@ CSS;
 			'sidebar_button_active_background' => $settings['design']['sidebar_button_active_background'],
 			'sidebar_accent_color' => $settings['design']['sidebar_accent_color'],
 			'publication_tile_images' => [
-				'aaj' => $settings['design']['publication_tile_image_aaj'],
-				'anac' => $settings['design']['publication_tile_image_anac'],
-				'acj' => $settings['design']['publication_tile_image_acj'],
-				'guidebook' => $settings['design']['publication_tile_image_guidebook'],
+				'aaj' => set_url_scheme($settings['design']['publication_tile_image_aaj'], 'https'),
+				'anac' => set_url_scheme($settings['design']['publication_tile_image_anac'], 'https'),
+				'acj' => set_url_scheme($settings['design']['publication_tile_image_acj'], 'https'),
+				'guidebook' => set_url_scheme($settings['design']['publication_tile_image_guidebook'], 'https'),
 			],
 		];
 	}

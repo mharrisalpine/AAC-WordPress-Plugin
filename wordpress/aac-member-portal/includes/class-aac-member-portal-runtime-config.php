@@ -87,10 +87,10 @@ class AAC_Member_Portal_Runtime_Config {
 				'homeIntroImageUrl' => $design['home_intro_image_url'] ?? '',
 				'homeIntroAccentImageUrl' => $design['home_intro_accent_image_url'] ?? '',
 				'publicationTileImages' => [
-					'aaj' => $design['publication_tile_image_aaj'] ?? '',
-					'anac' => $design['publication_tile_image_anac'] ?? '',
-					'acj' => $design['publication_tile_image_acj'] ?? '',
-					'guidebook' => $design['publication_tile_image_guidebook'] ?? '',
+					'aaj' => set_url_scheme($design['publication_tile_image_aaj'] ?? '', 'https'),
+					'anac' => set_url_scheme($design['publication_tile_image_anac'] ?? '', 'https'),
+					'acj' => set_url_scheme($design['publication_tile_image_acj'] ?? '', 'https'),
+					'guidebook' => set_url_scheme($design['publication_tile_image_guidebook'] ?? '', 'https'),
 				],
 			],
 			'navigation' => [

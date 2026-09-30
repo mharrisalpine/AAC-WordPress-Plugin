@@ -176,14 +176,14 @@ $current_renewal_date = is_array($current_primary_membership) ? ($current_primar
 $current_expiration_date = is_array($current_primary_membership) ? ($current_primary_membership['expiration_date'] ?? '') : '';
 $current_pending_downgrade = is_array($current_membership_actions['pending_downgrade'] ?? null) ? $current_membership_actions['pending_downgrade'] : null;
 $is_account_section = $is_account_page || $is_billing_page || $is_orders_page;
-$page_title = $is_billing_page ? 'Billing' : ($is_account_section ? 'Membership Account' : ($is_cancel_page ? 'Membership Cancellation' : ($is_confirmation_page ? 'Membership Confirmation' : ($is_checkout_page ? 'Membership Checkout' : get_the_title($post)))));
-$page_kicker = $is_billing_page ? 'Member Account' : ($is_account_section ? 'Account Overview' : ($is_cancel_page ? 'Membership Options' : ($is_confirmation_page ? 'Confirmation' : ($is_checkout_page ? 'Secure Checkout' : 'Member Portal'))));
+$page_title = $is_billing_page ? 'Billing' : ($is_account_section ? 'Membership Account' : ($is_cancel_page ? 'Turn Off Automatic Renewal' : ($is_confirmation_page ? 'Membership Confirmation' : ($is_checkout_page ? 'Membership Checkout' : get_the_title($post)))));
+$page_kicker = $is_billing_page ? 'Member Account' : ($is_account_section ? 'Account Overview' : ($is_cancel_page ? 'Membership Renewal' : ($is_confirmation_page ? 'Confirmation' : ($is_checkout_page ? 'Secure Checkout' : 'Member Portal'))));
 $page_description = $is_billing_page
 	? 'Update the billing address and payment method used for your membership renewal.'
 	: ($is_account_section
 	? 'Review your current membership, billing summary, renewal timing, and recent account activity in the same AAC portal shell.'
 	: ($is_cancel_page
-		? 'Review cancellation options for your membership without leaving the AAC portal shell.'
+		? 'Your membership remains active through its current expiration date. Turning off automatic renewal prevents the next renewal payment.'
 		: ($is_confirmation_page
 			? 'Review your most recent membership receipt in the same AAC portal shell with quick access back to your profile and account.'
 			: ($is_checkout_page
@@ -817,6 +817,10 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			line-height: 1.1;
 		}
 
+		body.pmpro-cancel .aac-managed-hero h1 {
+			font-size: clamp(1.65rem, 3vw, 2.2rem);
+		}
+
 		body.pmpro-checkout .aac-managed-main {
 			padding-top: 1.25rem;
 			padding-bottom: 2rem;
@@ -970,6 +974,53 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			background: transparent;
 			box-shadow: none;
 			padding: 0;
+		}
+
+		body.pmpro-cancel .aac-managed-card {
+			max-width: 1120px;
+			margin: 1.5rem auto 0;
+			padding: clamp(1.5rem, 3vw, 2.5rem);
+			border: 1px solid #dedbd5;
+			border-top: 4px solid #b71c1c;
+			background: #ffffff;
+		}
+
+		body.pmpro-cancel .aac-managed-card .pmpro_form_fieldset,
+		body.pmpro-cancel .aac-managed-card .pmpro_form_field {
+			margin-top: 1.25rem;
+		}
+
+		body.pmpro-cancel .aac-managed-card label {
+			display: block;
+			margin-bottom: 0.55rem;
+			color: #1c1917;
+			font-weight: 800;
+		}
+
+		body.pmpro-cancel .aac-managed-card textarea,
+		body.pmpro-cancel .aac-managed-card select,
+		body.pmpro-cancel .aac-managed-card input[type="text"] {
+			width: 100%;
+			min-height: 3.25rem;
+			border: 1px solid #a8a29e;
+			border-radius: 0;
+			background: #ffffff;
+			padding: 0.8rem 1rem;
+			color: #1c1917;
+		}
+
+		body.pmpro-cancel .aac-managed-card input[type="submit"],
+		body.pmpro-cancel .aac-managed-card button[type="submit"] {
+			min-height: 3.25rem;
+			border: 2px solid #b71c1c;
+			border-radius: 0;
+			background: #b71c1c;
+			padding: 0.85rem 1.5rem;
+			color: #ffffff;
+			font-size: 0.78rem;
+			font-weight: 900;
+			letter-spacing: 0.11em;
+			text-transform: uppercase;
 		}
 
 		body.pmpro-cancel .aac-managed-card #pmpro_form_fieldset-discount-fields,
@@ -3765,7 +3816,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			display: flex;
 			align-items: center;
 			gap: 0.85rem;
-			margin-top: 1.35rem;
+			margin: 1.35rem 0 1.75rem;
 		}
 
 		html:has(body.aac-member-checkout),
@@ -3800,7 +3851,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			clear: both;
 			width: 100%;
 			min-height: 3.5rem;
-			margin: 1.5rem 0 0 !important;
+			margin: 1.5rem 0 1.75rem !important;
 			padding: 0.75rem 0 0.25rem;
 			background: #fff;
 		}
@@ -4554,7 +4605,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 						<?php if (trim((string) $page_description) !== '') : ?>
 							<p><?php echo esc_html($page_description); ?></p>
 						<?php endif; ?>
-							<?php if (!$is_billing_page && !$is_checkout_page) : ?>
+							<?php if (!$is_billing_page && !$is_checkout_page && !$is_cancel_page) : ?>
 							<div class="aac-managed-actions-row">
 								<a class="aac-managed-pill <?php echo $is_account_section ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($managed_account_url); ?>"><?php echo aac_member_portal_sidebar_icon_svg('user'); ?> <span>Account</span></a>
 								<?php if ($current_can_cancel_membership) : ?>
@@ -5386,7 +5437,13 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				return null;
 			};
 
-			const getCheckoutCountryField = () => getCheckoutControl(['pmpro_scountry', 'scountry', 'bcountry']);
+			const getCheckoutCountryControls = () => ['pmpro_scountry', 'scountry', 'bcountry']
+				.map((id) => document.getElementById(id))
+				.filter((control, index, controls) => control && controls.indexOf(control) === index);
+			const getCheckoutCountryField = () => {
+				const controls = getCheckoutCountryControls();
+				return controls.find((control) => control.type !== 'hidden' && !control.disabled && control.getClientRects().length > 0) || controls[0] || null;
+			};
 			const getCheckoutCountryControl = getCheckoutCountryField;
 			const getCheckoutStateControl = () => getCheckoutControl(['pmpro_sstate', 'sstate', 'bstate']);
 			const getCheckoutCountryValue = () => String(getCheckoutCountryField()?.value || 'US').trim().toUpperCase();
@@ -5673,8 +5730,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			if (!intro) {
 				intro = document.createElement('p');
 				intro.className = 'aac-member-preferences__intro';
-				intro.textContent = 'Select a publication to receive a print copy. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.';
 			}
+			intro.textContent = 'Unselect a publication to receive a digital copy only. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.';
 
 			let cardsGrid = fieldset.querySelector('.aac-member-preferences__grid');
 			if (!cardsGrid) {
@@ -6989,11 +7046,13 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			};
 
 		const bindCountryLimitedSignupOptions = () => {
-			const countryField = getCheckoutCountryField();
-			if (countryField && countryField.dataset.aacCountryLimitedSignupBound !== 'true') {
+			getCheckoutCountryControls().forEach((countryField) => {
+				if (countryField.dataset.aacCountryLimitedSignupBound === 'true') {
+					return;
+				}
 				countryField.addEventListener('change', syncCountryLimitedSignupOptions);
 				countryField.dataset.aacCountryLimitedSignupBound = 'true';
-			}
+			});
 			syncCountryLimitedSignupOptions();
 		};
 

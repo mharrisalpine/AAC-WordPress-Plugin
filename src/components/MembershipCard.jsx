@@ -2,7 +2,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CheckCircle2, CheckSquare2, FileText, Flag, GraduationCap, Users } from 'lucide-react';
+import { CheckCircle2, CheckSquare2, Download, FileText, Flag, GraduationCap, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmationLetterDialog from '@/components/ConfirmationLetterDialog';
 import { getFullName, normalizeAccountInfo, normalizeMembershipDiscountType } from '@/lib/memberProfile';
@@ -24,6 +24,23 @@ const DISCOUNT_BADGE_CONTENT = {
 };
 
 const AAC_LOGO_URL = 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/09/light-header-logo.svg';
+const REDPOINT_EMERGENCY_PHONE = '+01-628-251-1510';
+
+const formatCoverageAmount = (value) => new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+}).format(Number(value || 0));
+
+const drawCardText = (context, text, x, y, options = {}) => {
+  const {
+    color = '#ffffff', font = '600 34px Arial', align = 'left', maxWidth,
+  } = options;
+  context.fillStyle = color;
+  context.font = font;
+  context.textAlign = align;
+  context.fillText(String(text || ''), x, y, maxWidth);
+};
 
 const parseMembershipDate = (value) => {
   const normalized = String(value || '').trim();
@@ -105,6 +122,7 @@ const MembershipCard = ({ profile }) => {
 
   const accountInfo = normalizeAccountInfo(profile?.account_info || {});
   const profileInfo = profile?.profile_info || {};
+  const benefitsInfo = profile?.benefits_info || {};
 
   const status = getMembershipStatus(profileInfo);
   const isMemberActive = status === 'Active';
@@ -124,6 +142,76 @@ const MembershipCard = ({ profile }) => {
   const hasAutoRenewal = Boolean(accountInfo.auto_renew || profile?.membership_actions?.current_subscription_id);
   const memberNumber = formatMemberNumber(profileInfo?.member_id);
   const memberName = getFullName(accountInfo);
+
+  const handleDownloadCard = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const gradient = context.createLinearGradient(0, 0, 1080, 1920);
+    gradient.addColorStop(0, '#050505');
+    gradient.addColorStop(0.58, '#17110f');
+    gradient.addColorStop(1, '#260806');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1080, 1920);
+    context.fillStyle = '#b71c1c';
+    context.fillRect(0, 0, 24, 1920);
+    context.strokeStyle = 'rgba(248,194,53,.16)';
+    context.lineWidth = 3;
+    for (let y = 120; y < 1850; y += 105) {
+      context.beginPath();
+      context.moveTo(25, y);
+      context.bezierCurveTo(270, y - 70, 560, y + 70, 1080, y - 20);
+      context.stroke();
+    }
+
+    drawCardText(context, 'AMERICAN ALPINE CLUB', 84, 120, { font: '800 42px Arial', color: '#ffffff' });
+    drawCardText(context, 'DIGITAL MEMBERSHIP CARD', 84, 174, { font: '600 20px Arial', color: '#f8c235' });
+    drawCardText(context, status.toUpperCase(), 996, 120, { font: '700 24px Arial', color: isMemberActive ? '#86efac' : '#d6d3d1', align: 'right' });
+
+    drawCardText(context, `${membershipTierLabel.toUpperCase()} MEMBER`, 84, 370, { font: '700 27px Arial', color: '#ff8a80' });
+    drawCardText(context, memberName, 84, 455, { font: '700 64px Georgia', maxWidth: 910 });
+    drawCardText(context, `MEMBER NO. ${memberNumber}`, 84, 525, { font: '500 25px monospace', color: '#d6d3d1' });
+    drawCardText(context, accountInfo.email, 84, 575, { font: '500 22px Arial', color: '#a8a29e', maxWidth: 910 });
+
+    context.fillStyle = 'rgba(255,255,255,.08)';
+    context.fillRect(64, 635, 952, 270);
+    drawCardText(context, 'MEMBERSHIP', 96, 700, { font: '700 20px Arial', color: '#f8c235' });
+    drawCardText(context, 'VALID THROUGH', 96, 766, { font: '600 19px Arial', color: '#a8a29e' });
+    drawCardText(context, validThruLabel, 96, 815, { font: '700 34px Arial' });
+    drawCardText(context, 'MEMBER SINCE', 620, 766, { font: '600 19px Arial', color: '#a8a29e' });
+    drawCardText(context, memberSinceLabel, 620, 815, { font: '700 34px Arial' });
+
+    context.fillStyle = '#b71c1c';
+    context.fillRect(64, 965, 952, 4);
+    drawCardText(context, 'REDPOINT BENEFITS', 84, 1045, { font: '800 34px Arial' });
+    drawCardText(context, isMemberActive ? 'COVERAGE ACTIVE' : 'COVERAGE NOT ACTIVE', 996, 1045, { font: '700 22px Arial', color: isMemberActive ? '#86efac' : '#fca5a5', align: 'right' });
+
+    const coverageRows = [
+      ['RESCUE', formatCoverageAmount(benefitsInfo.rescue_amount)],
+      ['MEDICAL EXPENSE', formatCoverageAmount(benefitsInfo.medical_amount)],
+      ['MORTAL REMAINS TRANSPORT', formatCoverageAmount(benefitsInfo.mortal_remains_amount)],
+    ];
+    coverageRows.forEach(([label, value], index) => {
+      const y = 1160 + (index * 122);
+      drawCardText(context, label, 84, y, { font: '600 21px Arial', color: '#a8a29e' });
+      drawCardText(context, value, 996, y, { font: '700 34px Arial', align: 'right' });
+    });
+
+    context.fillStyle = 'rgba(183,28,28,.24)';
+    context.fillRect(64, 1510, 952, 230);
+    drawCardText(context, '24/7 EMERGENCY ASSISTANCE', 540, 1575, { font: '800 22px Arial', color: '#ffb4ae', align: 'center' });
+    drawCardText(context, 'CALL REDPOINT TRAVEL PROTECTION', 540, 1632, { font: '700 25px Arial', align: 'center' });
+    drawCardText(context, REDPOINT_EMERGENCY_PHONE, 540, 1698, { font: '800 42px Arial', color: '#f8c235', align: 'center' });
+    drawCardText(context, 'Present this card as proof of current AAC membership.', 540, 1828, { font: '500 21px Arial', color: '#a8a29e', align: 'center' });
+
+    const link = document.createElement('a');
+    link.download = `aac-membership-card-${memberNumber}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
 
   const handleDownloadConfirmationLetter = () => {
     setConfirmationLetterOpen(true);
@@ -245,6 +333,12 @@ const MembershipCard = ({ profile }) => {
 
       <div className="aac-membership-actions-divider mt-4 border-t-2 border-[#b71c1c] pt-4">
         <div className="flex flex-col gap-2 lg:flex-row">
+          <Button
+            onClick={handleDownloadCard}
+            className="flex min-h-[2.85rem] flex-1 items-center justify-center gap-2 rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]"
+          >
+            <Download size={16} /> Download Card
+          </Button>
           <Button
             onClick={handleChangeMembership}
             className="flex min-h-[2.85rem] flex-1 items-center justify-center gap-2 rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]"

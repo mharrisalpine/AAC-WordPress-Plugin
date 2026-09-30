@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Signup Alignment Hotfix
  * Description: Keeps PMPro signup account fields aligned and autocomplete results visible.
- * Version: 1.0.9
+ * Version: 1.0.10
  * Author: AAC
  */
 
@@ -216,7 +216,15 @@ add_action('pmpro_checkout_after_billing_fields', static function () {
 	echo '<div id="aac-signup-communications" hidden>';
 	wp_nonce_field('aac_signup_communications', 'aac_communications_nonce');
 	foreach (aac_signup_consent_fields() as $key => $label) {
-		$value = isset($_POST['aac_communications_nonce']) ? ($_POST[$key] ?? '0') : get_user_meta(get_current_user_id(), $key, true);
+		$user_id = get_current_user_id();
+		if (isset($_POST['aac_communications_nonce'])) {
+			$value = $_POST[$key] ?? '0';
+		} elseif ($user_id && metadata_exists('user', $user_id, $key)) {
+			$value = get_user_meta($user_id, $key, true);
+		} else {
+			// New signups begin opted in; submitted and existing member choices are preserved.
+			$value = '1';
+		}
 		$checked = $value === '1';
 		echo '<label class="aac-communication-row"><input class="aac-consent-checkbox" type="checkbox" name="' . esc_attr($key) . '" value="1" ' . checked($checked, true, false) . '><span>' . esc_html($label) . '</span></label>';
 	}
@@ -225,14 +233,18 @@ add_action('pmpro_checkout_after_billing_fields', static function () {
 
 // Render the configured PMPro fields, not a second set of consent definitions.
 function aac_signup_consent_fields() {
-	$fields = [];
+	$configured_fields = [];
 	foreach ((array) get_option('pmpro_user_fields_settings', []) as $group) {
 		$group = (array) $group;
 		foreach (($group['fields'] ?? []) as $field) {
 			$field = (array) $field;
 			$key = $field['meta_key'] ?? $field['name'] ?? '';
-			if (in_array($key, ['aac_email_marketing_opt_in', 'aac_sms_marketing_opt_in'], true)) $fields[$key] = $field['label'];
+			if (in_array($key, ['aac_email_marketing_opt_in', 'aac_sms_marketing_opt_in'], true)) $configured_fields[$key] = $field['label'];
 		}
+	}
+	$fields = [];
+	foreach (['aac_sms_marketing_opt_in', 'aac_email_marketing_opt_in'] as $key) {
+		if (isset($configured_fields[$key])) $fields[$key] = $configured_fields[$key];
 	}
 	return $fields;
 }

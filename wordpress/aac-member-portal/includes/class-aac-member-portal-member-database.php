@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class AAC_Member_Portal_Member_Database {
 	const PAGE_SLUG = 'aac-member-portal-member-database';
 	const EXPORT_PAGE_SLUG = 'aac-member-portal-member-database-export';
-	const SCHEMA_VERSION = '1.1.0';
+	const SCHEMA_VERSION = '1.2.0';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
 	const EXPORT_FIELDS_OPTION = 'aac_member_portal_member_database_export_fields';
 	private $pending_member_syncs = [];
@@ -24,6 +24,8 @@ class AAC_Member_Portal_Member_Database {
 		add_action('aac_member_portal_member_registered', [$this, 'queue_member_sync'], 30, 1);
 		add_action('aac_member_portal_profile_updated', [$this, 'queue_member_sync'], 30, 1);
 		add_action('aac_member_portal_family_account_linked', [$this, 'queue_family_member_syncs'], 30, 2);
+		add_action('wp_login', [$this, 'record_member_login'], 30, 2);
+		add_action('aac_member_portal_member_logged_in', [$this, 'record_portal_member_login'], 30, 1);
 		add_action('added_user_meta', [$this, 'queue_member_sync_after_meta_change'], 100, 4);
 		add_action('updated_user_meta', [$this, 'queue_member_sync_after_meta_change'], 100, 4);
 		add_action('deleted_user_meta', [$this, 'queue_member_sync_after_meta_change'], 100, 4);
@@ -102,6 +104,33 @@ class AAC_Member_Portal_Member_Database {
 		$this->queue_member_sync($child_user_id);
 	}
 
+	public function record_member_login($user_login, $user) {
+		if (!$user instanceof WP_User || $user->ID <= 0) {
+			return;
+		}
+
+		// Administrative "View as Member" sessions are not member activity.
+		$request_action = isset($_REQUEST['action']) ? sanitize_key(wp_unslash($_REQUEST['action'])) : '';
+		if (in_array($request_action, ['aac_member_portal_impersonate_member', 'aac_member_portal_return_to_admin'], true)) {
+			return;
+		}
+
+		$user_id = (int) $user->ID;
+		$login_count = $this->get_member_login_count($user_id);
+		update_user_meta($user_id, 'aac_last_login_date', current_time('mysql'));
+		update_user_meta($user_id, 'aac_login_count', $login_count + 1);
+		$this->queue_member_sync($user_id);
+	}
+
+	public function record_portal_member_login($user_id) {
+		$user = get_user_by('id', absint($user_id));
+		if (!$user instanceof WP_User) {
+			return;
+		}
+
+		$this->record_member_login($user->user_login, $user);
+	}
+
 	public function queue_member_sync_after_meta_change($meta_id, $user_id, $meta_key, $meta_value = null) {
 		if ($this->is_member_profile_meta_key((string) $meta_key)) {
 			$this->queue_member_sync($user_id);
@@ -153,6 +182,8 @@ class AAC_Member_Portal_Member_Database {
 			'aac_group_account_child_level_id',
 			'aac_group_account_checkout_code',
 			'aac_group_account_synced_at',
+			'aac_last_login_date',
+			'aac_login_count',
 			'first_name',
 			'last_name',
 			'pmpro_sfirstname',
@@ -229,6 +260,8 @@ class AAC_Member_Portal_Member_Database {
 				member_id varchar(190) NOT NULL DEFAULT '',
 				membership_level varchar(100) NOT NULL DEFAULT '',
 				membership_status varchar(100) NOT NULL DEFAULT '',
+				last_login_date datetime NULL DEFAULT NULL,
+				login_count bigint(20) unsigned NOT NULL DEFAULT 0,
 				renewal_date varchar(20) NOT NULL DEFAULT '',
 				expiration_date varchar(20) NOT NULL DEFAULT '',
 				raw_profile longtext NULL,
@@ -395,6 +428,12 @@ class AAC_Member_Portal_Member_Database {
 		$profile['pmpro_membership'] = $this->get_latest_pmpro_row($user_id, 'pmpro_memberships_users');
 		$profile['pmpro_subscription'] = $this->get_latest_pmpro_row($user_id, 'pmpro_subscriptions');
 		$profile['pmpro_transaction'] = $this->get_latest_pmpro_row($user_id, 'pmpro_membership_orders');
+		$last_login_date = $this->get_member_last_login_date($user_id);
+		$login_count = $this->get_member_login_count($user_id);
+		$profile['login_activity'] = [
+			'last_login_date' => $last_login_date,
+			'login_count' => $login_count,
+		];
 		$account_role = sanitize_text_field((string) get_user_meta($user_id, 'aac_family_account_role', true));
 		$parent_user_id = absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
 
@@ -411,6 +450,8 @@ class AAC_Member_Portal_Member_Database {
 			'member_id' => sanitize_text_field($profile_info['member_id'] ?? ''),
 			'membership_level' => sanitize_text_field($profile_info['tier'] ?? ''),
 			'membership_status' => sanitize_text_field($profile_info['status'] ?? ''),
+			'last_login_date' => $last_login_date !== '' ? $last_login_date : null,
+			'login_count' => $login_count,
 			'renewal_date' => sanitize_text_field($profile_info['renewal_date'] ?? ''),
 			'expiration_date' => sanitize_text_field($profile_info['expiration_date'] ?? ''),
 			'raw_profile' => wp_json_encode($profile),
@@ -438,14 +479,14 @@ class AAC_Member_Portal_Member_Database {
 					self::profiles_table(),
 					$profile_data,
 					['id' => $profile_row_id],
-					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
 					['%d']
 				);
 			} else {
 				$write_result = $wpdb->insert(
 					self::profiles_table(),
 					$profile_data,
-					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d']
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d']
 				);
 				$profile_row_id = absint($wpdb->insert_id);
 			}
@@ -475,6 +516,40 @@ class AAC_Member_Portal_Member_Database {
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- prepared above.
 
 		return is_array($row) ? $row : [];
+	}
+
+	private function get_member_last_login_date($user_id) {
+		foreach (['aac_last_login_date', 'pmpro_last_login', 'last_login', 'wp_last_login'] as $meta_key) {
+			$value = get_user_meta((int) $user_id, $meta_key, true);
+			if ($value === '' || $value === null) {
+				continue;
+			}
+
+			if (is_numeric($value)) {
+				return wp_date('Y-m-d H:i:s', (int) $value, wp_timezone());
+			}
+			if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', (string) $value)) {
+				return (string) $value;
+			}
+
+			$timestamp = strtotime((string) $value);
+			if ($timestamp !== false) {
+				return wp_date('Y-m-d H:i:s', $timestamp, wp_timezone());
+			}
+		}
+
+		return '';
+	}
+
+	private function get_member_login_count($user_id) {
+		foreach (['aac_login_count', 'pmpro_login_count', 'login_count'] as $meta_key) {
+			$value = get_user_meta((int) $user_id, $meta_key, true);
+			if ($value !== '' && $value !== null && is_numeric($value)) {
+				return max(0, (int) $value);
+			}
+		}
+
+		return 0;
 	}
 
 	private function mirror_pmpro_rows($user_id, $wpdb_property, $mirror_table, $record_type, $status_column = 'status', $date_candidates = []) {
@@ -802,6 +877,8 @@ class AAC_Member_Portal_Member_Database {
 				'user_registered',
 				'display_name',
 				'roles',
+				'last_login_date',
+				'login_count',
 			],
 			'AAC Profile' => [
 				'aac_member_id',
@@ -923,6 +1000,8 @@ class AAC_Member_Portal_Member_Database {
 			'user_registered' => 'WordPress registration date',
 			'display_name' => 'Display name',
 			'roles' => 'WordPress roles',
+			'last_login_date' => 'Last login date',
+			'login_count' => 'Login count',
 			'aac_member_id' => 'AAC member ID',
 			'first_name' => 'First name',
 			'last_name' => 'Last name',
@@ -1025,6 +1104,8 @@ class AAC_Member_Portal_Member_Database {
 			'user_registered',
 			'display_name',
 			'roles',
+			'last_login_date',
+			'login_count',
 			'aac_member_id',
 			'first_name',
 			'last_name',
@@ -1188,6 +1269,8 @@ class AAC_Member_Portal_Member_Database {
 			'user_registered' => $user->user_registered,
 			'display_name' => $user->display_name,
 			'roles' => implode('|', (array) $user->roles),
+			'last_login_date' => $this->get_member_last_login_date($user_id),
+			'login_count' => (string) $this->get_member_login_count($user_id),
 			'aac_member_id' => $this->first_present_value([
 				$user_meta['aac_member_id'] ?? '',
 				$profile_info['member_id'] ?? '',
@@ -1664,6 +1747,8 @@ class AAC_Member_Portal_Member_Database {
 				<tr><th>Last Name</th><td><?php echo esc_html($account_info['last_name'] ?? ''); ?></td></tr>
 				<tr><th>Display Name</th><td><?php echo esc_html($profile_row['display_name']); ?></td></tr>
 				<tr><th>Email</th><td><?php echo esc_html($profile_row['email']); ?></td></tr>
+				<tr><th>Last Login Date</th><td><?php echo esc_html($profile_row['last_login_date'] ?? ''); ?></td></tr>
+				<tr><th>Login Count</th><td><?php echo esc_html((string) ($profile_row['login_count'] ?? 0)); ?></td></tr>
 				<tr><th>Phone</th><td><?php echo esc_html($account_info['phone'] ?? ''); ?></td></tr>
 				<tr><th>Birthdate</th><td><?php echo esc_html($account_info['birthdate'] ?? ''); ?></td></tr>
 				<tr><th>Street</th><td><?php echo esc_html($account_info['street'] ?? ''); ?></td></tr>

@@ -52,13 +52,18 @@ const LODGING_REGIONS = [
     ],
   },
   {
-    name: 'New England',
+    name: 'New Hampshire',
     offers: [
       { name: 'AAC Campground in Rumney', details: 'AAC campground across from the main parking area and crags at Rumney Rocks, New Hampshire.', url: 'https://americanalpineclub.org/rumney-rattlesnake-campground' },
       { name: 'Appalachian Mountain Club Facilities', discount: 'AMC member rates', details: 'Show an AAC membership card or proof-of-membership letter at AMC huts and lodges, including the High Mountain Huts in New Hampshire.', url: 'http://www.outdoors.org/' },
-      { name: 'Greenmont Farms', discount: '10% off', details: "Restored post-and-beam barn near Smugglers' Notch ice climbing in Vermont, available for individuals and groups.", url: 'http://greenmontfarms.com/pricing/' },
       { name: 'The Notch Hostel', discount: '10% off', details: 'Shared and private rooms in North Woodstock, New Hampshire, convenient to Rumney, Cannon, and the White Mountains.', url: 'http://www.notchhostel.com/' },
       { name: 'Tenney Mountain Basecamp', discount: '10% off', details: 'Private, family-friendly lodging about 10 minutes from Rumney Rocks. Book directly to avoid third-party platform fees and show proof of AAC membership.', url: 'https://www.vibebasecamps.com/' },
+    ],
+  },
+  {
+    name: 'Vermont',
+    offers: [
+      { name: 'Greenmont Farms', discount: '10% off', details: "Restored post-and-beam barn near Smugglers' Notch ice climbing in Vermont, available for individuals and groups.", url: 'http://greenmontfarms.com/pricing/' },
     ],
   },
   {
@@ -478,7 +483,7 @@ const ExpertVoiceSection = ({ handleVisitOffer }) => {
   );
 };
 
-const LodgingSection = ({ handleVisitOffer }) => (
+const LodgingSection = ({ handleVisitOffer, introText, discountCode }) => (
   <section className="space-y-6 bg-white">
     <SectionHero
       imageUrl={LODGING_HEADER_IMAGE_URL}
@@ -487,11 +492,24 @@ const LodgingSection = ({ handleVisitOffer }) => (
       description="Explore AAC campgrounds, huts, hostels, lodges, and partner accommodations across the United States and abroad. Offer details may change; confirm current rates and restrictions directly with the property when booking."
     />
 
-    <div className="space-y-7">
+    <p className="border-l-4 border-[#b71c1c] bg-stone-50 px-5 py-4 text-base leading-7 text-black">
+      {introText}{' '}
+      <strong className="font-bold text-[#8f1515]">{discountCode}</strong>
+    </p>
+
+    <div className="space-y-3">
       {LODGING_REGIONS.map((region) => (
-        <div key={region.name}>
-          <h4 className="border-b-[3px] border-[#b71c1c] pb-2 text-2xl font-bold text-black">{region.name}</h4>
-          <div className="grid gap-x-8 md:grid-cols-2">
+        <details key={region.name} className="group border border-stone-300 bg-white">
+          <summary className="flex min-h-[4rem] cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#b71c1c] [&::-webkit-details-marker]:hidden">
+            <span className="text-xl font-bold text-black">{region.name}</span>
+            <span className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-black/55">
+                {region.offers.length} {region.offers.length === 1 ? 'location' : 'locations'}
+              </span>
+              <ChevronDown className="h-5 w-5 text-[#8f1515] transition-transform group-open:rotate-180" aria-hidden="true" />
+            </span>
+          </summary>
+          <div className="grid gap-x-8 border-t-[3px] border-[#b71c1c] px-5 md:grid-cols-2">
             {region.offers.map((offer) => (
               <article key={offer.name} className="border-b border-stone-300 py-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -514,7 +532,7 @@ const LodgingSection = ({ handleVisitOffer }) => (
               </article>
             ))}
           </div>
-        </div>
+        </details>
       ))}
     </div>
   </section>
@@ -814,7 +832,11 @@ const DiscountsTab = ({ profile }) => {
         ) : activeCategory === 'expertvoice' ? (
           <ExpertVoiceSection handleVisitOffer={handleVisitOffer} />
         ) : activeCategory === 'lodging' ? (
-          <LodgingSection handleVisitOffer={handleVisitOffer} />
+          <LodgingSection
+            handleVisitOffer={handleVisitOffer}
+            introText={portalContent.lodging_intro_text}
+            discountCode={portalContent.lodging_discount_code}
+          />
         ) : activeCategory === 'climbing-guides' || activeCategory === 'climbing-gyms' ? (
           visibleCards.length ? (
             <ExpandableDirectorySection

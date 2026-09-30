@@ -153,6 +153,26 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 		background-image: none !important;
 	}
 
+	/* Keep the live AAC navigation solid while PMPro/member pages scroll. The
+	 * theme may still slide the sticky header away on downward scroll and reveal
+	 * it on upward scroll, but it must never fade to a transparent state. */
+	html #site-header,
+	body #site-header,
+	html #site-header.aac-site-header--scrolled,
+	body #site-header.aac-site-header--scrolled {
+		background: #030000 !important;
+		background-color: #030000 !important;
+		background-image: none !important;
+		opacity: 1 !important;
+	}
+
+	html #site-header::before,
+	body #site-header::before,
+	html #site-header.aac-site-header--scrolled::before,
+	body #site-header.aac-site-header--scrolled::before {
+		opacity: 1 !important;
+	}
+
 	.aac-managed-shell {
 		width: 100%;
 		max-width: 100%;
@@ -653,6 +673,10 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 		line-height: 1.1;
 	}
 
+	body.pmpro-cancel .aac-managed-hero h1 {
+		font-size: clamp(1.65rem, 3vw, 2.2rem);
+	}
+
 	body.pmpro-checkout .aac-managed-hero h1 {
 		font-size: clamp(1.65rem, 3vw, 2.2rem);
 	}
@@ -780,6 +804,53 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 		background: transparent;
 		box-shadow: none;
 		padding: 0;
+	}
+
+	body.pmpro-cancel .aac-managed-card {
+		max-width: 1120px;
+		margin: 1.5rem auto 0;
+		padding: clamp(1.5rem, 3vw, 2.5rem);
+		border: 1px solid #dedbd5;
+		border-top: 4px solid #b71c1c;
+		background: #ffffff;
+	}
+
+	body.pmpro-cancel .aac-managed-card .pmpro_form_fieldset,
+	body.pmpro-cancel .aac-managed-card .pmpro_form_field {
+		margin-top: 1.25rem;
+	}
+
+	body.pmpro-cancel .aac-managed-card label {
+		display: block;
+		margin-bottom: 0.55rem;
+		color: #1c1917;
+		font-weight: 800;
+	}
+
+	body.pmpro-cancel .aac-managed-card textarea,
+	body.pmpro-cancel .aac-managed-card select,
+	body.pmpro-cancel .aac-managed-card input[type="text"] {
+		width: 100%;
+		min-height: 3.25rem;
+		border: 1px solid #a8a29e;
+		border-radius: 0;
+		background: #ffffff;
+		padding: 0.8rem 1rem;
+		color: #1c1917;
+	}
+
+	body.pmpro-cancel .aac-managed-card input[type="submit"],
+	body.pmpro-cancel .aac-managed-card button[type="submit"] {
+		min-height: 3.25rem;
+		border: 2px solid #b71c1c;
+		border-radius: 0;
+		background: #b71c1c;
+		padding: 0.85rem 1.5rem;
+		color: #ffffff;
+		font-size: 0.78rem;
+		font-weight: 900;
+		letter-spacing: 0.11em;
+		text-transform: uppercase;
 	}
 
 	body.pmpro-cancel .aac-managed-card #pmpro_form_fieldset-discount-fields,
@@ -3409,7 +3480,7 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 		display: flex;
 		align-items: center;
 		gap: 0.85rem;
-		margin-top: 1.35rem;
+		margin: 1.35rem 0 1.75rem;
 	}
 
 	body[data-aac-checkout-wizard="true"] .aac-checkout-wizard__nav .aac-checkout-wizard__back {
@@ -3616,7 +3687,7 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 						<?php if (trim((string) $page_description) !== '') : ?>
 							<p><?php echo esc_html($page_description); ?></p>
 						<?php endif; ?>
-						<?php if (empty($is_billing_page) && empty($is_checkout_page) && empty($is_confirmation_page)) : ?>
+						<?php if (empty($is_billing_page) && empty($is_checkout_page) && empty($is_confirmation_page) && empty($is_cancel_page)) : ?>
 						<div class="aac-managed-actions-row">
 							<a class="aac-managed-pill <?php echo (!empty($is_account_page) || !empty($is_billing_page) || !empty($is_orders_page)) ? 'aac-managed-pill--primary' : 'aac-managed-pill--ghost'; ?>" href="<?php echo esc_url($managed_account_url); ?>"><?php echo aac_member_portal_sidebar_icon_svg('user'); ?> <span>Account</span></a>
 							<?php if ($current_can_cancel_membership) : ?>
@@ -4297,7 +4368,13 @@ const defaultPublicationCardImages = {
 			return null;
 		};
 
-		const getCheckoutCountryControl = () => getCheckoutControl(['pmpro_scountry', 'scountry', 'bcountry']);
+		const getCheckoutCountryControls = () => ['pmpro_scountry', 'scountry', 'bcountry']
+			.map((id) => document.getElementById(id))
+			.filter((control, index, controls) => control && controls.indexOf(control) === index);
+		const getCheckoutCountryControl = () => {
+			const controls = getCheckoutCountryControls();
+			return controls.find((control) => control.type !== 'hidden' && !control.disabled && control.getClientRects().length > 0) || controls[0] || null;
+		};
 		const getCheckoutStateControl = () => getCheckoutControl(['pmpro_sstate', 'sstate', 'bstate']);
 		const getCheckoutCountryValue = () => String(getCheckoutCountryControl()?.value || 'US').trim().toUpperCase();
 		const getCheckoutNamedControl = (names) => {
@@ -4599,8 +4676,8 @@ const defaultPublicationCardImages = {
 		if (!intro) {
 			intro = document.createElement('p');
 			intro.className = 'aac-member-preferences__intro';
-			intro.textContent = 'Select a publication to receive a print copy. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.';
 		}
+		intro.textContent = 'Unselect a publication to receive a digital copy only. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.';
 
 		let cardsGrid = fieldset.querySelector('.aac-member-preferences__grid');
 		if (!cardsGrid) {
@@ -5603,8 +5680,17 @@ const defaultPublicationCardImages = {
 		syncAacCheckoutIntentForSubmit();
 		getPmproCheckoutForm()?.addEventListener('submit', syncAacCheckoutIntentForSubmit, true);
 
+		const getTshirtPreferenceField = () =>
+			document.getElementById('t_shirt_sizet_shirt_div') ||
+			document.getElementById('t_shirt_div') ||
+			document.getElementById('tshirt_div') ||
+			document.getElementById('t_shirt_size_div') ||
+			document.getElementById('tshirt_size_div') ||
+			document.getElementById('shirt_size_div') ||
+			document.querySelector('select[name="t_shirt"], select[name="tshirt"], select[name="t_shirt_size"], select[name="tshirt_size"], select[name="shirt_size"]')?.closest('.pmpro_form_field');
+
 		const setTShirtToNoSelection = () => {
-			const tshirtField = document.getElementById('t_shirt_sizet_shirt_div') || document.getElementById('t_shirt_div');
+			const tshirtField = getTshirtPreferenceField();
 			const tshirtControl = tshirtField?.querySelector('select, input:not([type="checkbox"]):not([type="radio"])');
 			const noShirtOption = Array.from(tshirtControl?.options || []).find((option) => /no\s*t-?shirt|none/i.test(option.textContent || option.value || ''));
 			if (tshirtControl) {
@@ -5678,7 +5764,7 @@ const defaultPublicationCardImages = {
 			syncCountryRoutedPartnerLevel();
 			syncInternationalFulfillmentNotice();
 			const isUS = isCheckoutCountryUS();
-			const tshirtField = document.getElementById('t_shirt_sizet_shirt_div') || document.getElementById('t_shirt_div');
+			const tshirtField = getTshirtPreferenceField();
 			const discountFieldset = document.getElementById('pmpro_form_fieldset-membership-discounts');
 			const familyFieldset = document.getElementById('pmpro_form_fieldset-partner-family');
 			const memberPreferencesFieldset =
@@ -5724,11 +5810,13 @@ const defaultPublicationCardImages = {
 		};
 
 		const bindCountryLimitedSignupOptions = () => {
-			const countryField = getCheckoutCountryControl();
-			if (countryField && countryField.dataset.aacCountryLimitedSignupBound !== 'true') {
+			getCheckoutCountryControls().forEach((countryField) => {
+				if (countryField.dataset.aacCountryLimitedSignupBound === 'true') {
+					return;
+				}
 				countryField.addEventListener('change', syncCountryLimitedSignupOptions);
 				countryField.dataset.aacCountryLimitedSignupBound = 'true';
-			}
+			});
 			syncCountryLimitedSignupOptions();
 		};
 

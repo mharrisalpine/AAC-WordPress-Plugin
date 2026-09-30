@@ -153,6 +153,9 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                 </th>
                 {visibleTiers.map((tier, tierIndex) => {
                   const selected = selectedId === tier.id;
+                  const tierBadge = tier.id === 'Partner'
+                    ? 'Most popular'
+                    : (tier.id === 'Leader' ? 'Best value' : '');
                   return (
                     <th
                       key={tier.id}
@@ -177,8 +180,8 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                           'relative flex min-h-11 w-full items-center justify-center px-3 py-2 text-lg font-bold',
                           selected ? 'bg-[#ffc72c] text-black' : 'bg-black text-white',
                         )}>
-                          {tier.id === 'Partner' ? <span className="absolute left-1/2 top-0.5 -translate-x-1/2 whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em]">Most popular</span> : null}
-                          <span className={tier.id === 'Partner' ? 'pt-2.5' : ''}>{tier.label}</span>
+                          {tierBadge ? <span className="absolute left-1/2 top-0.5 -translate-x-1/2 whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em]">{tierBadge}</span> : null}
+                          <span className={tierBadge ? 'pt-2.5' : ''}>{tier.label}</span>
                         </span>
                         <span className="flex flex-1 items-center justify-center gap-3 px-3 py-2">
                           <span className="text-[24px] font-bold leading-none text-black">

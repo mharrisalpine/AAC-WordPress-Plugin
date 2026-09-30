@@ -765,6 +765,8 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][discounts_free_locked_description]', 'Free-tier locked description', $settings['content']['discounts_free_locked_description']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][discounts_upgrade_hint]', 'Upgrade hint', $settings['content']['discounts_upgrade_hint']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][discounts_button_label]', 'Card button label', $settings['content']['discounts_button_label']); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][lodging_intro_text]', 'Lodging introduction', $settings['content']['lodging_intro_text']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[content][lodging_discount_code]', 'Lodging member discount code', $settings['content']['lodging_discount_code']); ?>
 		</tbody></table>
 
 		<?php $this->render_benefits_gallery_editor($settings); ?>
@@ -873,7 +875,7 @@ class AAC_Member_Portal_Admin {
 			: self::get_default_signup_level_benefits();
 		?>
 		<h3 style="margin:0 0 8px;">Signup Benefits Matrix</h3>
-		<p class="description" style="margin-bottom:12px;">Benefit names become rows in the signup comparison matrix. Check the membership levels that include each benefit.</p>
+		<p class="description" style="margin-bottom:12px;">Benefit names become rows in the signup comparison matrix. Check the membership levels that include each benefit, then use the arrow buttons to change the display order.</p>
 		<input type="hidden" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_level_benefits][_configured]'); ?>" value="1" />
 		<table class="widefat striped" style="margin-top:16px;" data-aac-signup-benefits-table>
 			<thead>
@@ -882,7 +884,7 @@ class AAC_Member_Portal_Admin {
 					<?php foreach ($levels as $level_id => $level_label) : ?>
 						<th style="text-align:center;"><?php echo esc_html($level_label); ?></th>
 					<?php endforeach; ?>
-					<th style="width:90px;"><span class="screen-reader-text">Actions</span></th>
+					<th style="width:160px;"><span class="screen-reader-text">Actions</span></th>
 				</tr>
 			</thead>
 			<tbody data-aac-signup-benefits-list>
@@ -905,7 +907,13 @@ class AAC_Member_Portal_Admin {
 								</label>
 							</td>
 						<?php endforeach; ?>
-						<td><button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button></td>
+						<td>
+							<div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">
+								<button type="button" class="button button-small" data-aac-move-signup-benefit="up" aria-label="Move <?php echo esc_attr($benefit_label); ?> up" title="Move up">&uarr;</button>
+								<button type="button" class="button button-small" data-aac-move-signup-benefit="down" aria-label="Move <?php echo esc_attr($benefit_label); ?> down" title="Move down">&darr;</button>
+								<button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button>
+							</div>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -919,21 +927,51 @@ class AAC_Member_Portal_Admin {
 				if (!list || !addButton) return;
 				const optionKey = <?php echo wp_json_encode(self::OPTION_KEY); ?>;
 				const levels = <?php echo wp_json_encode(array_keys($levels)); ?>;
-				const bindRemove = (row) => {
-					row.querySelector('[data-aac-remove-signup-benefit]')?.addEventListener('click', () => row.remove());
+				const reindexRows = () => {
+					const rows = Array.from(list.querySelectorAll('[data-aac-signup-benefit-row]'));
+					rows.forEach((row, index) => {
+						row.querySelectorAll('input[name*="[signup_benefit_catalog]"]').forEach((input) => {
+							input.name = input.name.replace(/\[signup_benefit_catalog\]\[[^\]]+\]/, '[signup_benefit_catalog][' + index + ']');
+						});
+						const upButton = row.querySelector('[data-aac-move-signup-benefit="up"]');
+						const downButton = row.querySelector('[data-aac-move-signup-benefit="down"]');
+						if (upButton) upButton.disabled = index === 0;
+						if (downButton) downButton.disabled = index === rows.length - 1;
+					});
 				};
-				list.querySelectorAll('[data-aac-signup-benefit-row]').forEach(bindRemove);
+				const bindRowActions = (row) => {
+					row.querySelector('[data-aac-remove-signup-benefit]')?.addEventListener('click', () => {
+						row.remove();
+						reindexRows();
+					});
+					row.querySelectorAll('[data-aac-move-signup-benefit]').forEach((button) => {
+						button.addEventListener('click', () => {
+							if (button.dataset.aacMoveSignupBenefit === 'up' && row.previousElementSibling) {
+								list.insertBefore(row, row.previousElementSibling);
+							} else if (button.dataset.aacMoveSignupBenefit === 'down' && row.nextElementSibling) {
+								list.insertBefore(row.nextElementSibling, row);
+							}
+							reindexRows();
+							button.focus();
+						});
+					});
+				};
+				list.querySelectorAll('[data-aac-signup-benefit-row]').forEach(bindRowActions);
+				reindexRows();
 				addButton.addEventListener('click', () => {
-					const index = Date.now().toString();
-					const benefitKey = 'custom_' + index;
+					const rowId = Date.now().toString();
+					const index = list.querySelectorAll('[data-aac-signup-benefit-row]').length;
+					const benefitKey = 'custom_' + rowId;
 					const row = document.createElement('tr');
 					row.setAttribute('data-aac-signup-benefit-row', '1');
 					const checkboxCells = levels.map((level) => '<td style="text-align:center"><input type="checkbox" name="' + optionKey + '[content][signup_level_benefits][' + level + '][' + benefitKey + ']" value="1" /></td>').join('');
-					row.innerHTML = '<td><input type="hidden" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][key]" value="' + benefitKey + '" /><input type="text" class="large-text" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][label]" value="" placeholder="Benefit name" required /></td>' + checkboxCells + '<td><button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button></td>';
+					row.innerHTML = '<td><input type="hidden" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][key]" value="' + benefitKey + '" /><input type="text" class="large-text" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][label]" value="" placeholder="Benefit name" required /></td>' + checkboxCells + '<td><div style="display:flex;align-items:center;gap:6px;white-space:nowrap;"><button type="button" class="button button-small" data-aac-move-signup-benefit="up" aria-label="Move benefit up" title="Move up">&uarr;</button><button type="button" class="button button-small" data-aac-move-signup-benefit="down" aria-label="Move benefit down" title="Move down">&darr;</button><button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button></div></td>';
 					list.appendChild(row);
-					bindRemove(row);
+					bindRowActions(row);
+					reindexRows();
 					row.querySelector('input[type="text"]')?.focus();
 				});
+				list.closest('form')?.addEventListener('submit', reindexRows);
 			});
 		</script>
 		<?php $this->render_redpoint_level_amounts_editor($settings); ?>
@@ -1030,10 +1068,10 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_anac]', 'ANAC View URL', $settings['content']['publication_view_url_anac'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_acj]', 'American Climbing Journal View URL', $settings['content']['publication_view_url_acj'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_guidebook]', 'Guidebook View URL', $settings['content']['publication_view_url_guidebook'], 'url'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][publication_tile_image_aaj]', 'AAJ tile image URL', $settings['design']['publication_tile_image_aaj'], 'url'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][publication_tile_image_anac]', 'ANAC tile image URL', $settings['design']['publication_tile_image_anac'], 'url'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][publication_tile_image_acj]', 'American Climbing Journal tile image URL', $settings['design']['publication_tile_image_acj'], 'url'); ?>
-			<?php $this->render_input_row(self::OPTION_KEY . '[design][publication_tile_image_guidebook]', 'Guidebook tile image URL', $settings['design']['publication_tile_image_guidebook'], 'url'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_aaj]', 'AAJ tile image', $settings['design']['publication_tile_image_aaj'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_anac]', 'ANAC tile image', $settings['design']['publication_tile_image_anac'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_acj]', 'American Climbing Journal tile image', $settings['design']['publication_tile_image_acj'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_guidebook]', 'Guidebook tile image', $settings['design']['publication_tile_image_guidebook'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
 		</tbody></table>
 		<?php
 		$this->close_panel();
@@ -2113,7 +2151,7 @@ class AAC_Member_Portal_Admin {
 		<?php
 	}
 
-	private function render_media_row($name, $label, $value, $help = '') {
+	private function render_media_row($name, $label, $value, $help = '', $button_label = 'Select Media') {
 		$field_id = sanitize_title($name);
 		?>
 		<tr>
@@ -2121,7 +2159,7 @@ class AAC_Member_Portal_Admin {
 			<td>
 				<div style="display:flex;gap:8px;align-items:center;max-width:720px;">
 					<input type="url" id="<?php echo esc_attr($field_id); ?>" name="<?php echo esc_attr($name); ?>" value="<?php echo esc_attr($value); ?>" class="large-text" data-aac-media-input />
-					<button type="button" class="button button-secondary" data-aac-select-media data-target="<?php echo esc_attr($field_id); ?>">Select Media</button>
+					<button type="button" class="button button-secondary" data-aac-select-media data-target="<?php echo esc_attr($field_id); ?>"><?php echo esc_html($button_label); ?></button>
 				</div>
 				<?php if ($help) : ?>
 					<p class="description"><?php echo esc_html($help); ?></p>
@@ -2475,7 +2513,10 @@ class AAC_Member_Portal_Admin {
 							return;
 						}
 						openMediaFrame((attachment) => {
-							target.value = attachment.url || '';
+							const attachmentUrl = String(attachment.url || '');
+							target.value = window.location.protocol === 'https:'
+								? attachmentUrl.replace(/^http:/i, 'https:')
+								: attachmentUrl;
 							target.dispatchEvent(new Event('input', { bubbles: true }));
 						});
 					});
