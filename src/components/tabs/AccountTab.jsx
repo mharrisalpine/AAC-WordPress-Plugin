@@ -27,7 +27,23 @@ const ProfileSection = ({ title, children, className = '', titleClassName = '' }
   </section>
 );
 
-const CommunicationPreferenceToggle = ({ label, description, value, onChange }) => {
+const formatPublicationTimestamp = (value) => {
+  if (!value) return '';
+
+  const normalized = String(value).includes('T') ? String(value) : `${String(value).replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const CommunicationPreferenceToggle = ({ label, description, value, lastUpdated, onChange }) => {
   const isPrint = value !== 'Digital';
 
   return (
@@ -38,6 +54,9 @@ const CommunicationPreferenceToggle = ({ label, description, value, onChange }) 
         <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-stone-950">
           {isPrint ? 'Print' : 'Digital'}
         </p>
+        {lastUpdated ? (
+          <p className="mt-1 text-xs text-black/55">Last Updated: {formatPublicationTimestamp(lastUpdated)}</p>
+        ) : null}
       </div>
       <button
         type="button"
@@ -64,7 +83,7 @@ const SERVICE_COMPONENT_OPTIONS = [
   'Veteran',
   'Retired',
 ];
-const AAC_PROFILE_FIELD_CLASS = 'mt-1 flex h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black';
+const AAC_PROFILE_FIELD_CLASS = 'mt-1 flex h-10 w-full rounded-none border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black';
 
 const normalizeUniversitySearch = (value) => String(value || '')
   .toLowerCase()
@@ -221,6 +240,9 @@ const AccountTab = ({ profile }) => {
   const countryCode = resolveAddressCode(accountData?.country, countries);
   const states = addressOptions.states?.[countryCode] || {};
   const stateCode = resolveAddressCode(accountData?.state, states);
+  const shippingCountryCode = resolveAddressCode(accountData?.shipping_country, countries);
+  const shippingStates = addressOptions.states?.[shippingCountryCode] || {};
+  const shippingStateCode = resolveAddressCode(accountData?.shipping_state, shippingStates);
   const canManagePublicationPreferences = isPartnerOrAboveMembershipTierId(profile?.profile_info?.tier);
 
   useEffect(() => {
@@ -279,11 +301,33 @@ const AccountTab = ({ profile }) => {
       return;
     }
 
+    if (normalizedAccountData.shipping_address_different) {
+      const requiredShippingFields = [
+        ['shipping_address_1', 'Shipping street address'],
+        ['shipping_city', 'Shipping city'],
+        ['shipping_state', 'Shipping state / province'],
+        ['shipping_postal_code', 'Shipping ZIP / Postal code'],
+        ['shipping_country', 'Shipping country'],
+      ];
+      const missingShippingField = requiredShippingFields.find(([key]) => !String(normalizedAccountData[key] || '').trim());
+      if (missingShippingField) {
+        toast({
+          variant: 'destructive',
+          title: `${missingShippingField[1]} is required`,
+          description: 'Complete the shipping address before saving changes.',
+        });
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       accountDataRef.current = normalizedAccountData;
       setAccountData(normalizedAccountData);
-      await updateProfile({ account_info: normalizedAccountData });
+      const result = await updateProfile({ account_info: normalizedAccountData });
+      if (result?.error) {
+        return;
+      }
       toast({
         title: "✅ Settings Saved!",
         description: "Your account settings have been updated.",
@@ -302,7 +346,6 @@ const AccountTab = ({ profile }) => {
 
   const membershipExpirationDate = profile?.profile_info?.expiration_date || profile?.profile_info?.valid_through_date || '';
   const hasAutoRenewal = Boolean(currentProfileAccountInfo.auto_renew || profile?.membership_actions?.current_subscription_id);
-
   if (!accountData) return <div className="text-black text-center pt-10">Loading account details...</div>;
 
   return (
@@ -425,6 +468,66 @@ const AccountTab = ({ profile }) => {
                     </div>
                 </div>
 
+                <div className="!mt-3 space-y-4">
+                  <label htmlFor="shipping_address_different" className="flex cursor-pointer items-start gap-3 text-black">
+                    <input
+                      id="shipping_address_different"
+                      type="checkbox"
+                      checked={Boolean(accountData.shipping_address_different)}
+                      onChange={(e) => patchAccountData({ shipping_address_different: e.target.checked })}
+                      className="mt-1 h-4 w-4 rounded border-stone-400 text-[#b71c1c] focus:ring-[#b71c1c]"
+                    />
+                    <span className="font-medium">Member shipping address is different than my address</span>
+                  </label>
+
+                  {accountData.shipping_address_different ? (
+                    <div className="space-y-4" aria-label="Shipping Address">
+                      <div>
+                        <h4 className="text-base font-semibold text-black">Shipping Address</h4>
+                        <p className="mt-1 text-sm text-black/60">Used when member materials should be delivered somewhere other than the primary address.</p>
+                      </div>
+                      <div>
+                        <Label htmlFor="shipping_address_1" className="text-black">Street Address</Label>
+                        <Input id="shipping_address_1" required value={accountData.shipping_address_1 || ''} onChange={(e) => patchAccountData({ shipping_address_1: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1" />
+                      </div>
+                      <div>
+                        <Label htmlFor="shipping_address_2" className="text-black">Address Line 2</Label>
+                        <Input id="shipping_address_2" value={accountData.shipping_address_2 || ''} onChange={(e) => patchAccountData({ shipping_address_2: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1" />
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="shipping_city" className="text-black">City</Label>
+                          <Input id="shipping_city" required value={accountData.shipping_city || ''} onChange={(e) => patchAccountData({ shipping_city: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1" />
+                        </div>
+                        <div>
+                          <Label htmlFor="shipping_state" className="text-black">State / Province</Label>
+                          {Object.keys(shippingStates).length ? (
+                            <select id="shipping_state" required autoComplete="shipping address-level1" value={shippingStateCode} onChange={(e) => patchAccountData({ shipping_state: e.target.value })} className={AAC_PROFILE_FIELD_CLASS}>
+                              <option value="">Select state / province</option>
+                              {addressSelectOptions(shippingStates, accountData.shipping_state).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                            </select>
+                          ) : (
+                            <Input id="shipping_state" required autoComplete="shipping address-level1" value={accountData.shipping_state || ''} onChange={(e) => patchAccountData({ shipping_state: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="shipping_postal_code" className="text-black">ZIP / Postal Code</Label>
+                          <Input id="shipping_postal_code" required autoComplete="shipping postal-code" value={accountData.shipping_postal_code || ''} onChange={(e) => patchAccountData({ shipping_postal_code: e.target.value })} className="bg-white border-[#d9d9d9] text-black mt-1" />
+                        </div>
+                        <div>
+                          <Label htmlFor="shipping_country" className="text-black">Country</Label>
+                          <select id="shipping_country" required autoComplete="shipping country" value={shippingCountryCode} onChange={(e) => patchAccountData({ shipping_country: e.target.value, shipping_state: '' })} className={AAC_PROFILE_FIELD_CLASS}>
+                            <option value="">Select country</option>
+                            {addressSelectOptions(countries, accountData.shipping_country).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
                 <div>
                   <Label htmlFor="size" className="text-black">T-Shirt Size</Label>
                   <select
@@ -538,7 +641,7 @@ const AccountTab = ({ profile }) => {
                       id="emergency_contact_relationship"
                       value={accountData.emergency_contact_relationship || ''}
                       onChange={(e) => patchAccountData({ emergency_contact_relationship: e.target.value })}
-                      className="mt-1 flex h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black"
+                      className="mt-1 flex h-10 w-full rounded-none border border-[#d9d9d9] bg-white px-3 py-2 text-sm text-black"
                     >
                       <option value="">Select relationship</option>
                       {emergencyRelationshipOptions.map((option) => (
@@ -560,28 +663,30 @@ const AccountTab = ({ profile }) => {
                     label="American Alpine Journal"
                     description="Annual publication delivery"
                     value={accountData.aaj_pref || 'Print'}
+                    lastUpdated={accountData.aaj_preference_last_updated}
                     onChange={(value) => patchAccountData({ aaj_pref: value })}
                   />
                   <CommunicationPreferenceToggle
                     label="Accidents in North American Climbing"
                     description="Annual publication delivery"
                     value={accountData.anac_pref || 'Print'}
+                    lastUpdated={accountData.anac_preference_last_updated}
                     onChange={(value) => patchAccountData({ anac_pref: value })}
                   />
                   <CommunicationPreferenceToggle
                     label="American Climbing Journal"
                     description="Journal delivery"
                     value={accountData.acj_pref || 'Print'}
+                    lastUpdated={accountData.american_climbing_journal_preference_last_updated}
                     onChange={(value) => patchAccountData({ acj_pref: value })}
                   />
                   <CommunicationPreferenceToggle
                     label="Guidebook to Membership"
                     description="AAC guide content delivery"
                     value={accountData.guidebook_pref || 'Print'}
+                    lastUpdated={accountData.guidebook_preferences_last_updated}
                     onChange={(value) => patchAccountData({ guidebook_pref: value })}
                   />
-
-
                 </div>
               </ProfileSection>
             ) : null}

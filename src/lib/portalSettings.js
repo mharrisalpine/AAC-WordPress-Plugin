@@ -202,7 +202,7 @@ const DEFAULT_SETTINGS = {
     linked_accounts_lookup_button_label: 'Check Code',
     linked_accounts_redeem_button_label: 'Redeem Invite Code',
     linked_accounts_success_message: 'Invite redeemed successfully. Redirecting to your member profile...',
-    discounts_title: 'Member Benefits',
+    discounts_title: 'Member Discounts',
     discounts_locked_title: 'Discounts Locked',
     discounts_locked_description:
       'Discounts are available to active members only. Renew or rejoin your membership to unlock partner offers.',

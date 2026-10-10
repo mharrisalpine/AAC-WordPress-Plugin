@@ -91,6 +91,8 @@ class AAC_Member_Portal_Runtime_Config {
 					'anac' => set_url_scheme($design['publication_tile_image_anac'] ?? '', 'https'),
 					'acj' => set_url_scheme($design['publication_tile_image_acj'] ?? '', 'https'),
 					'guidebook' => set_url_scheme($design['publication_tile_image_guidebook'] ?? '', 'https'),
+					'alpinist' => set_url_scheme($design['magazine_tile_image_alpinist'] ?? '', 'https'),
+					'backcountry' => set_url_scheme($design['magazine_tile_image_backcountry'] ?? '', 'https'),
 				],
 			],
 			'navigation' => [

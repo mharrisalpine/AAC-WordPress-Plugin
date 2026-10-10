@@ -7,6 +7,8 @@ if (!defined('ABSPATH')) {
 class AAC_Member_Portal_API {
 	const ROUTE_NAMESPACE = 'aac/v1';
 	const PROFILE_CACHE_TTL = 90;
+	const UPCOMING_PAYMENT_CACHE_TTL = 300;
+	const TRANSACTIONS_CACHE_TTL = 120;
 	private static $instance = null;
 	private static $university_school_index = null;
 
@@ -162,6 +164,8 @@ class AAC_Member_Portal_API {
 		}
 
 		delete_transient($this->get_profile_cache_key($user_id));
+		delete_transient($this->get_upcoming_payment_cache_key($user_id));
+		delete_transient($this->get_transactions_cache_key($user_id));
 
 		$parent_user_id = absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
 		if ($parent_user_id > 0 && $parent_user_id !== $user_id) {
@@ -201,10 +205,6 @@ class AAC_Member_Portal_API {
 			'aac_benefits_info',
 			'aac_member_id',
 			'aac_membership_discount_type',
-			'aac_magazine_addons',
-			'aac_magazine_subscription_labels',
-			'aac_has_alpinist_subscription',
-			'aac_has_backcountry_subscription',
 			'aac_connected_accounts',
 			'aac_partner_family_config',
 			'aac_partner_family_mode',
@@ -1143,19 +1143,35 @@ class AAC_Member_Portal_API {
 
 	public function upcoming_payment() {
 		$user_id = get_current_user_id();
+		$cache_key = $this->get_upcoming_payment_cache_key($user_id);
+		$payment = get_transient($cache_key);
+		if (is_array($payment)) {
+			$response = rest_ensure_response(['upcoming_payment' => $payment]);
+			$response->header('Cache-Control', 'private, no-store, max-age=0');
+			$response->header('X-AAC-Billing-Cache', 'hit');
+			return $response;
+		}
+
 		$payment = $this->get_linked_parent_user_id($user_id) > 0
 			? ['status' => 'hidden']
 			: AAC_Member_Portal_PMPro::get_upcoming_payment($user_id);
+		set_transient($cache_key, $payment, self::UPCOMING_PAYMENT_CACHE_TTL);
 		$response = rest_ensure_response(['upcoming_payment' => $payment]);
 		$response->header('Cache-Control', 'private, no-store, max-age=0');
+		$response->header('X-AAC-Billing-Cache', 'miss');
 		return $response;
 	}
 
 	public function transactions() {
 		$user_id = get_current_user_id();
-		$transactions = AAC_Member_Portal_PMPro::is_available()
-			? AAC_Member_Portal_PMPro::get_membership_transactions($user_id)
-			: [];
+		$cache_key = $this->get_transactions_cache_key($user_id);
+		$transactions = get_transient($cache_key);
+		if (!is_array($transactions)) {
+			$transactions = AAC_Member_Portal_PMPro::is_available()
+				? AAC_Member_Portal_PMPro::get_membership_transactions($user_id)
+				: [];
+			set_transient($cache_key, $transactions, self::TRANSACTIONS_CACHE_TTL);
+		}
 
 		return rest_ensure_response([
 			'transactions' => $transactions,
@@ -1194,6 +1210,14 @@ class AAC_Member_Portal_API {
 	private function get_profile_cache_key($user_id) {
 		$settings_version = (string) get_option('aac_member_portal_profile_cache_version', '1');
 		return 'aac_member_profile_' . md5(AAC_MEMBER_PORTAL_VERSION . '|' . $settings_version) . '_' . (int) $user_id;
+	}
+
+	private function get_upcoming_payment_cache_key($user_id) {
+		return 'aac_upcoming_payment_' . AAC_MEMBER_PORTAL_VERSION . '_' . (int) $user_id;
+	}
+
+	private function get_transactions_cache_key($user_id) {
+		return 'aac_member_transactions_' . AAC_MEMBER_PORTAL_VERSION . '_' . (int) $user_id;
 	}
 
 	private function get_cached_profile($user_id) {
@@ -1292,16 +1316,16 @@ class AAC_Member_Portal_API {
 			'anac_pref' => 'Print',
 			'acj_pref' => 'Print',
 			'guidebook_pref' => 'Print',
-			'magazine_subscriptions' => [],
 			'membership_discount_type' => '',
 			'auto_renew' => false,
 		], $account_info, $this->get_normalized_publication_preferences($account_info));
+		unset($account_info['magazine_subscriptions']);
 
-		$account_info['magazine_subscriptions'] = $this->get_member_magazine_subscription_labels($user_id);
 		$account_info['membership_discount_type'] = $this->format_membership_discount_type_label(
 			get_user_meta($user_id, 'aac_membership_discount_type', true)
 		);
 		$account_info['size'] = $this->normalize_tshirt_size_value($account_info['size'] ?? 'No T-shirt');
+		$account_info = array_merge($account_info, AAC_Member_Portal_Publication_Preferences::get_timestamps($user_id));
 
 		$membership_actions = $this->build_membership_actions($membership_owner_user_id, $profile_info);
 
@@ -1692,6 +1716,13 @@ class AAC_Member_Portal_API {
 			'state' => sanitize_text_field($account_info['state'] ?? ''),
 			'zip' => sanitize_text_field($account_info['zip'] ?? ''),
 			'country' => sanitize_text_field($account_info['country'] ?? ''),
+			'shipping_address_different' => !empty($account_info['shipping_address_different']),
+			'shipping_address_1' => sanitize_text_field($account_info['shipping_address_1'] ?? ''),
+			'shipping_address_2' => sanitize_text_field($account_info['shipping_address_2'] ?? ''),
+			'shipping_city' => sanitize_text_field($account_info['shipping_city'] ?? ''),
+			'shipping_state' => sanitize_text_field($account_info['shipping_state'] ?? ''),
+			'shipping_postal_code' => sanitize_text_field($account_info['shipping_postal_code'] ?? ''),
+			'shipping_country' => sanitize_text_field($account_info['shipping_country'] ?? ''),
 			'emergency_contact_first_name' => sanitize_text_field($account_info['emergency_contact_first_name'] ?? ''),
 			'emergency_contact_last_name' => sanitize_text_field($account_info['emergency_contact_last_name'] ?? ''),
 			'emergency_contact_phone' => sanitize_text_field($account_info['emergency_contact_phone'] ?? ''),
@@ -1706,7 +1737,6 @@ class AAC_Member_Portal_API {
 			'anac_pref' => $publication_preferences['anac_pref'],
 			'acj_pref' => $publication_preferences['acj_pref'],
 			'guidebook_pref' => $publication_preferences['guidebook_pref'],
-			'magazine_subscriptions' => array_values(array_filter(array_map('sanitize_text_field', (array) ($account_info['magazine_subscriptions'] ?? [])))),
 			'membership_discount_type' => $membership_discount_type,
 			'auto_renew' => !empty($account_info['auto_renew']),
 		];
@@ -1753,6 +1783,21 @@ class AAC_Member_Portal_API {
 			return new WP_Error('invalid_email', 'A valid email address is required.', ['status' => 400, 'field' => 'email']);
 		}
 
+		if (!empty($account_info['shipping_address_different'])) {
+			$required_shipping_fields = [
+				'shipping_address_1' => 'Shipping street address',
+				'shipping_city' => 'Shipping city',
+				'shipping_state' => 'Shipping state / province',
+				'shipping_postal_code' => 'Shipping ZIP / Postal code',
+				'shipping_country' => 'Shipping country',
+			];
+			foreach ($required_shipping_fields as $field_key => $field_label) {
+				if (trim((string) ($account_info[$field_key] ?? '')) === '') {
+					return new WP_Error('missing_required_shipping_address', sprintf('%s is required.', $field_label), ['status' => 400, 'field' => $field_key]);
+				}
+			}
+		}
+
 		return true;
 	}
 
@@ -1769,6 +1814,13 @@ class AAC_Member_Portal_API {
 			'state',
 			'zip',
 			'country',
+			'shipping_address_different',
+			'shipping_address_1',
+			'shipping_address_2',
+			'shipping_city',
+			'shipping_state',
+			'shipping_postal_code',
+			'shipping_country',
 			'emergency_contact_first_name',
 			'emergency_contact_last_name',
 			'emergency_contact_phone',
@@ -1857,6 +1909,15 @@ class AAC_Member_Portal_API {
 		$account_info['state'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_sstate', 'sstate', 'bstate'], $account_info['state'] ?? '');
 		$account_info['zip'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_szipcode', 'szipcode', 'bzipcode'], $account_info['zip'] ?? '');
 		$account_info['country'] = $this->get_preferred_user_meta_value($user_id, ['pmpro_scountry', 'scountry', 'bcountry'], $account_info['country'] ?? '');
+		$account_info['shipping_address_different'] = $this->normalize_boolean_meta_value(
+			get_user_meta($user_id, 'aac_shipping_address_different', true)
+		);
+		$account_info['shipping_address_1'] = sanitize_text_field(get_user_meta($user_id, 'aac_shipping_address_1', true));
+		$account_info['shipping_address_2'] = sanitize_text_field(get_user_meta($user_id, 'aac_shipping_address_2', true));
+		$account_info['shipping_city'] = sanitize_text_field(get_user_meta($user_id, 'aac_shipping_city', true));
+		$account_info['shipping_state'] = sanitize_text_field(get_user_meta($user_id, 'aac_shipping_state', true));
+		$account_info['shipping_postal_code'] = sanitize_text_field(get_user_meta($user_id, 'aac_shipping_postal_code', true));
+		$account_info['shipping_country'] = sanitize_text_field(get_user_meta($user_id, 'aac_shipping_country', true));
 		$account_info['emergency_contact_first_name'] = sanitize_text_field(
 			$this->get_preferred_user_meta_value(
 				$user_id,
@@ -2340,6 +2401,28 @@ class AAC_Member_Portal_API {
 		update_user_meta($user_id, 'pmpro_sstate', $state);
 		update_user_meta($user_id, 'pmpro_szipcode', $zip);
 		update_user_meta($user_id, 'pmpro_scountry', $country);
+		$shipping_meta = [
+			'aac_shipping_address_different' => !empty($account_info['shipping_address_different']) ? '1' : '0',
+			'aac_shipping_address_1' => sanitize_text_field($account_info['shipping_address_1'] ?? ''),
+			'aac_shipping_address_2' => sanitize_text_field($account_info['shipping_address_2'] ?? ''),
+			'aac_shipping_city' => sanitize_text_field($account_info['shipping_city'] ?? ''),
+			'aac_shipping_state' => sanitize_text_field($account_info['shipping_state'] ?? ''),
+			'aac_shipping_postal_code' => sanitize_text_field($account_info['shipping_postal_code'] ?? ''),
+			'aac_shipping_country' => sanitize_text_field($account_info['shipping_country'] ?? ''),
+		];
+		foreach ($shipping_meta as $meta_key => $meta_value) {
+			update_user_meta($user_id, $meta_key, $meta_value);
+		}
+		$emergency_contact_fields = [
+			'emergency_contact_first_name' => sanitize_text_field($account_info['emergency_contact_first_name'] ?? ''),
+			'emergency_contact_last_name' => sanitize_text_field($account_info['emergency_contact_last_name'] ?? ''),
+			'emergency_contact_phone' => sanitize_text_field($account_info['emergency_contact_phone'] ?? ''),
+			'emergency_contact_email' => sanitize_email($account_info['emergency_contact_email'] ?? ''),
+			'emergency_contact_relationship' => sanitize_text_field($account_info['emergency_contact_relationship'] ?? ''),
+		];
+		foreach ($emergency_contact_fields as $meta_key => $meta_value) {
+			update_user_meta($user_id, $meta_key, $meta_value);
+		}
 		update_user_meta($user_id, 'student_university', sanitize_text_field($account_info['student_university'] ?? ''));
 		update_user_meta($user_id, 'university_or_school', sanitize_text_field($account_info['student_university'] ?? ''));
 		update_user_meta($user_id, 'student_university_id', sanitize_text_field($account_info['student_university_id'] ?? ''));
@@ -2359,10 +2442,16 @@ class AAC_Member_Portal_API {
 		// This legacy field stored military branches and must never override the
 		// current Service Component selection (including an intentionally blank one).
 		delete_user_meta($user_id, 'service_branch');
-		update_user_meta($user_id, 'aaj_preference', sanitize_text_field($publication_preferences['aaj_pref']));
-		update_user_meta($user_id, 'anac_preference', sanitize_text_field($publication_preferences['anac_pref']));
-		update_user_meta($user_id, 'american_climbing_journal_preference', sanitize_text_field($publication_preferences['acj_pref']));
-		update_user_meta($user_id, 'guidebook_preferences', sanitize_text_field($publication_preferences['guidebook_pref']));
+		$pmpro_publication_preferences = [
+			'aaj_preference' => sanitize_text_field($publication_preferences['aaj_pref']),
+			'anac_preference' => sanitize_text_field($publication_preferences['anac_pref']),
+			'american_climbing_journal_preference' => sanitize_text_field($publication_preferences['acj_pref']),
+			'guidebook_preferences' => sanitize_text_field($publication_preferences['guidebook_pref']),
+		];
+		AAC_Member_Portal_Publication_Preferences::sync_timestamps($user_id, $pmpro_publication_preferences);
+		foreach ($pmpro_publication_preferences as $meta_key => $preference_value) {
+			update_user_meta($user_id, $meta_key, $preference_value);
+		}
 		delete_user_meta($user_id, 'aac_birthdate');
 		delete_user_meta($user_id, 'aac_tshirt_size');
 		delete_user_meta($user_id, 'aac_publication_pref');
@@ -2371,12 +2460,6 @@ class AAC_Member_Portal_API {
 		delete_user_meta($user_id, 'aac_acj_pref');
 		delete_user_meta($user_id, 'aac_guidebook_pref');
 
-		$selected_addons = $this->get_member_magazine_subscription_slugs($user_id);
-		$labels = $this->get_member_magazine_subscription_labels($user_id);
-
-		update_user_meta($user_id, 'aac_magazine_subscription_labels', implode(', ', $labels));
-		update_user_meta($user_id, 'aac_has_alpinist_subscription', in_array('alpinist', $selected_addons, true) ? '1' : '0');
-		update_user_meta($user_id, 'aac_has_backcountry_subscription', in_array('backcountry', $selected_addons, true) ? '1' : '0');
 		update_user_meta($user_id, 'aac_family_account_role', $this->get_family_account_role($user_id));
 	}
 
@@ -2580,27 +2663,6 @@ class AAC_Member_Portal_API {
 		}
 
 		$this->clear_family_child_linkage($user_id);
-	}
-
-	private function get_member_magazine_subscription_slugs($user_id) {
-		$stored = get_user_meta((int) $user_id, 'aac_magazine_addons', true);
-		$stored = is_array($stored) ? $stored : [];
-		$allowed = ['alpinist', 'backcountry'];
-
-		return array_values(array_filter(array_map('sanitize_key', $stored), function ($slug) use ($allowed) {
-			return in_array($slug, $allowed, true);
-		}));
-	}
-
-	private function get_member_magazine_subscription_labels($user_id) {
-		$labels_by_slug = [
-			'alpinist' => 'Alpinist magazine',
-			'backcountry' => 'Backcountry magazine',
-		];
-
-		return array_values(array_filter(array_map(function ($slug) use ($labels_by_slug) {
-			return $labels_by_slug[$slug] ?? null;
-		}, $this->get_member_magazine_subscription_slugs($user_id))));
 	}
 
 	private function consume_rate_limit($action, $identity, $limit, $window_seconds) {

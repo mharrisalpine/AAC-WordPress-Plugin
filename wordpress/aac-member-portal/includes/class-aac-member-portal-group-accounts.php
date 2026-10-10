@@ -876,6 +876,78 @@ final class AAC_Member_Portal_Group_Accounts {
 		return true;
 	}
 
+	public static function detach_children_after_parent_upgrade($parent_user_id, $accounts = null) {
+		$parent_user_id = (int) $parent_user_id;
+		if ($parent_user_id <= 0) {
+			return;
+		}
+
+		$accounts = is_array($accounts) ? $accounts : self::get_parent_slots($parent_user_id);
+		$group = self::is_available() ? self::get_group_for_parent($parent_user_id) : null;
+		if ($group && !empty($group->id)) {
+			$members = self::get_group_members_for_group((int) $group->id);
+			foreach ($members as $member) {
+				if (is_object($member) && method_exists($member, 'update_group_child_status')) {
+					$member->update_group_child_status('inactive');
+				}
+			}
+			self::deactivate_group_member_rows((int) $group->id, $accounts);
+			if (method_exists($group, 'update_group_total_seats')) {
+				$group->update_group_total_seats(0);
+			}
+		}
+
+		foreach ($accounts as $slot) {
+			$child_user_id = absint(is_array($slot) ? ($slot['child_user_id'] ?? 0) : 0);
+			if ($child_user_id <= 0) {
+				continue;
+			}
+
+			delete_user_meta($child_user_id, 'aac_linked_parent_user_id');
+			delete_user_meta($child_user_id, 'aac_linked_account_slot_id');
+			delete_user_meta($child_user_id, 'aac_linked_account_invite_code');
+			delete_user_meta($child_user_id, 'aac_linked_account_type');
+			delete_user_meta($child_user_id, 'aac_linked_account_label');
+			delete_user_meta($child_user_id, 'aac_family_account_role');
+			delete_user_meta($child_user_id, 'aac_group_account_group_id');
+			delete_user_meta($child_user_id, 'aac_group_account_child_level_id');
+			delete_user_meta($child_user_id, 'aac_group_account_synced_at');
+		}
+	}
+
+	private static function deactivate_group_member_rows($group_id, $accounts) {
+		global $wpdb;
+
+		$group_id = (int) $group_id;
+		$child_user_ids = array_values(array_filter(array_map(static function ($slot) {
+			return absint(is_array($slot) ? ($slot['child_user_id'] ?? 0) : 0);
+		}, (array) $accounts)));
+		if (!$wpdb || $group_id <= 0 || empty($child_user_ids)) {
+			return;
+		}
+
+		foreach (self::get_group_member_account_tables() as $table) {
+			$columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- discovered and sanitized table name.
+			$columns = is_array($columns) ? array_map('strval', $columns) : [];
+			$group_column = in_array('group_id', $columns, true) ? 'group_id' : (in_array('pmprogroupacct_group_id', $columns, true) ? 'pmprogroupacct_group_id' : '');
+			$user_column = in_array('group_child_user_id', $columns, true) ? 'group_child_user_id' : (in_array('child_user_id', $columns, true) ? 'child_user_id' : '');
+			$status_column = in_array('group_child_status', $columns, true) ? 'group_child_status' : (in_array('child_status', $columns, true) ? 'child_status' : (in_array('status', $columns, true) ? 'status' : ''));
+			if ($group_column === '' || $user_column === '' || $status_column === '') {
+				continue;
+			}
+
+			foreach ($child_user_ids as $child_user_id) {
+				$wpdb->update(
+					$table,
+					[$status_column => 'inactive'],
+					[$group_column => $group_id, $user_column => $child_user_id],
+					['%s'],
+					['%d', '%d']
+				);
+			}
+		}
+	}
+
 	public static function get_group_summary_for_parent($parent_user_id) {
 		if (!self::is_available()) {
 			return null;

@@ -74,16 +74,6 @@ export const formatTShirtSizeLabel = (value, fallback = '') => {
   return normalizeTShirtSizeValue(value, fallback);
 };
 
-export const normalizeMagazineSubscriptions = (value) => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
-};
-
 export const normalizeBirthdateValue = (value) => {
   const normalized = String(value || '').trim();
   if (!normalized) {
@@ -100,12 +90,6 @@ export const normalizeDateFieldValue = (value) => {
   }
 
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
-};
-
-export const formatMagazineSubscriptions = (value, fallback = 'None selected') => {
-  const subscriptions = normalizeMagazineSubscriptions(value);
-
-  return subscriptions.length ? subscriptions.join(', ') : fallback;
 };
 
 export const normalizeAccountInfo = (accountInfo = {}) => {
@@ -133,6 +117,13 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.state = normalized.state || '';
   normalized.zip = normalized.zip || '';
   normalized.country = normalized.country || '';
+  normalized.shipping_address_different = Boolean(normalized.shipping_address_different);
+  normalized.shipping_address_1 = normalized.shipping_address_1 || '';
+  normalized.shipping_address_2 = normalized.shipping_address_2 || '';
+  normalized.shipping_city = normalized.shipping_city || '';
+  normalized.shipping_state = normalized.shipping_state || '';
+  normalized.shipping_postal_code = normalized.shipping_postal_code || '';
+  normalized.shipping_country = normalized.shipping_country || '';
   normalized.emergency_contact_first_name = normalized.emergency_contact_first_name || '';
   normalized.emergency_contact_last_name = normalized.emergency_contact_last_name || '';
   normalized.emergency_contact_phone = normalized.emergency_contact_phone || '';
@@ -168,7 +159,10 @@ export const normalizeAccountInfo = (accountInfo = {}) => {
   normalized.anac_pref = normalizePrintDigitalPreference(normalized.anac_pref, derivedPublicationPref);
   normalized.acj_pref = normalizePrintDigitalPreference(normalized.acj_pref, derivedPublicationPref);
   normalized.guidebook_pref = normalizePrintDigitalPreference(normalized.guidebook_pref);
-  normalized.magazine_subscriptions = normalizeMagazineSubscriptions(normalized.magazine_subscriptions);
+  normalized.aaj_preference_last_updated = normalized.aaj_preference_last_updated || '';
+  normalized.anac_preference_last_updated = normalized.anac_preference_last_updated || '';
+  normalized.american_climbing_journal_preference_last_updated = normalized.american_climbing_journal_preference_last_updated || '';
+  normalized.guidebook_preferences_last_updated = normalized.guidebook_preferences_last_updated || '';
   normalized.membership_discount_type = normalizeMembershipDiscountType(normalized.membership_discount_type);
   normalized.size = normalizeTShirtSizeValue(normalized.size);
   normalized.auto_renew = Boolean(normalized.auto_renew);

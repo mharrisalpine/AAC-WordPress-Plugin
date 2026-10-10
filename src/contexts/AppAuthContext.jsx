@@ -8,7 +8,7 @@ import {
   registerMember,
   updateMemberProfile,
 } from '@/lib/memberApi';
-import { setAuthToken } from '@/lib/apiClient';
+import { getAuthToken, setAuthToken } from '@/lib/apiClient';
 import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import { normalizeAccountInfo } from '@/lib/memberProfile';
 
@@ -17,14 +17,19 @@ export const AuthContext = createContext(undefined);
 export const AuthProvider = ({ children }) => {
   const { toast } = useToast();
   const authRequestRef = useRef(0);
-  const initialAuthRef = useRef(getAppRuntimeConfig().initialAuth || null);
+  const runtimeConfigRef = useRef(getAppRuntimeConfig());
+  const initialAuthRef = useRef(runtimeConfigRef.current.initialAuth || null);
   const initialAuth = initialAuthRef.current;
+  const hasResolvedAnonymousStateRef = useRef(
+    runtimeConfigRef.current.isLoggedIn === false && !getAuthToken(),
+  );
+  const hasInitialAuthState = Boolean(initialAuth?.user || hasResolvedAnonymousStateRef.current);
 
   const [user, setUser] = useState(() => initialAuth?.user ?? null);
   const [session, setSession] = useState(() => initialAuth?.session ?? (initialAuth?.user ? { user: initialAuth.user } : null));
   const [profile, setProfile] = useState(() => initialAuth?.profile ?? null);
-  const [loading, setLoading] = useState(() => !initialAuth?.user);
-  const [authReady, setAuthReady] = useState(() => Boolean(initialAuth?.user));
+  const [loading, setLoading] = useState(() => !hasInitialAuthState);
+  const [authReady, setAuthReady] = useState(() => hasInitialAuthState);
 
   const applyAuthState = useCallback((data) => {
     const nextUser = data?.user ?? null;
@@ -86,6 +91,13 @@ export const AuthProvider = ({ children }) => {
   }, [applyAuthState, beginAuthRequest, isLatestAuthRequest, toast]);
 
   useEffect(() => {
+    // WordPress already resolved anonymous cookie state while rendering the
+    // portal page. Do not block public signup on a second uncached /me request.
+    // A stored bearer token still needs verification because it may represent
+    // a member session even when there is no WordPress login cookie.
+    if (hasResolvedAnonymousStateRef.current) {
+      return;
+    }
     refreshProfile({ showLoading: !initialAuthRef.current?.user });
   }, [refreshProfile]);
 

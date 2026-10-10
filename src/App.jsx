@@ -67,6 +67,17 @@ function App() {
   const expirationWarning = getExpirationWarningDetails(profile);
 
   useLayoutEffect(() => {
+    const portalRoot = document.getElementById('aac-member-portal-root') || document.getElementById('root');
+    if (!portalRoot) return undefined;
+
+    const isJoinRoute = location.pathname === '/join';
+    portalRoot.classList.toggle('aac-member-portal-shell--signup', isJoinRoute);
+    portalRoot.classList.toggle('aac-member-portal-shell--profile', !isJoinRoute);
+
+    return undefined;
+  }, [location.pathname]);
+
+  useLayoutEffect(() => {
     if (location.pathname === '/join') {
       setSiteHeaderClearance(0);
       return undefined;

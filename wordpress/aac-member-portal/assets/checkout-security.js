@@ -54,6 +54,78 @@
     if (event.target?.matches('#bcountry, #pmpro_scountry')) syncStateControl();
   });
 
+  const parseMoney = value => {
+    const amount = Number.parseFloat(String(value || '').replace(/[^0-9.-]+/g, ''));
+    return Number.isFinite(amount) ? amount : 0;
+  };
+  const formatMoney = amount => new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+
+  const syncMagazineOrderSummary = () => {
+    const selection = document.querySelector('.aac-magazine-selection');
+    const summary = document.getElementById('pmpro_pricing_fields');
+    if (!selection || !summary) return;
+
+    const marker = selection.querySelector('input[name="aac_magazine_addons_present"]');
+    if (marker) marker.value = '1';
+
+    const rows = summary.querySelector('.aac-checkout-summary-rows');
+    const totalRow = rows?.querySelector('.aac-checkout-summary-row--total');
+    const totalAmount = totalRow?.querySelector('strong');
+    if (!rows || !totalRow || !totalAmount) return;
+
+    if (!summary.dataset.aacMagazineBaseTotal) {
+      summary.dataset.aacMagazineBaseTotal = String(parseMoney(totalAmount.textContent));
+    }
+    rows.querySelectorAll('[data-aac-magazine-line]').forEach(row => row.remove());
+
+    let magazineTotal = 0;
+    selection.querySelectorAll('input[name^="aac_magazine_choice["]:checked').forEach(input => {
+      const amount = parseMoney(input.dataset.aacMagazinePrice);
+      if (amount <= 0) return;
+      magazineTotal += amount;
+      const row = document.createElement('div');
+      row.className = 'aac-checkout-summary-row';
+      row.dataset.aacMagazineLine = 'true';
+      const label = document.createElement('span');
+      label.textContent = input.dataset.aacMagazineLabel || 'Magazine subscription';
+      const price = document.createElement('strong');
+      price.textContent = formatMoney(amount);
+      row.append(label, price);
+      rows.insertBefore(row, totalRow);
+    });
+
+    const baseTotal = parseMoney(summary.dataset.aacMagazineBaseTotal);
+    totalAmount.textContent = formatMoney(baseTotal + magazineTotal);
+  };
+
+  const scheduleMagazineOrderSummary = () => {
+    syncMagazineOrderSummary();
+    [40, 150, 350, 800].forEach(delay => window.setTimeout(syncMagazineOrderSummary, delay));
+  };
+
+  const bindMagazineOrderSummary = () => {
+    const selection = document.querySelector('.aac-magazine-selection');
+    if (!selection) return;
+    selection.querySelectorAll('input[name^="aac_magazine_choice["]').forEach(input => {
+      if (input.dataset.aacExternalSummaryBound === 'true') return;
+      input.addEventListener('change', scheduleMagazineOrderSummary);
+      input.dataset.aacExternalSummaryBound = 'true';
+    });
+    scheduleMagazineOrderSummary();
+  };
+
+  bindMagazineOrderSummary();
+  document.addEventListener('DOMContentLoaded', bindMagazineOrderSummary, { once: true });
+  window.addEventListener('load', bindMagazineOrderSummary, { once: true });
+  document.addEventListener('click', event => {
+    if (event.target?.closest('.aac-checkout-wizard__next')) scheduleMagazineOrderSummary();
+  });
+  document.addEventListener('submit', event => {
+    if (event.target?.matches('form#pmpro_form')) syncMagazineOrderSummary();
+  }, true);
+
   const showError = (form, message) => {
     let notice = form.querySelector('[data-aac-security-error]');
     if (!notice) {

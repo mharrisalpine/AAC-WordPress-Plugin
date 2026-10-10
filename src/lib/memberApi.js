@@ -90,6 +90,11 @@ export const updateMemberProfile = (updates) =>
     () => apiRequest('/profile', {
       method: 'PATCH',
       body: JSON.stringify(updates),
+      // Profile saves can fan out through PMPro, the reporting mirror, and
+      // connected CRM hooks. Keep the request alive long enough for WordPress
+      // to return the real success or error response instead of aborting while
+      // the server is still committing the member fields.
+      timeoutMs: 60000,
     }),
     () => fakeAuthDb.updateMemberProfile(updates)
   );

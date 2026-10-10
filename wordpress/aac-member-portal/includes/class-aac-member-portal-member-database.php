@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class AAC_Member_Portal_Member_Database {
 	const PAGE_SLUG = 'aac-member-portal-member-database';
 	const EXPORT_PAGE_SLUG = 'aac-member-portal-member-database-export';
-	const SCHEMA_VERSION = '1.2.0';
+	const SCHEMA_VERSION = '1.7.0';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
 	const EXPORT_FIELDS_OPTION = 'aac_member_portal_member_database_export_fields';
 	private $pending_member_syncs = [];
@@ -22,7 +22,7 @@ class AAC_Member_Portal_Member_Database {
 		add_action('personal_options_update', [$this, 'queue_member_sync'], 100, 1);
 		add_action('edit_user_profile_update', [$this, 'queue_member_sync'], 100, 1);
 		add_action('aac_member_portal_member_registered', [$this, 'queue_member_sync'], 30, 1);
-		add_action('aac_member_portal_profile_updated', [$this, 'queue_member_sync'], 30, 1);
+		add_action('aac_member_portal_profile_updated', [$this, 'sync_member_after_profile_update'], 30, 1);
 		add_action('aac_member_portal_family_account_linked', [$this, 'queue_family_member_syncs'], 30, 2);
 		add_action('wp_login', [$this, 'record_member_login'], 30, 2);
 		add_action('aac_member_portal_member_logged_in', [$this, 'record_portal_member_login'], 30, 1);
@@ -71,6 +71,14 @@ class AAC_Member_Portal_Member_Database {
 		$user_id = absint($user_id);
 		if ($user_id > 0) {
 			$this->pending_member_syncs[$user_id] = true;
+		}
+	}
+
+	public function sync_member_after_profile_update($user_id) {
+		$user_id = absint($user_id);
+		if ($user_id > 0) {
+			unset($this->pending_member_syncs[$user_id]);
+			$this->sync_member($user_id);
 		}
 	}
 
@@ -160,10 +168,8 @@ class AAC_Member_Portal_Member_Database {
 			'aac_benefits_info',
 			'aac_member_id',
 			'aac_membership_discount_type',
-			'aac_magazine_addons',
-			'aac_magazine_subscription_labels',
-			'aac_has_alpinist_subscription',
-			'aac_has_backcountry_subscription',
+			'aac_email_marketing_opt_in',
+			'aac_sms_marketing_opt_in',
 			'aac_connected_accounts',
 			'aac_partner_family_config',
 			'aac_partner_family_mode',
@@ -215,6 +221,24 @@ class AAC_Member_Portal_Member_Database {
 			'graduation_date',
 			'service_component',
 			'service_branch',
+			'military_service_component',
+			'emergency_contact_first_name',
+			'emergency_contact_last_name',
+			'emergency_contact_phone',
+			'emergency_contact_email',
+			'emergency_contact_relationship',
+			'aac_shipping_address_different',
+			'aac_shipping_address_1',
+			'aac_shipping_address_2',
+			'aac_shipping_city',
+			'aac_shipping_state',
+			'aac_shipping_postal_code',
+			'aac_shipping_country',
+			'emergency_first_name',
+			'emergency_last_name',
+			'emergency_phone',
+			'emergency_email',
+			'emergency_relationship',
 		];
 
 		return in_array($meta_key, $watched_meta_keys, true);
@@ -260,6 +284,32 @@ class AAC_Member_Portal_Member_Database {
 				member_id varchar(190) NOT NULL DEFAULT '',
 				membership_level varchar(100) NOT NULL DEFAULT '',
 				membership_status varchar(100) NOT NULL DEFAULT '',
+				email_opt_in tinyint(1) unsigned NOT NULL DEFAULT 0,
+				sms_opt_in tinyint(1) unsigned NOT NULL DEFAULT 0,
+				birthdate varchar(20) NOT NULL DEFAULT '',
+				school_university varchar(190) NOT NULL DEFAULT '',
+				graduation_date varchar(20) NOT NULL DEFAULT '',
+				service_component varchar(100) NOT NULL DEFAULT '',
+				emergency_contact_first_name varchar(100) NOT NULL DEFAULT '',
+				emergency_contact_last_name varchar(100) NOT NULL DEFAULT '',
+				emergency_contact_phone varchar(50) NOT NULL DEFAULT '',
+				emergency_contact_email varchar(190) NOT NULL DEFAULT '',
+				emergency_contact_relationship varchar(100) NOT NULL DEFAULT '',
+				aaj_preference_created_at datetime NULL DEFAULT NULL,
+				aaj_preference_updated_at datetime NULL DEFAULT NULL,
+				anac_preference_created_at datetime NULL DEFAULT NULL,
+				anac_preference_updated_at datetime NULL DEFAULT NULL,
+				american_climbing_journal_preference_created_at datetime NULL DEFAULT NULL,
+				american_climbing_journal_preference_updated_at datetime NULL DEFAULT NULL,
+				guidebook_preferences_created_at datetime NULL DEFAULT NULL,
+				guidebook_preferences_updated_at datetime NULL DEFAULT NULL,
+				shipping_address_different tinyint(1) unsigned NOT NULL DEFAULT 0,
+				shipping_address_1 varchar(190) NOT NULL DEFAULT '',
+				shipping_address_2 varchar(190) NOT NULL DEFAULT '',
+				shipping_city varchar(100) NOT NULL DEFAULT '',
+				shipping_state varchar(100) NOT NULL DEFAULT '',
+				shipping_postal_code varchar(32) NOT NULL DEFAULT '',
+				shipping_country varchar(100) NOT NULL DEFAULT '',
 				last_login_date datetime NULL DEFAULT NULL,
 				login_count bigint(20) unsigned NOT NULL DEFAULT 0,
 				renewal_date varchar(20) NOT NULL DEFAULT '',
@@ -337,6 +387,143 @@ class AAC_Member_Portal_Member_Database {
 				KEY source_changes (source_modified_at, id)
 			) {$charset_collate};
 		");
+
+		// dbDelta can skip newly inserted columns on some managed WordPress hosts.
+		// Verify these Salesforce-facing profile fields explicitly before marking
+		// the schema upgrade complete.
+		foreach ([
+			'email_opt_in' => "tinyint(1) unsigned NOT NULL DEFAULT 0",
+			'sms_opt_in' => "tinyint(1) unsigned NOT NULL DEFAULT 0",
+			'birthdate' => "varchar(20) NOT NULL DEFAULT ''",
+			'school_university' => "varchar(190) NOT NULL DEFAULT ''",
+			'graduation_date' => "varchar(20) NOT NULL DEFAULT ''",
+			'service_component' => "varchar(100) NOT NULL DEFAULT ''",
+			'emergency_contact_first_name' => "varchar(100) NOT NULL DEFAULT ''",
+			'emergency_contact_last_name' => "varchar(100) NOT NULL DEFAULT ''",
+			'emergency_contact_phone' => "varchar(50) NOT NULL DEFAULT ''",
+			'emergency_contact_email' => "varchar(190) NOT NULL DEFAULT ''",
+			'emergency_contact_relationship' => "varchar(100) NOT NULL DEFAULT ''",
+			'aaj_preference_created_at' => 'datetime NULL DEFAULT NULL',
+			'aaj_preference_updated_at' => 'datetime NULL DEFAULT NULL',
+			'anac_preference_created_at' => 'datetime NULL DEFAULT NULL',
+			'anac_preference_updated_at' => 'datetime NULL DEFAULT NULL',
+			'american_climbing_journal_preference_created_at' => 'datetime NULL DEFAULT NULL',
+			'american_climbing_journal_preference_updated_at' => 'datetime NULL DEFAULT NULL',
+			'guidebook_preferences_created_at' => 'datetime NULL DEFAULT NULL',
+			'guidebook_preferences_updated_at' => 'datetime NULL DEFAULT NULL',
+			'shipping_address_different' => "tinyint(1) unsigned NOT NULL DEFAULT 0",
+			'shipping_address_1' => "varchar(190) NOT NULL DEFAULT ''",
+			'shipping_address_2' => "varchar(190) NOT NULL DEFAULT ''",
+			'shipping_city' => "varchar(100) NOT NULL DEFAULT ''",
+			'shipping_state' => "varchar(100) NOT NULL DEFAULT ''",
+			'shipping_postal_code' => "varchar(32) NOT NULL DEFAULT ''",
+			'shipping_country' => "varchar(100) NOT NULL DEFAULT ''",
+		] as $column => $definition) {
+			$existing_column = $wpdb->get_var(
+				$wpdb->prepare("SHOW COLUMNS FROM {$profiles} LIKE %s", $column)
+			); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table name.
+			if ($existing_column === null) {
+				$wpdb->query("ALTER TABLE {$profiles} ADD COLUMN {$column} {$definition} AFTER membership_status"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- fixed plugin-owned identifiers and definitions.
+			}
+		}
+
+		// Magazine add-ons are no longer part of signup, PMPro member fields, or
+		// the Salesforce-facing member mirror. Remove the obsolete mirror columns.
+		foreach (['alpinist_subscription', 'backcountry_subscription'] as $obsolete_column) {
+			$existing_column = $wpdb->get_var(
+				$wpdb->prepare("SHOW COLUMNS FROM {$profiles} LIKE %s", $obsolete_column)
+			); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table name.
+			if ($existing_column !== null) {
+				$wpdb->query("ALTER TABLE {$profiles} DROP COLUMN {$obsolete_column}"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- fixed plugin-owned identifiers.
+			}
+		}
+
+		// Populate the new consent columns for existing mirrored members without
+		// waiting for every member to edit and save their profile again.
+		$usermeta = $wpdb->usermeta;
+		$wpdb->query(
+			"UPDATE {$profiles} profiles
+			LEFT JOIN {$usermeta} email_consent
+				ON email_consent.user_id = profiles.user_id
+				AND email_consent.meta_key = 'aac_email_marketing_opt_in'
+			LEFT JOIN {$usermeta} sms_consent
+				ON sms_consent.user_id = profiles.user_id
+				AND sms_consent.meta_key = 'aac_sms_marketing_opt_in'
+			SET profiles.email_opt_in = CASE
+					WHEN LOWER(COALESCE(email_consent.meta_value, '')) IN ('1', 'true', 'yes', 'on') THEN 1
+					ELSE 0
+				END,
+				profiles.sms_opt_in = CASE
+					WHEN LOWER(COALESCE(sms_consent.meta_value, '')) IN ('1', 'true', 'yes', 'on') THEN 1
+					ELSE 0
+				END"
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table and WordPress usermeta table.
+
+		// Existing preferences predate per-publication audit fields. Use the
+		// WordPress registration timestamp as the best available creation date,
+		// while leaving Updated At empty until the member actually changes and
+		// saves that individual preference.
+		foreach (AAC_Member_Portal_Publication_Preferences::FIELDS as $preference_key) {
+			$created_key = $preference_key . '_created_at';
+			$updated_key = $preference_key . '_updated_at';
+			$created_column = $created_key;
+			$updated_column = $updated_key;
+			$users_table = $wpdb->users;
+			$wpdb->query(
+				$wpdb->prepare(
+					"INSERT INTO {$usermeta} (user_id, meta_key, meta_value)
+					SELECT preference.user_id, %s, COALESCE(NULLIF(users.user_registered, '0000-00-00 00:00:00'), UTC_TIMESTAMP())
+					FROM {$usermeta} preference
+					INNER JOIN {$users_table} users ON users.ID = preference.user_id
+					LEFT JOIN {$usermeta} created
+						ON created.user_id = preference.user_id AND created.meta_key = %s
+					WHERE preference.meta_key = %s
+						AND TRIM(preference.meta_value) <> ''
+						AND created.umeta_id IS NULL",
+					$created_key,
+					$created_key,
+					$preference_key
+				)
+			); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- WordPress-owned tables and prepared metadata keys.
+
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$profiles} profiles
+					LEFT JOIN {$usermeta} created
+						ON created.user_id = profiles.user_id AND created.meta_key = %s
+					LEFT JOIN {$usermeta} updated
+						ON updated.user_id = profiles.user_id AND updated.meta_key = %s
+					SET profiles.{$created_column} = NULLIF(created.meta_value, ''),
+						profiles.{$updated_column} = NULLIF(updated.meta_value, '')",
+					$created_key,
+					$updated_key
+				)
+			); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned columns come from a fixed class constant.
+		}
+
+		$saved_export_fields = get_option(self::EXPORT_FIELDS_OPTION, []);
+		if (is_array($saved_export_fields) && !empty($saved_export_fields)) {
+			$saved_export_fields = array_values(array_unique(array_merge($saved_export_fields, [
+				'email_opt_in',
+				'sms_opt_in',
+				'shipping_address_different',
+				'shipping_address_1',
+				'shipping_address_2',
+				'shipping_city',
+				'shipping_state',
+				'shipping_postal_code',
+				'shipping_country',
+				'aaj_preference_created_at',
+				'aaj_preference_updated_at',
+				'anac_preference_created_at',
+				'anac_preference_updated_at',
+				'american_climbing_journal_preference_created_at',
+				'american_climbing_journal_preference_updated_at',
+				'guidebook_preferences_created_at',
+				'guidebook_preferences_updated_at',
+			])));
+			update_option(self::EXPORT_FIELDS_OPTION, $saved_export_fields, false);
+		}
 
 		update_option(self::SCHEMA_OPTION, self::SCHEMA_VERSION);
 	}
@@ -430,12 +617,24 @@ class AAC_Member_Portal_Member_Database {
 		$profile['pmpro_transaction'] = $this->get_latest_pmpro_row($user_id, 'pmpro_membership_orders');
 		$last_login_date = $this->get_member_last_login_date($user_id);
 		$login_count = $this->get_member_login_count($user_id);
+		$birthdate = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['birthdate']), $account_info['birthdate'] ?? '']);
+		$school_university = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['student_university', 'university_or_school', 'school_university', 'university_school']), $account_info['student_university'] ?? '', $account_info['university_school'] ?? '']);
+		$graduation_date = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['graduation_date', 'student_graduation_date']), $account_info['graduation_date'] ?? '', $account_info['student_graduation_date'] ?? '']);
+		$service_component = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['service_component', 'military_service_component']), $account_info['service_component'] ?? '', $account_info['military_service_component'] ?? '']);
+		$emergency_contact_first_name = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['emergency_contact_first_name', 'emergency_first_name', 'emergency_first']), $account_info['emergency_contact_first_name'] ?? '']);
+		$emergency_contact_last_name = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['emergency_contact_last_name', 'emergency_last_name', 'emergency_last']), $account_info['emergency_contact_last_name'] ?? '']);
+		$emergency_contact_phone = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['emergency_contact_phone', 'emergency_phone', 'emergency_contact_phone_number']), $account_info['emergency_contact_phone'] ?? '']);
+		$emergency_contact_email = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['emergency_contact_email', 'emergency_email']), $account_info['emergency_contact_email'] ?? '']);
+		$emergency_contact_relationship = $this->first_present_value([$this->get_first_user_meta_value($user_id, ['emergency_contact_relationship', 'emergency_relationship']), $account_info['emergency_contact_relationship'] ?? '']);
+		$email_opt_in = filter_var(get_user_meta($user_id, 'aac_email_marketing_opt_in', true), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+		$sms_opt_in = filter_var(get_user_meta($user_id, 'aac_sms_marketing_opt_in', true), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
 		$profile['login_activity'] = [
 			'last_login_date' => $last_login_date,
 			'login_count' => $login_count,
 		];
 		$account_role = sanitize_text_field((string) get_user_meta($user_id, 'aac_family_account_role', true));
 		$parent_user_id = absint(get_user_meta($user_id, 'aac_linked_parent_user_id', true));
+		$preference_timestamps = AAC_Member_Portal_Publication_Preferences::get_timestamps($user_id);
 
 		if ($parent_user_id <= 0 && !empty($linked_parent['user_id'])) {
 			$parent_user_id = (int) $linked_parent['user_id'];
@@ -450,6 +649,32 @@ class AAC_Member_Portal_Member_Database {
 			'member_id' => sanitize_text_field($profile_info['member_id'] ?? ''),
 			'membership_level' => sanitize_text_field($profile_info['tier'] ?? ''),
 			'membership_status' => sanitize_text_field($profile_info['status'] ?? ''),
+			'email_opt_in' => $email_opt_in,
+			'sms_opt_in' => $sms_opt_in,
+			'birthdate' => sanitize_text_field($birthdate),
+			'school_university' => sanitize_text_field($school_university),
+			'graduation_date' => sanitize_text_field($graduation_date),
+			'service_component' => sanitize_text_field($service_component),
+			'emergency_contact_first_name' => sanitize_text_field($emergency_contact_first_name),
+			'emergency_contact_last_name' => sanitize_text_field($emergency_contact_last_name),
+			'emergency_contact_phone' => sanitize_text_field($emergency_contact_phone),
+			'emergency_contact_email' => sanitize_email($emergency_contact_email),
+			'emergency_contact_relationship' => sanitize_text_field($emergency_contact_relationship),
+			'aaj_preference_created_at' => $preference_timestamps['aaj_preference_created_at'] ?: null,
+			'aaj_preference_updated_at' => $preference_timestamps['aaj_preference_updated_at'] ?: null,
+			'anac_preference_created_at' => $preference_timestamps['anac_preference_created_at'] ?: null,
+			'anac_preference_updated_at' => $preference_timestamps['anac_preference_updated_at'] ?: null,
+			'american_climbing_journal_preference_created_at' => $preference_timestamps['american_climbing_journal_preference_created_at'] ?: null,
+			'american_climbing_journal_preference_updated_at' => $preference_timestamps['american_climbing_journal_preference_updated_at'] ?: null,
+			'guidebook_preferences_created_at' => $preference_timestamps['guidebook_preferences_created_at'] ?: null,
+			'guidebook_preferences_updated_at' => $preference_timestamps['guidebook_preferences_updated_at'] ?: null,
+			'shipping_address_different' => !empty($account_info['shipping_address_different']) ? 1 : 0,
+			'shipping_address_1' => sanitize_text_field($account_info['shipping_address_1'] ?? ''),
+			'shipping_address_2' => sanitize_text_field($account_info['shipping_address_2'] ?? ''),
+			'shipping_city' => sanitize_text_field($account_info['shipping_city'] ?? ''),
+			'shipping_state' => sanitize_text_field($account_info['shipping_state'] ?? ''),
+			'shipping_postal_code' => sanitize_text_field($account_info['shipping_postal_code'] ?? ''),
+			'shipping_country' => sanitize_text_field($account_info['shipping_country'] ?? ''),
 			'last_login_date' => $last_login_date !== '' ? $last_login_date : null,
 			'login_count' => $login_count,
 			'renewal_date' => sanitize_text_field($profile_info['renewal_date'] ?? ''),
@@ -479,14 +704,14 @@ class AAC_Member_Portal_Member_Database {
 					self::profiles_table(),
 					$profile_data,
 					['id' => $profile_row_id],
-					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
 					['%d']
 				);
 			} else {
 				$write_result = $wpdb->insert(
 					self::profiles_table(),
 					$profile_data,
-					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d']
+					['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d']
 				);
 				$profile_row_id = absint($wpdb->insert_id);
 			}
@@ -550,6 +775,17 @@ class AAC_Member_Portal_Member_Database {
 		}
 
 		return 0;
+	}
+
+	private function get_first_user_meta_value($user_id, $meta_keys) {
+		foreach ((array) $meta_keys as $meta_key) {
+			$value = get_user_meta((int) $user_id, (string) $meta_key, true);
+			if (!is_array($value) && !is_object($value) && trim((string) $value) !== '') {
+				return (string) $value;
+			}
+		}
+
+		return '';
 	}
 
 	private function mirror_pmpro_rows($user_id, $wpdb_property, $mirror_table, $record_type, $status_column = 'status', $date_candidates = []) {
@@ -892,11 +1128,28 @@ class AAC_Member_Portal_Member_Database {
 				'billing_state',
 				'billing_zip',
 				'billing_country',
+				'shipping_address_different',
+				'shipping_address_1',
+				'shipping_address_2',
+				'shipping_city',
+				'shipping_state',
+				'shipping_postal_code',
+				'shipping_country',
 				't_shirt_size',
 				'aaj_preference',
+				'aaj_preference_created_at',
+				'aaj_preference_updated_at',
 				'accidents_preference',
+				'anac_preference_created_at',
+				'anac_preference_updated_at',
 				'acj_preference',
+				'american_climbing_journal_preference_created_at',
+				'american_climbing_journal_preference_updated_at',
 				'guidebook_preference',
+				'guidebook_preferences_created_at',
+				'guidebook_preferences_updated_at',
+				'email_opt_in',
+				'sms_opt_in',
 				'membership_discount_type',
 				'student_university',
 				'student_graduation_date',
@@ -1013,11 +1266,28 @@ class AAC_Member_Portal_Member_Database {
 			'billing_state' => 'Billing state',
 			'billing_zip' => 'Billing ZIP',
 			'billing_country' => 'Billing country',
+			'shipping_address_different' => 'Shipping address is different',
+			'shipping_address_1' => 'Shipping address 1',
+			'shipping_address_2' => 'Shipping address 2',
+			'shipping_city' => 'Shipping city',
+			'shipping_state' => 'Shipping state',
+			'shipping_postal_code' => 'Shipping ZIP / Postal code',
+			'shipping_country' => 'Shipping country',
 			't_shirt_size' => 'T-shirt size',
 			'aaj_preference' => 'AAJ preference',
+			'aaj_preference_created_at' => 'AAJ preference created at',
+			'aaj_preference_updated_at' => 'AAJ preference updated at',
 			'accidents_preference' => 'Accidents preference',
+			'anac_preference_created_at' => 'Accidents preference created at',
+			'anac_preference_updated_at' => 'Accidents preference updated at',
 			'acj_preference' => 'ACJ preference',
+			'american_climbing_journal_preference_created_at' => 'ACJ preference created at',
+			'american_climbing_journal_preference_updated_at' => 'ACJ preference updated at',
 			'guidebook_preference' => 'Guidebook preference',
+			'guidebook_preferences_created_at' => 'Guidebook preference created at',
+			'guidebook_preferences_updated_at' => 'Guidebook preference updated at',
+			'email_opt_in' => 'Email opt in',
+			'sms_opt_in' => 'SMS opt in',
 			'membership_discount_type' => 'Membership discount type',
 			'student_university' => 'Student university/school',
 			'student_graduation_date' => 'Student graduation date',
@@ -1117,11 +1387,28 @@ class AAC_Member_Portal_Member_Database {
 			'billing_state',
 			'billing_zip',
 			'billing_country',
+			'shipping_address_different',
+			'shipping_address_1',
+			'shipping_address_2',
+			'shipping_city',
+			'shipping_state',
+			'shipping_postal_code',
+			'shipping_country',
 			't_shirt_size',
 			'aaj_preference',
+			'aaj_preference_created_at',
+			'aaj_preference_updated_at',
 			'accidents_preference',
+			'anac_preference_created_at',
+			'anac_preference_updated_at',
 			'acj_preference',
+			'american_climbing_journal_preference_created_at',
+			'american_climbing_journal_preference_updated_at',
 			'guidebook_preference',
+			'guidebook_preferences_created_at',
+			'guidebook_preferences_updated_at',
+			'email_opt_in',
+			'sms_opt_in',
 			'membership_discount_type',
 			'student_university',
 			'student_graduation_date',
@@ -1261,6 +1548,7 @@ class AAC_Member_Portal_Member_Database {
 		$parent_user = $parent_user_id > 0 ? get_user_by('id', $parent_user_id) : null;
 		$membership_level_id = (int) ($latest_membership['membership_id'] ?? ($profile_info['level_id'] ?? 0));
 		$latest_order_discount_code = $this->get_discount_code_for_order($latest_order);
+		$preference_timestamps = AAC_Member_Portal_Publication_Preferences::get_timestamps($user_id);
 
 		return [
 			'wp_user_id' => (string) $user_id,
@@ -1286,11 +1574,28 @@ class AAC_Member_Portal_Member_Database {
 				'billing_state' => $this->first_present_value([$account_info['state'] ?? '', $user_meta['pmpro_sstate'] ?? '', $user_meta['bstate'] ?? '']),
 				'billing_zip' => $this->first_present_value([$account_info['zip'] ?? '', $user_meta['pmpro_szipcode'] ?? '', $user_meta['bzipcode'] ?? '']),
 				'billing_country' => $this->first_present_value([$account_info['country'] ?? '', $user_meta['pmpro_scountry'] ?? '', $user_meta['bcountry'] ?? '']),
+			'shipping_address_different' => !empty($account_info['shipping_address_different']) ? 'true' : 'false',
+			'shipping_address_1' => $account_info['shipping_address_1'] ?? '',
+			'shipping_address_2' => $account_info['shipping_address_2'] ?? '',
+			'shipping_city' => $account_info['shipping_city'] ?? '',
+			'shipping_state' => $account_info['shipping_state'] ?? '',
+			'shipping_postal_code' => $account_info['shipping_postal_code'] ?? '',
+			'shipping_country' => $account_info['shipping_country'] ?? '',
 			't_shirt_size' => $this->first_present_value([$account_info['size'] ?? '', $user_meta['t_shirt'] ?? '']),
 			'aaj_preference' => $this->first_present_value([$account_info['aaj_pref'] ?? '', $user_meta['aaj_preference'] ?? '']),
+			'aaj_preference_created_at' => (string) ($preference_timestamps['aaj_preference_created_at'] ?? ''),
+			'aaj_preference_updated_at' => (string) ($preference_timestamps['aaj_preference_updated_at'] ?? ''),
 			'accidents_preference' => $this->first_present_value([$account_info['anac_pref'] ?? '', $user_meta['anac_preference'] ?? '']),
+			'anac_preference_created_at' => (string) ($preference_timestamps['anac_preference_created_at'] ?? ''),
+			'anac_preference_updated_at' => (string) ($preference_timestamps['anac_preference_updated_at'] ?? ''),
 			'acj_preference' => $this->first_present_value([$account_info['acj_pref'] ?? '', $user_meta['american_climbing_journal_preference'] ?? '']),
+			'american_climbing_journal_preference_created_at' => (string) ($preference_timestamps['american_climbing_journal_preference_created_at'] ?? ''),
+			'american_climbing_journal_preference_updated_at' => (string) ($preference_timestamps['american_climbing_journal_preference_updated_at'] ?? ''),
 			'guidebook_preference' => $this->first_present_value([$account_info['guidebook_pref'] ?? '', $user_meta['guidebook_preferences'] ?? '']),
+			'guidebook_preferences_created_at' => (string) ($preference_timestamps['guidebook_preferences_created_at'] ?? ''),
+			'guidebook_preferences_updated_at' => (string) ($preference_timestamps['guidebook_preferences_updated_at'] ?? ''),
+			'email_opt_in' => !empty($profile_row['email_opt_in']) ? 'true' : 'false',
+			'sms_opt_in' => !empty($profile_row['sms_opt_in']) ? 'true' : 'false',
 			'membership_discount_type' => $this->first_present_value([$account_info['membership_discount_type'] ?? '', $user_meta['aac_membership_discount_type'] ?? '']),
 			'student_university' => $this->first_present_value([$user_meta['university_school'] ?? '', $user_meta['student_university'] ?? '', $user_meta['aac_student_university'] ?? '']),
 			'student_graduation_date' => $this->first_present_value([$user_meta['graduation_date'] ?? '', $user_meta['student_graduation_date'] ?? '', $user_meta['aac_graduation_date'] ?? '']),
@@ -1750,13 +2055,27 @@ class AAC_Member_Portal_Member_Database {
 				<tr><th>Last Login Date</th><td><?php echo esc_html($profile_row['last_login_date'] ?? ''); ?></td></tr>
 				<tr><th>Login Count</th><td><?php echo esc_html((string) ($profile_row['login_count'] ?? 0)); ?></td></tr>
 				<tr><th>Phone</th><td><?php echo esc_html($account_info['phone'] ?? ''); ?></td></tr>
-				<tr><th>Birthdate</th><td><?php echo esc_html($account_info['birthdate'] ?? ''); ?></td></tr>
+				<tr><th>Birthdate</th><td><?php echo esc_html($profile_row['birthdate'] ?? ''); ?></td></tr>
+				<tr><th>School / University</th><td><?php echo esc_html($profile_row['school_university'] ?? ''); ?></td></tr>
+				<tr><th>Graduation Date</th><td><?php echo esc_html($profile_row['graduation_date'] ?? ''); ?></td></tr>
+				<tr><th>Service Component</th><td><?php echo esc_html($profile_row['service_component'] ?? ''); ?></td></tr>
 				<tr><th>Street</th><td><?php echo esc_html($account_info['street'] ?? ''); ?></td></tr>
 				<tr><th>Address 2</th><td><?php echo esc_html($account_info['address2'] ?? ''); ?></td></tr>
 				<tr><th>City</th><td><?php echo esc_html($account_info['city'] ?? ''); ?></td></tr>
 				<tr><th>State</th><td><?php echo esc_html($account_info['state'] ?? ''); ?></td></tr>
 				<tr><th>ZIP</th><td><?php echo esc_html($account_info['zip'] ?? ''); ?></td></tr>
 				<tr><th>Country</th><td><?php echo esc_html($account_info['country'] ?? ''); ?></td></tr>
+			</tbody>
+		</table>
+
+		<h3 style="margin-top:24px;">Emergency Contact</h3>
+		<table class="widefat striped">
+			<tbody>
+				<tr><th style="width:240px;">First Name</th><td><?php echo esc_html($profile_row['emergency_contact_first_name'] ?? ''); ?></td></tr>
+				<tr><th>Last Name</th><td><?php echo esc_html($profile_row['emergency_contact_last_name'] ?? ''); ?></td></tr>
+				<tr><th>Phone</th><td><?php echo esc_html($profile_row['emergency_contact_phone'] ?? ''); ?></td></tr>
+				<tr><th>Email</th><td><?php echo esc_html($profile_row['emergency_contact_email'] ?? ''); ?></td></tr>
+				<tr><th>Relationship</th><td><?php echo esc_html($profile_row['emergency_contact_relationship'] ?? ''); ?></td></tr>
 			</tbody>
 		</table>
 
@@ -1798,12 +2117,21 @@ class AAC_Member_Portal_Member_Database {
 		$preference_fields = [
 			'T-Shirt Size' => $account_info['size'] ?? '',
 			'AAJ Preference' => $account_info['aaj_pref'] ?? '',
+			'AAJ Preference Created At' => $profile_row['aaj_preference_created_at'] ?? '',
+			'AAJ Preference Updated At' => $profile_row['aaj_preference_updated_at'] ?? '',
 			'ANAC Preference' => $account_info['anac_pref'] ?? '',
+			'ANAC Preference Created At' => $profile_row['anac_preference_created_at'] ?? '',
+			'ANAC Preference Updated At' => $profile_row['anac_preference_updated_at'] ?? '',
 			'American Climbing Journal Preference' => $account_info['acj_pref'] ?? '',
+			'American Climbing Journal Preference Created At' => $profile_row['american_climbing_journal_preference_created_at'] ?? '',
+			'American Climbing Journal Preference Updated At' => $profile_row['american_climbing_journal_preference_updated_at'] ?? '',
 			'Guidebook Preference' => $account_info['guidebook_pref'] ?? '',
+			'Guidebook Preference Created At' => $profile_row['guidebook_preferences_created_at'] ?? '',
+			'Guidebook Preference Updated At' => $profile_row['guidebook_preferences_updated_at'] ?? '',
+			'Email Opt In' => !empty($profile_row['email_opt_in']) ? 'Yes' : 'No',
+			'SMS Opt In' => !empty($profile_row['sms_opt_in']) ? 'Yes' : 'No',
 			'Membership Discount Type' => $account_info['membership_discount_type'] ?? '',
 			'Auto Renew' => !empty($account_info['auto_renew']) ? 'true' : 'false',
-			'Magazine Subscriptions' => !empty($account_info['magazine_subscriptions']) ? implode(', ', (array) $account_info['magazine_subscriptions']) : '',
 			'Family Mode' => $family_membership['mode'] ?? '',
 			'Additional Adult' => !empty($family_membership['additional_adult']) ? 'true' : 'false',
 			'Dependent Count' => isset($family_membership['dependent_count']) ? (string) $family_membership['dependent_count'] : '',

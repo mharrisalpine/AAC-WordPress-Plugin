@@ -125,11 +125,14 @@ const MembershipCard = ({ profile }) => {
   const benefitsInfo = profile?.benefits_info || {};
 
   const status = getMembershipStatus(profileInfo);
-  const isMemberActive = status === 'Active';
   const discountType = normalizeMembershipDiscountType(accountInfo.membership_discount_type);
   const discountBadge = discountType ? DISCOUNT_BADGE_CONTENT[discountType] : null;
   const DiscountBadgeIcon = discountBadge?.Icon;
   const membershipTierLabel = getTierDisplayLabel(profileInfo?.tier, 'Free');
+  const isFreeTier = membershipTierLabel.trim().toLowerCase() === 'free';
+  const displayedStatus = isFreeTier ? 'Inactive' : status;
+  const displayedTierLabel = isFreeTier ? 'Inactive' : membershipTierLabel;
+  const isMemberActive = displayedStatus === 'Active';
   const familyMembership = profile?.family_membership || {};
   const connectedAccounts = Array.isArray(profile?.connected_accounts) ? profile.connected_accounts : [];
   const isFamilyPlan = Boolean(
@@ -169,9 +172,9 @@ const MembershipCard = ({ profile }) => {
 
     drawCardText(context, 'AMERICAN ALPINE CLUB', 84, 120, { font: '800 42px Arial', color: '#ffffff' });
     drawCardText(context, 'DIGITAL MEMBERSHIP CARD', 84, 174, { font: '600 20px Arial', color: '#f8c235' });
-    drawCardText(context, status.toUpperCase(), 996, 120, { font: '700 24px Arial', color: isMemberActive ? '#86efac' : '#d6d3d1', align: 'right' });
+    drawCardText(context, displayedStatus.toUpperCase(), 996, 120, { font: '700 24px Arial', color: isMemberActive ? '#86efac' : '#ff6b63', align: 'right' });
 
-    drawCardText(context, `${membershipTierLabel.toUpperCase()} MEMBER`, 84, 370, { font: '700 27px Arial', color: '#ff8a80' });
+    drawCardText(context, `${displayedTierLabel.toUpperCase()} MEMBER`, 84, 370, { font: '700 27px Arial', color: '#ff8a80' });
     drawCardText(context, memberName, 84, 455, { font: '700 64px Georgia', maxWidth: 910 });
     drawCardText(context, `MEMBER NO. ${memberNumber}`, 84, 525, { font: '500 25px monospace', color: '#d6d3d1' });
     drawCardText(context, accountInfo.email, 84, 575, { font: '500 22px Arial', color: '#a8a29e', maxWidth: 910 });
@@ -265,20 +268,22 @@ const MembershipCard = ({ profile }) => {
               <span
                 className={cn(
                   'inline-flex items-center gap-2 border-2 px-3.5 py-2.5 text-[0.72rem] font-bold uppercase tracking-[0.2em]',
-                  isMemberActive ? 'border-emerald-400 text-emerald-200' : 'border-white/38 text-white/70',
+                  isMemberActive ? 'border-emerald-400 text-emerald-200' : 'border-[#ff4b43] text-[#ff6b63]',
                 )}
               >
                 {isMemberActive ? <CheckCircle2 className="h-4 w-4" strokeWidth={2.4} /> : null}
-                {status}
+                {displayedStatus}
               </span>
-              <span
-                className={cn(
-                  'hidden rounded-none border-2 px-3.5 py-2.5 text-[0.72rem] font-bold uppercase tracking-[0.22em] sm:inline-flex',
-                  isMemberActive ? 'border-[#ff4b43] text-[#ff6b63]' : 'border-white/38 text-white/70',
-                )}
-              >
-                {membershipTierLabel}
-              </span>
+              {!isFreeTier ? (
+                <span
+                  className={cn(
+                    'hidden rounded-none border-2 px-3.5 py-2.5 text-[0.72rem] font-bold uppercase tracking-[0.22em] sm:inline-flex',
+                    isMemberActive ? 'border-[#ff4b43] text-[#ff6b63]' : 'border-white/38 text-white/70',
+                  )}
+                >
+                  {membershipTierLabel}
+                </span>
+              ) : null}
               {discountBadge ? (
                 <span className="inline-flex items-center gap-2 border-2 border-[#f8c235] px-3.5 py-2.5 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[#f8c235]">
                   {DiscountBadgeIcon ? <DiscountBadgeIcon className="h-4 w-4 text-[#f8c235]" strokeWidth={2.3} /> : null}
@@ -297,7 +302,7 @@ const MembershipCard = ({ profile }) => {
           <div className="aac-membership-card-identity mt-6 flex flex-1 items-center sm:mt-8">
             <div className="min-w-0 self-center">
               <p className="text-sm font-bold uppercase tracking-[0.28em] text-[#ff8a80] sm:text-base">
-                {membershipTierLabel} Member
+                {displayedTierLabel} Member
               </p>
               <h2 className="aac-membership-card-name mt-3 font-serif text-3xl leading-[1.08] tracking-normal text-white sm:text-5xl lg:text-6xl">
                 {memberName}

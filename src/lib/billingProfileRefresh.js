@@ -3,6 +3,7 @@ export const bindBillingProfileRefresh = ({ windowTarget, documentTarget, refres
   let disposed = false;
   let refreshing = false;
   let queued = false;
+  let wasHidden = documentTarget.visibilityState === 'hidden';
   const reconcile = async () => {
     if (disposed || documentTarget.visibilityState === 'hidden') return;
     if (refreshing) { queued = true; return; }
@@ -17,16 +18,23 @@ export const bindBillingProfileRefresh = ({ windowTarget, documentTarget, refres
       }
     }
   };
-  const onReturn = () => { void reconcile(); };
-  const onPageShow = (event) => { if (event.persisted) onReturn(); };
-  windowTarget.addEventListener('focus', onReturn);
+  const onPageShow = (event) => { if (event.persisted) void reconcile(); };
+  const onVisibilityChange = () => {
+    if (documentTarget.visibilityState === 'hidden') {
+      wasHidden = true;
+      return;
+    }
+    if (wasHidden) {
+      wasHidden = false;
+      void reconcile();
+    }
+  };
   windowTarget.addEventListener('pageshow', onPageShow);
-  documentTarget.addEventListener('visibilitychange', onReturn);
-  onReturn();
+  documentTarget.addEventListener('visibilitychange', onVisibilityChange);
+  onChecking(false);
   return () => {
     disposed = true;
-    windowTarget.removeEventListener('focus', onReturn);
     windowTarget.removeEventListener('pageshow', onPageShow);
-    documentTarget.removeEventListener('visibilitychange', onReturn);
+    documentTarget.removeEventListener('visibilitychange', onVisibilityChange);
   };
 };

@@ -1,13 +1,21 @@
 import React from 'react';
 import { Check } from 'lucide-react';
 import { MEMBERSHIP_TIER_OPTIONS, isOneTimeMembershipTierId, isPublicMembershipTierId } from '@/lib/membershipTiers';
+import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { cn } from '@/lib/utils';
 
 function getPriceLabel(tier) {
   return tier.priceCents === 0
     ? 'Free'
-    : `$${(tier.priceCents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    : `$${(tier.priceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function getLiveTierPriceCents(tier, pricing) {
+  const configuredAmount = Number(pricing?.[tier.id]?.displayAmount);
+  return Number.isFinite(configuredAmount) && configuredAmount >= 0
+    ? Math.round(configuredAmount * 100)
+    : tier.priceCents;
 }
 
 function getBenefitBaseLabel(value) {
@@ -57,6 +65,7 @@ function TierBenefitsList({ benefits, dense, maxItems }) {
  * @param {'compact' | 'full'} [props.variant]
  */
 export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact' }) {
+  const pmproLevelPricing = getAppRuntimeConfig().pmproLevelPricing || {};
   const portalContent = getPortalUiSettings().content || {};
   const membershipLevelBenefits = portalContent.membershipLevelBenefits || {};
   const getTierBenefits = (tier) => {
@@ -70,6 +79,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
     .filter((tier) => isPublicMembershipTierId(tier.id))
     .map((tier) => ({
       ...tier,
+      priceCents: getLiveTierPriceCents(tier, pmproLevelPricing),
       benefits: getTierBenefits(tier),
     }));
   const selectedTierIndex = visibleTiers.findIndex((tier) => tier.id === selectedId);
@@ -261,7 +271,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-semibold text-black">{t.label}</span>
             <span className="aac-membership-tier-card__price-value text-sm font-medium text-[#c8a43a]">
-              {t.priceCents === 0 ? 'Free' : `$${(t.priceCents / 100).toFixed(0)}`}
+              {getPriceLabel(t)}
             </span>
           </div>
           <p className="mt-1 text-xs text-black/65">{t.blurb}</p>

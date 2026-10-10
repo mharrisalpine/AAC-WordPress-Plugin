@@ -16,6 +16,9 @@ class AAC_Member_Portal_Admin {
 		add_action('init', [$this, 'maybe_apply_signup_copy_settings'], 13);
 		add_action('init', [$this, 'maybe_seed_discount_cards'], 20);
 		add_action('admin_menu', [$this, 'register_admin_page']);
+		add_action('admin_menu', [$this, 'relocate_npc_sf_sync_menu'], 999);
+		add_filter('parent_file', [$this, 'set_npc_sf_sync_parent_menu']);
+		add_filter('submenu_file', [$this, 'set_npc_sf_sync_submenu']);
 		add_action('admin_init', [$this, 'register_settings']);
 		add_action('admin_post_aac_member_portal_backfill_pmpro_fields', [$this, 'handle_backfill_pmpro_fields']);
 		add_action('admin_post_aac_member_portal_link_family_invite', [$this, 'handle_link_family_invite']);
@@ -237,6 +240,47 @@ class AAC_Member_Portal_Admin {
 			self::MENU_SLUG,
 			[$this, 'render_admin_page']
 		);
+	}
+
+	/**
+	 * Move the existing NPC Salesforce Sync menu link beneath AAC Portal.
+	 *
+	 * The sync plugin continues to own and render its original Tools page. Moving
+	 * the registered menu item preserves its callbacks, permissions, and URL.
+	 */
+	public function relocate_npc_sf_sync_menu() {
+		global $submenu;
+
+		if (empty($submenu['tools.php']) || !is_array($submenu['tools.php'])) {
+			return;
+		}
+
+		foreach ($submenu['tools.php'] as $index => $menu_item) {
+			if (($menu_item[2] ?? '') !== 'aac-npc-sf-sync') {
+				continue;
+			}
+
+			unset($submenu['tools.php'][$index]);
+			if (empty($submenu[self::MENU_SLUG]) || !is_array($submenu[self::MENU_SLUG])) {
+				$submenu[self::MENU_SLUG] = [];
+			}
+
+			$menu_item[2] = 'tools.php?page=aac-npc-sf-sync';
+			$submenu[self::MENU_SLUG][] = $menu_item;
+			break;
+		}
+	}
+
+	public function set_npc_sf_sync_parent_menu($parent_file) {
+		return $this->is_npc_sf_sync_page() ? self::MENU_SLUG : $parent_file;
+	}
+
+	public function set_npc_sf_sync_submenu($submenu_file) {
+		return $this->is_npc_sf_sync_page() ? 'tools.php?page=aac-npc-sf-sync' : $submenu_file;
+	}
+
+	private function is_npc_sf_sync_page() {
+		return isset($_GET['page']) && sanitize_key(wp_unslash($_GET['page'])) === 'aac-npc-sf-sync';
 	}
 
 	public function register_settings() {
@@ -1072,6 +1116,8 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_anac]', 'ANAC tile image', $settings['design']['publication_tile_image_anac'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_acj]', 'American Climbing Journal tile image', $settings['design']['publication_tile_image_acj'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_guidebook]', 'Guidebook tile image', $settings['design']['publication_tile_image_guidebook'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_alpinist]', 'Alpinist magazine image', $settings['design']['magazine_tile_image_alpinist'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_backcountry]', 'Backcountry magazine image', $settings['design']['magazine_tile_image_backcountry'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
 		</tbody></table>
 		<?php
 		$this->close_panel();

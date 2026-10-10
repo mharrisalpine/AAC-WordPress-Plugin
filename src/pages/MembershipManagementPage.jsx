@@ -20,6 +20,7 @@ import { getMemberTransactions } from '@/lib/memberApi';
 import { normalizeAccountInfo } from '@/lib/memberProfile';
 import { getAutoRenewalControl } from '@/lib/autoRenewalControl';
 import { bindBillingProfileRefresh } from '@/lib/billingProfileRefresh';
+import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import {
   MEMBERSHIP_PLAN_DETAILS,
   MEMBERSHIP_PLAN_ORDER,
@@ -35,6 +36,13 @@ import {
 const MANAGE_TABS = [
   { id: 'account', label: 'Account', icon: User },
 ];
+
+const getMembershipPlanPrice = (tier) => {
+  const configuredAmount = Number(getAppRuntimeConfig().pmproLevelPricing?.[tier]?.displayAmount);
+  return Number.isFinite(configuredAmount) && configuredAmount >= 0
+    ? configuredAmount
+    : Number(MEMBERSHIP_PLAN_PRICES[tier] || 0);
+};
 
 const parseMembershipDate = (value) => {
   const normalized = String(value || '').trim();
@@ -130,9 +138,9 @@ const TransactionList = ({ transactions, loading }) => {
   if (!transactions.length) {
     return (
       <div className="border-y-2 border-[#b71c1c] px-5 py-5 text-sm text-stone-700">
-        <p className="font-semibold text-stone-950">No recent PMPro receipt is available yet.</p>
+        <p className="font-semibold text-stone-950">No recent receipt is available</p>
         <p className="mt-2 leading-6">
-          Completed membership payments will appear here after PMPro records the order.
+          Memberships will appear here after purchase is completed
         </p>
       </div>
     );
@@ -194,12 +202,12 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   const [transactions, setTransactions] = React.useState([]);
   const [transactionsLoading, setTransactionsLoading] = React.useState(true);
   const [showBillingForm, setShowBillingForm] = React.useState(false);
-  const [billingFormHeight, setBillingFormHeight] = React.useState(720);
+  const [billingFormHeight, setBillingFormHeight] = React.useState(820);
   const [upgradeCheckout, setUpgradeCheckout] = React.useState(null);
   const [upgradeCheckoutHeight, setUpgradeCheckoutHeight] = React.useState(900);
   const billingFrameRef = React.useRef(null);
   const upgradeFrameRef = React.useRef(null);
-  const [checkingRenewal, setCheckingRenewal] = React.useState(true);
+  const [checkingRenewal, setCheckingRenewal] = React.useState(false);
 
   React.useEffect(() => {
     return bindBillingProfileRefresh({
@@ -224,19 +232,32 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
     let cancelled = false;
 
     const loadTransactions = async () => {
-      setTransactionsLoading(true);
+      const cacheKey = 'aac_billing_transactions_v1';
+      let hasFreshCache = false;
+      try {
+        const cached = JSON.parse(window.sessionStorage.getItem(cacheKey) || 'null');
+        if (cached && Date.now() - Number(cached.savedAt || 0) < 120000 && Array.isArray(cached.transactions)) {
+          setTransactions(cached.transactions);
+          setTransactionsLoading(false);
+          hasFreshCache = true;
+        }
+      } catch (_error) {
+        window.sessionStorage.removeItem(cacheKey);
+      }
+
+      if (!hasFreshCache) setTransactionsLoading(true);
       try {
         const data = await getMemberTransactions();
         if (!cancelled) {
           const entries = Array.isArray(data?.transactions) ? data.transactions : [];
-          setTransactions(
-            entries
-              .filter((transaction) => transaction.kind === 'Membership')
-              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-          );
+          const normalizedEntries = entries
+            .filter((transaction) => transaction.kind === 'Membership')
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          setTransactions(normalizedEntries);
+          window.sessionStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), transactions: normalizedEntries }));
         }
       } catch (_error) {
-        if (!cancelled) {
+        if (!cancelled && !hasFreshCache) {
           setTransactions([]);
         }
       } finally {
@@ -261,8 +282,11 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   const actions = profile?.membership_actions || {};
   const rawTier = profileInfo?.tier;
   const currentTier = rawTier ? normalizeTierId(rawTier) : '';
-  const currentTierLabel = getTierDisplayLabel(rawTier, 'Membership');
-  const isActive = profileInfo?.status === 'Active';
+  const resolvedCurrentTierLabel = getTierDisplayLabel(rawTier, 'Membership');
+  const isFreeTier = currentTier === 'Free' || resolvedCurrentTierLabel.trim().toLowerCase() === 'free';
+  const currentTierLabel = isFreeTier ? 'Inactive' : resolvedCurrentTierLabel;
+  const displayedStatus = isFreeTier ? 'Inactive' : (profileInfo.status || 'Not available');
+  const isActive = !isFreeTier && profileInfo?.status === 'Active';
   const currentIndex = currentTier ? MEMBERSHIP_PLAN_ORDER.indexOf(currentTier) : -1;
   const visiblePlanOrder = MEMBERSHIP_PLAN_ORDER.filter((tier) => isPublicMembershipTierId(tier));
   const selectablePlanOrder = visiblePlanOrder.filter((tier) => {
@@ -302,7 +326,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
       const nextHeight = Number(event.data.height || 0);
       if (Number.isFinite(nextHeight) && nextHeight > 300) {
         if (event.source === billingFrameRef.current?.contentWindow) {
-          setBillingFormHeight(Math.ceil(nextHeight));
+          setBillingFormHeight(Math.ceil(nextHeight) + 24);
         } else if (event.source === upgradeFrameRef.current?.contentWindow) {
           setUpgradeCheckoutHeight(Math.ceil(nextHeight));
         }
@@ -368,7 +392,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
 
     if (targetIndex < currentIndex) {
       return {
-        label: 'Downgrade Locked',
+        label: 'Downgrade Unavailable',
         icon: TrendingDown,
         disabled: true,
       };
@@ -387,7 +411,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
         <div className="aac-billing-membership-details border border-black bg-white p-4">
           <div className="grid gap-x-8 md:grid-cols-2">
             <DetailRow label="Membership" value={currentTierLabel} />
-            <DetailRow label="Status" value={profileInfo.status || 'Not available'} />
+            <DetailRow label="Status" value={displayedStatus} />
             <DetailRow label="Valid Through" value={formatMembershipDate(validThrough)} />
             <DetailRow label="Auto-Renewal" value={hasAutoRenewal ? 'On' : 'Off'} />
           </div>
@@ -541,6 +565,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
         <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
         {(standaloneUpgrade ? displayedUpgradePlanOrder : visiblePlanOrder).map((tier, index) => {
           const details = MEMBERSHIP_PLAN_DETAILS[tier];
+          const planPrice = getMembershipPlanPrice(tier);
           const action = standaloneUpgrade && tier === currentTier
             ? (hasAutoRenewal
               ? { label: 'Auto-Renewal Active', icon: BadgeCheck, type: 'renew', disabled: true }
@@ -549,7 +574,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
 
           const ActionIcon = action.icon;
           const isCurrent = action.disabled;
-          const annualLabel = MEMBERSHIP_PLAN_PRICES[tier] === 0 ? 'Portal preview membership' : 'Annual membership';
+          const annualLabel = planPrice === 0 ? 'Portal preview membership' : 'Annual membership';
 
           return (
             <motion.div
@@ -565,7 +590,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
                 </p>
                 <h3 className="text-2xl font-bold text-black">{tier}</h3>
                 <div className="mt-3 text-3xl font-bold text-black">
-                  {MEMBERSHIP_PLAN_PRICES[tier] === 0 ? 'Free' : formatDollars(MEMBERSHIP_PLAN_PRICES[tier])}
+                  {planPrice === 0 ? 'Free' : formatDollars(planPrice)}
                 </div>
                 <p className="text-sm text-black/60">{annualLabel}</p>
               </div>
@@ -605,11 +630,6 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
           );
         })}
         </div>
-        {standaloneUpgrade && !selectablePlanOrder.length ? (
-          <p className="border border-[#b71c1c] bg-red-50 p-5 text-sm font-medium text-[#8f1515]">
-            No renewable or higher PMPro membership levels are currently available for this account.
-          </p>
-        ) : null}
           </>
         )}
       </div>

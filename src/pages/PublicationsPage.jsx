@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { BookOpen, Download, ExternalLink, Headphones, Newspaper, Search } from 'lucide-react';
+import { BookOpen, Download, Headphones } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { getPublicationLibraryItems } from '@/lib/publications';
@@ -30,29 +30,6 @@ const PODCASTS = [
     spotifyEmbedUrl: 'https://open.spotify.com/embed/show/6BUZB5EQyaDLlrdHig6Ssq?utm_source=generator&theme=0',
     listenUrl: 'https://americanalpineclub.org/cutting-edge',
     learnUrl: 'https://americanalpineclub.org/cutting-edge',
-  },
-];
-
-const MORE_STORIES = [
-  {
-    title: 'The Line',
-    imageUrl: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80',
-    url: 'https://americanalpineclub.org/news',
-  },
-  {
-    title: 'AAC News',
-    imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80',
-    url: 'https://americanalpineclub.org/news',
-  },
-  {
-    title: 'Climbing Stories',
-    imageUrl: 'https://images.unsplash.com/photo-1522163182402-834f871fd851?auto=format&fit=crop&w=800&q=80',
-    url: 'https://americanalpineclub.org/stories',
-  },
-  {
-    title: 'Member Stories',
-    imageUrl: 'https://images.unsplash.com/photo-1516592673884-4a382d1124c2?auto=format&fit=crop&w=800&q=80',
-    url: 'https://americanalpineclub.org/news',
   },
 ];
 
@@ -94,7 +71,6 @@ const PublicationsPage = () => {
   const publicationItems = getPublicationLibraryItems();
   const accountInfo = normalizeAccountInfo(profile?.account_info || {});
   const canAccessPublications = isPartnerOrAboveMembershipTierId(profile?.profile_info?.tier);
-
   if (!canAccessPublications) {
     return (
       <div className="bg-white py-6">
@@ -140,7 +116,7 @@ const PublicationsPage = () => {
           icon={BookOpen}
           eyebrow="Benefits > Books & Media"
           title="Books & Media"
-          description="Open AAC digital publications, podcasts, and recent climbing stories from one member benefit page."
+          description="Open AAC digital publications and podcasts from one member benefit page."
         />
 
         <section className="space-y-5 bg-white">
@@ -178,18 +154,6 @@ const PublicationsPage = () => {
                         <a href={item.href} target="_blank" rel="noreferrer">
                           Download PDF
                           <Download className="ml-2 h-4 w-4" />
-                        </a>
-                      </Button>
-                      <Button asChild variant="outline" className="min-h-[2.75rem] w-full rounded-none border-stone-300 text-black hover:bg-stone-100">
-                        <a href="https://publications.americanalpineclub.org/" target="_blank" rel="noreferrer">
-                          Search articles
-                          <Search className="ml-2 h-4 w-4" />
-                        </a>
-                      </Button>
-                      <Button asChild variant="outline" className="min-h-[2.75rem] w-full rounded-none border-stone-300 text-black hover:bg-stone-100">
-                        <a href="https://americanalpineclub.org/publications/" target="_blank" rel="noreferrer">
-                          Learn more
-                          <ExternalLink className="ml-2 h-4 w-4" />
                         </a>
                       </Button>
                     </div>
@@ -244,36 +208,6 @@ const PublicationsPage = () => {
           </div>
         </section>
 
-        <section className="space-y-5 bg-white">
-          <SectionHeader
-            icon={Newspaper}
-            eyebrow="Stories"
-            title="More Stories From the AAC"
-            description="Recent features, news, and dispatches from AAC writers and members."
-          />
-          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            {MORE_STORIES.map((story) => (
-              <a
-                key={story.title}
-                href={story.url}
-                target="_blank"
-                rel="noreferrer"
-                className="group block bg-white text-black no-underline"
-              >
-                <div className="aspect-[4/3] overflow-hidden bg-stone-100">
-                  <img src={story.imageUrl} alt="" className="h-full w-full object-cover transition group-hover:scale-105" loading="lazy" />
-                </div>
-                <div className="border-t-2 border-[#b71c1c] py-3">
-                  <h2 className="text-lg font-bold text-stone-950">{story.title}</h2>
-                  <span className="mt-2 inline-flex items-center text-[0.72rem] font-bold uppercase tracking-[0.14em] text-[#8f1515]">
-                    Read story
-                    <ExternalLink className="ml-2 h-4 w-4" />
-                  </span>
-                </div>
-              </a>
-            ))}
-          </div>
-        </section>
       </motion.div>
     </div>
   );

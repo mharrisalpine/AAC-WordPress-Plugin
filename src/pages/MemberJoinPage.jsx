@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -17,11 +17,23 @@ const CHECKOUT_MIN_EMBED_HEIGHT = 320;
 const CHECKOUT_MAX_EMBED_HEIGHT = 5200;
 const POST_PURCHASE_LOGIN_URL = mainSiteHref('/member-profile/#/profile?purchase_success=1');
 const MEMBERSHIP_GRID_PLANS = [
-  { id: 'Supporter', price: '$45' },
-  { id: 'Partner', price: '$65-100', eyebrow: 'Most Popular' },
-  { id: 'Leader', price: '$250' },
-  { id: 'Advocate', price: '$500' },
+  { id: 'Supporter' },
+  { id: 'Partner', eyebrow: 'Most Popular' },
+  { id: 'Leader' },
+  { id: 'Advocate' },
 ];
+
+const getMembershipGridPrice = (tierId) => {
+  const tier = getTierById(tierId);
+  const configuredAmount = Number(getAppRuntimeConfig().pmproLevelPricing?.[tierId]?.displayAmount);
+  const amount = Number.isFinite(configuredAmount) && configuredAmount >= 0
+    ? configuredAmount
+    : Number(tier?.priceCents || 0) / 100;
+
+  return amount === 0
+    ? 'Free'
+    : `$${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+};
 const MEMBERSHIP_GRID_ROWS = [
   { label: 'Support for AAC Advocacy, Education & Member Services', values: [{ check: true }, { check: true, suffix: '+' }, { check: true, suffix: '++' }, { check: true, suffix: '+++' }] },
   { label: 'AAC T-shirt', values: [{ check: true }, { check: true }, { check: true }, { check: true }] },
@@ -82,7 +94,7 @@ const MembershipBenefitsGrid = ({ selectedTierId, onSelect }) => (
           <tr>
             <th scope="row" className="border border-[#cecece] bg-white px-4 py-2.5 text-left text-base font-extrabold">Benefits</th>
             {MEMBERSHIP_GRID_PLANS.map((plan) => (
-              <td key={plan.id} className={`border border-[#cecece] px-3 py-2.5 text-center text-xl font-medium ${plan.id === 'Partner' ? 'bg-[#ffc72c]' : 'bg-white'}`}>{plan.price}</td>
+              <td key={plan.id} className={`border border-[#cecece] px-3 py-2.5 text-center text-xl font-medium ${plan.id === 'Partner' ? 'bg-[#ffc72c]' : 'bg-white'}`}>{getMembershipGridPrice(plan.id)}</td>
             ))}
           </tr>
           {MEMBERSHIP_GRID_ROWS.map((row) => (
@@ -116,7 +128,7 @@ const buildEmbeddedCheckoutUrl = (tierId, wizardStep = 'account') => {
   if (normalizedTier === 'Supporter') {
     checkoutUrl.searchParams.set('aac_skip_publications', '1');
   }
-  checkoutUrl.searchParams.set('aac_rev', 'wizard-isolation-529');
+  checkoutUrl.searchParams.set('aac_rev', 'discount-yellow-755');
 
   return checkoutUrl.toString();
 };
@@ -136,9 +148,14 @@ const MemberJoinPage = () => {
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
   }, [user]);
   const [selectedTierId, setSelectedTierId] = useState('Partner');
+  const [mountedTierIds, setMountedTierIds] = useState(() => new Set(['Partner']));
   const [embedHeight, setEmbedHeight] = useState(CHECKOUT_MIN_EMBED_HEIGHT);
   const [checkoutFrameReady, setCheckoutFrameReady] = useState(false);
   const checkoutFrameRef = useRef(null);
+  const checkoutFrameRefs = useRef({});
+  const checkoutReadyTiersRef = useRef(new Set());
+  const checkoutHeightObserversRef = useRef(new Map());
+  const selectedTierIdRef = useRef('Partner');
   const checkoutDraftRef = useRef([]);
   const currentWizardStepRef = useRef('account');
   const [showLevelCards, setShowLevelCards] = useState(true);
@@ -156,11 +173,32 @@ const MemberJoinPage = () => {
     paddingTop: 0,
   };
 
-  const selectedTier = useMemo(() => getTierById(selectedTierId), [selectedTierId]);
-  const checkoutUrl = useMemo(
-    () => buildEmbeddedCheckoutUrl(selectedTierId, currentWizardStepRef.current),
-    [selectedTierId],
-  );
+  selectedTierIdRef.current = selectedTierId;
+
+  const syncCheckoutFrameHeight = (frame = checkoutFrameRef.current) => {
+    if (!frame || frame !== checkoutFrameRef.current) return;
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow) return;
+      const measuredNodes = [
+        frameDocument.querySelector('.aac-simple-checkout-wizard'),
+        frameDocument.querySelector('.aac-checkout-wizard'),
+        frameDocument.querySelector('.aac-managed-card--embed'),
+        frameDocument.querySelector('#pmpro_form'),
+      ].filter(Boolean);
+      const contentBottom = measuredNodes.reduce((largest, node) => {
+        const rect = node.getBoundingClientRect();
+        return Math.max(largest, rect.bottom + frameWindow.scrollY);
+      }, 0);
+      const nextHeight = Math.ceil(contentBottom + 48);
+      if (nextHeight > 0) {
+        setEmbedHeight(Math.min(Math.max(nextHeight, CHECKOUT_MIN_EMBED_HEIGHT), CHECKOUT_MAX_EMBED_HEIGHT));
+      }
+    } catch (error) {
+      // The checkout remains usable if browser security temporarily blocks measurement.
+    }
+  };
 
   useEffect(() => {
     const portalScrollContainer = document.querySelector('#aac-member-portal-root');
@@ -220,6 +258,10 @@ const MemberJoinPage = () => {
         return;
       }
 
+      if (event.source !== checkoutFrameRef.current?.contentWindow) {
+        return;
+      }
+
       if (event.data?.type === CHECKOUT_EMBED_MESSAGE) {
         const isVisibleContentHeight = event.data.visibleContent === true;
         if (hasVisibleContentHeightRef.current && !isVisibleContentHeight) {
@@ -230,7 +272,10 @@ const MemberJoinPage = () => {
         }
         const nextHeight = Number(event.data.height);
         if (Number.isFinite(nextHeight) && nextHeight > 0) {
-          pendingHeightRef.current = Math.min(Math.max(nextHeight, CHECKOUT_MIN_EMBED_HEIGHT), CHECKOUT_MAX_EMBED_HEIGHT);
+          const stepHeightLimit = currentWizardStepRef.current === 'payment'
+            ? CHECKOUT_MAX_EMBED_HEIGHT
+            : 1600;
+          pendingHeightRef.current = Math.min(Math.max(nextHeight, CHECKOUT_MIN_EMBED_HEIGHT), stepHeightLimit);
           if (!heightFrameRef.current) {
             heightFrameRef.current = window.requestAnimationFrame(() => {
               heightFrameRef.current = 0;
@@ -245,21 +290,23 @@ const MemberJoinPage = () => {
       }
 
       if (event.data?.type === CHECKOUT_STEP_MESSAGE) {
-        if (event.source !== checkoutFrameRef.current?.contentWindow) {
-          return;
-        }
         const stepIndex = Number(event.data.stepIndex);
+        const stepCount = Number(event.data.stepCount);
         if (Number.isInteger(stepIndex) && stepIndex >= 0) {
           setShowLevelCards(stepIndex === 0);
         }
         const label = String(event.data.stepLabel || '').toLowerCase();
-        currentWizardStepRef.current = label.includes('payment')
+        const isFinalCheckoutStep = Number.isInteger(stepIndex) && Number.isInteger(stepCount) && stepIndex === stepCount - 1;
+        currentWizardStepRef.current = isFinalCheckoutStep || label.includes('payment') || label.includes('checkout')
           ? 'payment'
           : label.includes('publication')
             ? 'publications'
             : label.includes('detail') || label.includes('contact') || label.includes('member')
               ? 'details'
               : 'account';
+        [0, 80, 240, 600, 1200].forEach((delay) => {
+          window.setTimeout(() => syncCheckoutFrameHeight(checkoutFrameRef.current), delay);
+        });
         }
 
       if (event.data?.type === CHECKOUT_SCROLL_MESSAGE) {
@@ -288,6 +335,11 @@ const MemberJoinPage = () => {
         window.cancelAnimationFrame(heightFrameRef.current);
         heightFrameRef.current = 0;
       }
+      checkoutHeightObserversRef.current.forEach(({ resizeObserver, mutationObserver }) => {
+        resizeObserver?.disconnect();
+        mutationObserver?.disconnect();
+      });
+      checkoutHeightObserversRef.current.clear();
     };
   }, []);
 
@@ -322,12 +374,12 @@ const MemberJoinPage = () => {
     }
   };
 
-  const restoreCheckoutDraft = () => {
+  const restoreCheckoutDraft = (frame = checkoutFrameRef.current) => {
     if (!checkoutDraftRef.current.length) {
       return;
     }
     try {
-      const frameDocument = checkoutFrameRef.current?.contentDocument;
+      const frameDocument = frame?.contentDocument;
       checkoutDraftRef.current.forEach((entry) => {
         const selectorName = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(entry.name) : entry.name.replace(/["\\]/g, '\\$&');
         const matchingControls = Array.from(frameDocument?.querySelectorAll(`[name="${selectorName}"]`) || []);
@@ -358,12 +410,21 @@ const MemberJoinPage = () => {
       return;
     }
     preserveCheckoutDraft();
-    setCheckoutFrameReady(false);
+    const nextFrame = checkoutFrameRefs.current[tierId] || null;
+    checkoutFrameRef.current = nextFrame;
+    setCheckoutFrameReady(checkoutReadyTiersRef.current.has(tierId));
     setSelectedTierId(tierId);
+    if (checkoutReadyTiersRef.current.has(tierId)) {
+      window.requestAnimationFrame(() => {
+        restoreCheckoutDraft(nextFrame);
+        syncCheckoutFrameHeight(nextFrame);
+      });
+    }
   };
 
-  const handleCheckoutFrameLoad = () => {
-    const frameWindow = checkoutFrameRef.current?.contentWindow;
+  const handleCheckoutFrameLoad = (tierId, frameUrlString) => {
+    const frame = checkoutFrameRefs.current[tierId];
+    const frameWindow = frame?.contentWindow;
     if (!frameWindow) {
       return;
     }
@@ -383,31 +444,79 @@ const MemberJoinPage = () => {
           frameUrl.hash.startsWith('#/profile?')
         );
 
-	      if (isConfirmationPath || isFramedProfile) {
+	      if ((isConfirmationPath || isFramedProfile) && tierId === selectedTierIdRef.current) {
 	        window.location.assign(postPurchaseUrl.toString());
 	        return;
 	      }
 
-      const expectedLevelId = new URL(checkoutUrl).searchParams.get('level');
+      const expectedLevelId = new URL(frameUrlString).searchParams.get('level');
       if (frameUrl.searchParams.get('level') !== expectedLevelId) {
         return;
       }
 
       window.requestAnimationFrame(() => {
-        const liveFrameUrl = new URL(checkoutFrameRef.current?.contentWindow?.location.href || 'about:blank');
-        const liveExpectedUrl = new URL(checkoutFrameRef.current?.src || checkoutUrl);
+        const liveFrameUrl = new URL(frame?.contentWindow?.location.href || 'about:blank');
+        const liveExpectedUrl = new URL(frame?.src || frameUrlString);
         if (liveFrameUrl.searchParams.get('level') !== liveExpectedUrl.searchParams.get('level')) {
           return;
         }
-        restoreCheckoutDraft();
-        setCheckoutFrameReady(true);
-        window.setTimeout(restoreCheckoutDraft, 180);
+        checkoutReadyTiersRef.current.add(tierId);
+        const existingObservers = checkoutHeightObserversRef.current.get(tierId);
+        existingObservers?.resizeObserver?.disconnect();
+        existingObservers?.mutationObserver?.disconnect();
+        const frameDocument = frame.contentDocument;
+        const resizeObserver = typeof ResizeObserver !== 'undefined'
+          ? new ResizeObserver(() => syncCheckoutFrameHeight(frame))
+          : null;
+        const mutationObserver = typeof MutationObserver !== 'undefined'
+          ? new MutationObserver(() => syncCheckoutFrameHeight(frame))
+          : null;
+        if (frameDocument?.documentElement) {
+          resizeObserver?.observe(frameDocument.documentElement);
+          if (frameDocument.body) resizeObserver?.observe(frameDocument.body);
+          mutationObserver?.observe(frameDocument.documentElement, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+          });
+        }
+        checkoutHeightObserversRef.current.set(tierId, { resizeObserver, mutationObserver });
+        if (tierId === selectedTierIdRef.current) {
+          checkoutFrameRef.current = frame;
+          restoreCheckoutDraft(frame);
+          setCheckoutFrameReady(true);
+          syncCheckoutFrameHeight(frame);
+          window.setTimeout(() => restoreCheckoutDraft(frame), 180);
+          [80, 240, 600, 1200].forEach((delay) => {
+            window.setTimeout(() => syncCheckoutFrameHeight(frame), delay);
+          });
+        }
       });
 
     } catch (error) {
       // Ignore cross-document timing errors and leave the iframe in place.
     }
   };
+
+  useEffect(() => {
+    if (!checkoutFrameReady) return undefined;
+
+    const remainingTierIds = MEMBERSHIP_GRID_PLANS
+      .map((plan) => plan.id)
+      .filter((tierId) => !mountedTierIds.has(tierId));
+    if (!remainingTierIds.length) return undefined;
+
+    const timers = remainingTierIds.map((tierId, index) => window.setTimeout(() => {
+      setMountedTierIds((current) => {
+        if (current.has(tierId)) return current;
+        const next = new Set(current);
+        next.add(tierId);
+        return next;
+      });
+    }, 250 + (index * 900)));
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [checkoutFrameReady, mountedTierIds]);
 
   if (loading || user) {
     const email = user?.email || '';
@@ -467,7 +576,10 @@ const MemberJoinPage = () => {
                 <div className="aac-signup-form-intro mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <h2 className="text-3xl font-extrabold leading-tight tracking-tight text-[#16130f] sm:text-4xl">Select Your Plan</h2>
-                    <p className="mt-3 text-base leading-7 text-[#6e675d] sm:text-lg">Choose the annual membership that fits your climbing life.</p>
+                    <p className="mt-3 text-base leading-7 text-[#6e675d] sm:text-lg">
+                      Choose the annual membership that fits your climbing life.
+                      <span className="block">Discounts and Family Plans can be added at checkout.</span>
+                    </p>
                   </div>
                 </div>
 	                <MembershipTierSelect
@@ -489,36 +601,76 @@ const MemberJoinPage = () => {
 
               <div
                   className="aac-checkout-iframe-wrap block"
+                  aria-busy={!checkoutFrameReady}
                   style={{
                     position: 'static',
-                    height: 'auto',
+                    height: 'var(--aac-checkout-iframe-height)',
+                    minHeight: 'var(--aac-checkout-iframe-height)',
                     overflow: 'visible',
                     overscrollBehavior: 'auto',
                     '--aac-checkout-iframe-height': `${embedHeight}px`,
                   }}
                 >
-                  <iframe
-                    ref={checkoutFrameRef}
-                    title={`${selectedTier.label} membership checkout`}
-                    src={checkoutUrl}
-                    onLoad={handleCheckoutFrameLoad}
-                    scrolling="no"
-                    className="block w-full bg-transparent"
-	                    style={{
-	                      position: 'static',
-	                      inset: 'auto',
-	                      display: 'block',
-	                      visibility: checkoutFrameReady ? 'visible' : 'hidden',
-	                      opacity: checkoutFrameReady ? 1 : 0,
-	                      width: '100%',
-	                      maxWidth: '100%',
-	                      height: 'var(--aac-checkout-iframe-height)',
-	                      minHeight: `${CHECKOUT_MIN_EMBED_HEIGHT}px`,
-	                      overflow: 'hidden',
-	                      border: 0,
-	                    }}
-                    aria-hidden={!checkoutFrameReady}
-                  />
+                  {!checkoutFrameReady ? (
+                    <div className="aac-checkout-loading" role="status" aria-live="polite">
+                      <span className="aac-checkout-loading__spinner" aria-hidden="true" />
+                      <strong>Loading secure checkout…</strong>
+                      <span>Preparing account and payment fields.</span>
+                    </div>
+                  ) : null}
+                  {MEMBERSHIP_GRID_PLANS
+                    .filter((plan) => mountedTierIds.has(plan.id))
+                    .map((plan) => {
+                      const isSelected = plan.id === selectedTierId;
+                      const frameUrl = buildEmbeddedCheckoutUrl(plan.id, 'account');
+                      return (
+                        <div
+                          key={plan.id}
+                          className="aac-checkout-iframe-host"
+                          style={{
+                            display: isSelected ? 'block' : 'none',
+                            position: 'static',
+                            width: '100%',
+                            height: isSelected ? 'var(--aac-checkout-iframe-height)' : 0,
+                            minHeight: isSelected ? 'var(--aac-checkout-iframe-height)' : 0,
+                            padding: 0,
+                            paddingBottom: 0,
+                            overflow: 'visible',
+                          }}
+                        >
+                          <iframe
+                            ref={(frame) => {
+                              if (frame) {
+                                checkoutFrameRefs.current[plan.id] = frame;
+                                if (isSelected) checkoutFrameRef.current = frame;
+                              } else {
+                                delete checkoutFrameRefs.current[plan.id];
+                              }
+                            }}
+                            title={`${getTierById(plan.id).label} membership checkout`}
+                            src={frameUrl}
+                            onLoad={() => handleCheckoutFrameLoad(plan.id, frameUrl)}
+                            scrolling="auto"
+                            className="block w-full bg-transparent"
+	                          style={{
+	                            position: 'static',
+	                            inset: 'auto',
+	                            display: 'block',
+	                            visibility: isSelected && checkoutFrameReady ? 'visible' : 'hidden',
+	                            opacity: isSelected && checkoutFrameReady ? 1 : 0,
+	                            width: '100%',
+	                            maxWidth: '100%',
+	                            height: 'var(--aac-checkout-iframe-height)',
+	                            minHeight: `${CHECKOUT_MIN_EMBED_HEIGHT}px`,
+	                            overflow: 'auto',
+	                            border: 0,
+	                          }}
+                            aria-hidden={!isSelected || !checkoutFrameReady}
+                            tabIndex={isSelected ? 0 : -1}
+                          />
+                        </div>
+                      );
+                    })}
                 </div>
             </div>
           </main>

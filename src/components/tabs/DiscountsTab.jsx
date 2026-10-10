@@ -778,7 +778,11 @@ const DiscountsTab = ({ profile }) => {
           </p>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-3xl font-bold text-black">{portalContent.discounts_title}</h2>
+              <h2 className="text-3xl font-bold text-black">
+                {['Partner Discounts', 'Member Benefits'].includes(portalContent.discounts_title)
+                  ? 'Member Discounts'
+                  : portalContent.discounts_title}
+              </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-black/65">
                 Browse AAC member benefits and partner offers for your membership level.
               </p>

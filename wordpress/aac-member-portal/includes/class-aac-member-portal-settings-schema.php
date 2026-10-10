@@ -109,7 +109,7 @@ class AAC_Member_Portal_Settings_Schema {
 				'linked_accounts_lookup_button_label' => 'Check Code',
 				'linked_accounts_redeem_button_label' => 'Redeem Invite Code',
 				'linked_accounts_success_message' => 'Invite redeemed successfully. Redirecting to your member profile...',
-				'discounts_title' => 'Member Benefits',
+				'discounts_title' => 'Member Discounts',
 				'discounts_locked_title' => 'Discounts Locked',
 				'discounts_locked_description' => 'Discounts are available to active members only. Renew or rejoin your membership to unlock partner offers.',
 				'discounts_free_locked_description' => 'Free memberships include portal preview access and promo emails, but partner discounts unlock with a paid membership.',
@@ -167,6 +167,8 @@ class AAC_Member_Portal_Settings_Schema {
 				'publication_tile_image_anac' => '',
 				'publication_tile_image_acj' => '',
 				'publication_tile_image_guidebook' => '',
+				'magazine_tile_image_alpinist' => '',
+				'magazine_tile_image_backcountry' => '',
 			],
 			'components' => [
 				'section_titles' => [
@@ -898,6 +900,8 @@ class AAC_Member_Portal_Settings_Schema {
 			'publication_tile_image_anac',
 			'publication_tile_image_acj',
 			'publication_tile_image_guidebook',
+			'magazine_tile_image_alpinist',
+			'magazine_tile_image_backcountry',
 		];
 		foreach ($design_url_fields as $field) {
 			if (array_key_exists($field, $design_input)) {

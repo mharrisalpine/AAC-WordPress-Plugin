@@ -22,8 +22,8 @@ eval('class PromoPricingHarness {
             case "get_country_routed_partner_level_for_checkout":
             case "get_prorated_upgrade_initial_total_for_checkout":
             case "get_autorenew_reactivation_checkout_context":
-            case "get_prepaid_renewal_checkout_context":
             case "get_add_dependent_checkout_context": return null;
+			case "get_prepaid_renewal_checkout_context": return !empty($_REQUEST["aac_test_prepaid_renewal"]) ? ["renewal_amount" => 45.0] : null;
             case "is_international_checkout_request":
             case "supports_family_plan_tiers":
             case "should_preserve_prorated_checkout_initial_total":
@@ -31,7 +31,7 @@ eval('class PromoPricingHarness {
             case "get_partner_family_addon_total":
             case "get_international_print_surcharge_amount": return 0.0;
             case "get_requested_membership_discount_type": return $_REQUEST["aac_membership_discount"] ?? "";
-            case "get_membership_discount_code": return ($args[0] ?? "") === "student" ? "STUDENT" : "";
+            case "get_membership_discount_code": return ($args[0] ?? "") === "student" ? "STUDENT" : (($args[0] ?? "") === "military" ? "MILITARY" : "");
             case "get_requested_membership_discount_amount": return ($_REQUEST["aac_membership_discount"] ?? "") === "student" ? round((float) $args[0] * 0.35, 2) : 0.0;
             case "get_checkout_account_info_from_request": return [];
             default: throw new RuntimeException("Unexpected dependency: " . $name);
@@ -51,6 +51,7 @@ $promo->initial_payment = $promo->billing_amount = 1.0;
 $result = $h->filter_pmpro_checkout_level_for_magazine_addons($promo);
 check($result->initial_payment, 1.0, 'Valid promo initial amount');
 check($result->billing_amount, 1.0, 'Valid promo recurring amount');
+
 unset($_REQUEST['aac_membership_discount']);
 // Simulate Donations (priority 99) adding $5 after AAC (priority 20).
 $result->initial_payment += 5;
@@ -62,6 +63,38 @@ check($result->billing_amount, 45.0, 'Invalid code does not discount renewals');
 unset($_REQUEST['pmpro_discount_code']);
 $result = $h->filter_pmpro_checkout_level_for_magazine_addons(clone $base);
 check($result->initial_payment, 45.0, 'Removing promo restores catalog');
+
+$_REQUEST = ['aac_signup' => '1', 'aac_membership_discount' => 'student'];
+$studentPromo = clone $base;
+$studentPromo->code_id = 2;
+$studentPromo->discount_code = 'STUDENT';
+$studentPromo->initial_payment = $studentPromo->billing_amount = 29.25;
+$result = $h->filter_pmpro_checkout_level_for_magazine_addons($studentPromo);
+check($result->initial_payment, 29.25, 'Student PMPro promo is not discounted twice');
+check($result->billing_amount, 29.25, 'Student PMPro recurring promo is not discounted twice');
+
+$_REQUEST = ['aac_signup' => '1', 'aac_membership_discount' => 'military'];
+$militaryPromo = clone $base;
+$militaryPromo->code_id = 3;
+$militaryPromo->discount_code = 'MILITARY';
+$militaryPromo->initial_payment = $militaryPromo->billing_amount = 29.25;
+$result = $h->filter_pmpro_checkout_level_for_magazine_addons($militaryPromo);
+check($result->initial_payment, 29.25, 'Military PMPro promo is not discounted twice');
+check($result->billing_amount, 29.25, 'Military PMPro recurring promo is not discounted twice');
+
+$_REQUEST = ['aac_signup' => '1', 'aac_membership_discount' => 'student'];
+$result = $h->filter_pmpro_checkout_level_for_magazine_addons(clone $base);
+check($result->initial_payment, 45.0, 'Unvalidated Student code cannot alter pricing');
+check($result->billing_amount, 45.0, 'Unvalidated Student code cannot alter renewal pricing');
+
+$_REQUEST = [
+	'aac_test_prepaid_renewal' => '1',
+];
+$result = $h->filter_pmpro_checkout_level_for_magazine_addons(clone $base);
+check($result->initial_payment, 45.0, 'Manual non-auto-renew renewal charges membership only');
+check($result->billing_amount, 0.0, 'Manual non-auto-renew renewal does not create a recurring charge');
+
+$_REQUEST = [];
 foreach ([[0.0, 45.0], [1.0, 45.0], [1.0, 0.0]] as [$initial, $recurring]) {
     $level = clone $base;
     $level->code_id = 2;
@@ -94,7 +127,7 @@ eval('class PromoRequestHarness {
     private function has_partner_family_request() { return false; }
     private function normalize_partner_family_config($config) { return ["mode" => "individual"]; }
     private function get_requested_membership_discount_type() { return $_REQUEST["aac_membership_discount"] ?? ""; }
-    private function get_membership_discount_code($type) { return $type === "student" ? "STUDENT" : ""; }
+    private function get_membership_discount_code($type) { return $type === "student" ? "STUDENT" : ($type === "military" ? "MILITARY" : ""); }
 ' . $requestCode . '}');
 function is_admin() { return false; }
 $_SERVER['REQUEST_METHOD'] = 'POST';
@@ -112,3 +145,10 @@ if (($_POST['discount_code'] ?? '') !== 'TESTSTRIPE') {
     throw new RuntimeException('PMPro promo was not copied to the legacy checkout key.');
 }
 echo "PASS: submitted PMPro promo is normalized server-side and takes precedence over AAC eligibility discounts.\n";
+
+$_REQUEST = $_POST = ['aac_membership_discount' => 'military'];
+$requestHarness->maybe_apply_membership_discount_code_to_request();
+if (($_POST['pmpro_discount_code'] ?? '') !== 'MILITARY') {
+    throw new RuntimeException('Military eligibility did not submit the MILITARY PMPro promo code.');
+}
+echo "PASS: Military eligibility submits the MILITARY PMPro promo code.\n";

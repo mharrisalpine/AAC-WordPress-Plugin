@@ -1,8 +1,7 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { BadgePercent, User, Settings, Tag, Mail, PenSquare, BookOpen, LogOut } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { getPortalPageUrl } from '@/lib/backendConfig';
 import { getPortalUiSettings } from '@/lib/portalSettings';
 import { isPartnerOrAboveMembershipTierId } from '@/lib/membershipTiers';
 import { cn } from '@/lib/utils';
@@ -95,6 +94,7 @@ export function PortalNavLinks({ onNavigate, className }) {
 
 const SidebarSignOut = ({ onSignedOut, horizontal = false }) => {
   const { signOut } = useAuth();
+  const navigate = useNavigate();
 
   const handleSignOut = async () => {
     const result = await signOut();
@@ -107,10 +107,7 @@ const SidebarSignOut = ({ onSignedOut, horizontal = false }) => {
         // Session storage cleanup should never block logout.
       }
       onSignedOut?.();
-      const loginUrl = new URL(getPortalPageUrl(), window.location.origin);
-      loginUrl.searchParams.set('aac_logged_out', Date.now().toString());
-      loginUrl.hash = '/login';
-      window.location.replace(loginUrl.toString());
+      navigate('/login', { replace: true });
     }
   };
 

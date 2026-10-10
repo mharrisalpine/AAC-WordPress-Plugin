@@ -1381,6 +1381,18 @@ final class AAC_Member_Portal_Import_Manager {
 	private function update_account_info_from_row($user_id, $row) {
 		$account_info = get_user_meta($user_id, 'aac_account_info', true);
 		$account_info = is_array($account_info) ? $account_info : [];
+		$publication_preferences = [
+			'aaj_preference' => $this->row_value($row, ['aaj_preference', 'aac_publication_aaj']),
+			'anac_preference' => $this->row_value($row, ['anac_preference', 'accidents_preference', 'aac_publication_accidents']),
+			'american_climbing_journal_preference' => $this->row_value($row, ['american_climbing_journal_preference', 'acj_preference', 'aac_publication_acj']),
+			'guidebook_preferences' => $this->row_value($row, ['guidebook_preferences', 'guidebook_preference', 'aac_publication_guidebook']),
+		];
+		$publication_preferences = array_filter($publication_preferences, static function ($value) {
+			return trim((string) $value) !== '';
+		});
+		if (!empty($publication_preferences) && class_exists('AAC_Member_Portal_Publication_Preferences')) {
+			AAC_Member_Portal_Publication_Preferences::sync_timestamps($user_id, $publication_preferences);
+		}
 		$field_map = [
 			'first_name' => ['first_name', 'firstname', 'billing_first_name'],
 			'last_name' => ['last_name', 'lastname', 'billing_last_name'],
