@@ -72,6 +72,10 @@ class AAC_Member_Portal_Admin {
 		return AAC_Member_Portal_Settings_Schema::get_default_contact_issue_types();
 	}
 
+	public static function get_default_contact_issue_recipient_emails() {
+		return AAC_Member_Portal_Settings_Schema::get_default_contact_issue_recipient_emails();
+	}
+
 	public static function get_default_rescue_levels() {
 		return AAC_Member_Portal_Settings_Schema::get_default_rescue_levels();
 	}
@@ -92,15 +96,29 @@ class AAC_Member_Portal_Admin {
 		return AAC_Member_Portal_Settings_Schema::get_settings(self::OPTION_KEY);
 	}
 
-	public static function get_contact_recipient_email() {
+	public static function get_contact_recipient_email($issue_type = '') {
 		$settings = self::get_settings();
-		$recipient_email = sanitize_email($settings['content']['contact_recipient_email'] ?? '');
-
-		if ($recipient_email && is_email($recipient_email)) {
-			return $recipient_email;
+		$fallback_email = sanitize_email($settings['content']['contact_recipient_email'] ?? '');
+		if (!$fallback_email || !is_email($fallback_email)) {
+			$fallback_email = sanitize_email(get_option('admin_email'));
 		}
 
-		return sanitize_email(get_option('admin_email'));
+		$issue_type = trim(sanitize_text_field((string) $issue_type));
+		if ($issue_type === '') {
+			return $fallback_email;
+		}
+
+		$routes = AAC_Member_Portal_Settings_Schema::normalize_contact_issue_routes(
+			$settings['content']['contact_issue_types'] ?? [],
+			$settings['content']['contact_issue_recipient_emails'] ?? []
+		);
+		$route_index = array_search($issue_type, $routes['issue_types'], true);
+		if ($route_index === false) {
+			return $fallback_email;
+		}
+
+		$route_email = sanitize_email($routes['recipient_emails'][$route_index] ?? '');
+		return $route_email && is_email($route_email) ? $route_email : $fallback_email;
 	}
 
 	public static function get_contact_issue_types() {
@@ -2239,24 +2257,41 @@ class AAC_Member_Portal_Admin {
 	}
 
 	private function render_contact_issue_types_row($settings) {
-		$issue_types = isset($settings['content']['contact_issue_types']) && is_array($settings['content']['contact_issue_types'])
-			? AAC_Member_Portal_Settings_Schema::normalize_contact_issue_types($settings['content']['contact_issue_types'])
-			: self::get_default_contact_issue_types();
-		$field_name = self::OPTION_KEY . '[content][contact_issue_types][]';
+		$routes = AAC_Member_Portal_Settings_Schema::normalize_contact_issue_routes(
+			$settings['content']['contact_issue_types'] ?? [],
+			$settings['content']['contact_issue_recipient_emails'] ?? []
+		);
+		$issue_types = $routes['issue_types'];
+		$recipient_emails = $routes['recipient_emails'];
+		$issue_type_field_name = self::OPTION_KEY . '[content][contact_issue_types][]';
+		$recipient_field_name = self::OPTION_KEY . '[content][contact_issue_recipient_emails][]';
 		?>
 		<tr>
-			<th scope="row">Contact form dropdown options</th>
+			<th scope="row">Contact form routing</th>
 			<td>
-				<input type="hidden" name="<?php echo esc_attr($field_name); ?>" value="" />
-				<div id="aac-contact-issue-types-list" style="display:flex;flex-direction:column;gap:8px;max-width:520px;">
-					<?php foreach ($issue_types as $issue_type) : ?>
+				<input type="hidden" name="<?php echo esc_attr($issue_type_field_name); ?>" value="" />
+				<input type="hidden" name="<?php echo esc_attr($recipient_field_name); ?>" value="" />
+				<div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1fr) auto;gap:8px;max-width:820px;margin-bottom:6px;font-weight:600;">
+					<span>Subject option</span>
+					<span>Recipient email</span>
+					<span class="screen-reader-text">Actions</span>
+				</div>
+				<div id="aac-contact-issue-types-list" style="display:flex;flex-direction:column;gap:8px;max-width:820px;">
+					<?php foreach ($issue_types as $index => $issue_type) : ?>
 						<div style="display:flex;gap:8px;align-items:center;" data-aac-contact-issue-type-row>
 							<input
 								type="text"
-								name="<?php echo esc_attr($field_name); ?>"
+								name="<?php echo esc_attr($issue_type_field_name); ?>"
 								value="<?php echo esc_attr($issue_type); ?>"
 								class="regular-text"
 								placeholder="Issue type label"
+							/>
+							<input
+								type="email"
+								name="<?php echo esc_attr($recipient_field_name); ?>"
+								value="<?php echo esc_attr($recipient_emails[$index] ?? ''); ?>"
+								class="regular-text"
+								placeholder="Use fallback recipient"
 							/>
 							<button type="button" class="button button-secondary" data-aac-remove-contact-issue-type>Remove</button>
 						</div>
@@ -2265,7 +2300,7 @@ class AAC_Member_Portal_Admin {
 				<p style="margin-top:10px;">
 					<button type="button" class="button button-secondary" id="aac-add-contact-issue-type">Add issue type</button>
 				</p>
-				<p class="description">These labels appear in the member app Contact Us dropdown and become the email subject category.</p>
+				<p class="description">Each label appears in the Contact Us dropdown. Enter a recipient for subject-specific routing, or leave it blank to use the fallback Contact form recipient email above.</p>
 				<script>
 					(() => {
 						const list = document.getElementById('aac-contact-issue-types-list');
@@ -2288,7 +2323,7 @@ class AAC_Member_Portal_Admin {
 							row.style.gap = '8px';
 							row.style.alignItems = 'center';
 							row.setAttribute('data-aac-contact-issue-type-row', '1');
-							row.innerHTML = '<input type="text" name="<?php echo esc_js($field_name); ?>" value="" class="regular-text" placeholder="Issue type label" /> <button type="button" class="button button-secondary" data-aac-remove-contact-issue-type>Remove</button>';
+							row.innerHTML = '<input type="text" name="<?php echo esc_js($issue_type_field_name); ?>" value="" class="regular-text" placeholder="Issue type label" /> <input type="email" name="<?php echo esc_js($recipient_field_name); ?>" value="" class="regular-text" placeholder="Use fallback recipient" /> <button type="button" class="button button-secondary" data-aac-remove-contact-issue-type>Remove</button>';
 							list.appendChild(row);
 							bindRemove(row);
 							const input = row.querySelector('input');

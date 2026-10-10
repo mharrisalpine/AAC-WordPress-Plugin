@@ -128,7 +128,7 @@ const buildEmbeddedCheckoutUrl = (tierId, wizardStep = 'account') => {
   if (normalizedTier === 'Supporter') {
     checkoutUrl.searchParams.set('aac_skip_publications', '1');
   }
-  checkoutUrl.searchParams.set('aac_rev', 'password-layout-768');
+  checkoutUrl.searchParams.set('aac_rev', 'utility-nav-contact-routing-770');
 
   return checkoutUrl.toString();
 };

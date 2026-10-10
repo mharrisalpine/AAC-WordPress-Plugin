@@ -177,8 +177,9 @@ body.aac-signup-header-managed.aac-signup-header-scrolled #site-header::before {
 }
 
 body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav-item,
-body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav a {
-	color: #ffffff !important;
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav a,
+body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav a span {
+	color: #030000 !important;
 }
 
 body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-icon--light {
@@ -192,7 +193,7 @@ body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-
 }
 
 body.aac-signup-header-managed.aac-signup-header-scrolled #site-header .utility-nav svg {
-	color: #ffffff !important;
+	color: #f8c235 !important;
 }
 
 body.aac-signup-header-managed #site-header:has(.mega-menu:hover) .utility-nav-item,

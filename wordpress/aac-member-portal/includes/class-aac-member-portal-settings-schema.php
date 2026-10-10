@@ -65,6 +65,7 @@ class AAC_Member_Portal_Settings_Schema {
 				'account_settings_title' => 'Account Settings',
 				'contact_recipient_email' => 'mharris@americanalpineclub.org',
 				'contact_issue_types' => self::get_default_contact_issue_types(),
+				'contact_issue_recipient_emails' => self::get_default_contact_issue_recipient_emails(),
 				'profile_information_title' => 'Profile Information',
 				'profile_information_description' => 'Primary contact and profile information used across the AAC portal. You may update your details and preferences in Account Settings.',
 				'membership_snapshot_title' => 'Membership Snapshot',
@@ -434,23 +435,41 @@ class AAC_Member_Portal_Settings_Schema {
 		];
 	}
 
-	public static function normalize_contact_issue_types($items) {
-		$items = is_array($items) ? $items : [];
-		$normalized = [];
+	public static function get_default_contact_issue_recipient_emails() {
+		return array_fill(0, count(self::get_default_contact_issue_types()), '');
+	}
 
-		foreach ($items as $item) {
-			$label = sanitize_text_field((string) $item);
-			$label = trim($label);
-			if ($label === '') {
+	public static function normalize_contact_issue_routes($items, $recipient_emails = []) {
+		$items = is_array($items) ? array_values($items) : [];
+		$recipient_emails = is_array($recipient_emails) ? array_values($recipient_emails) : [];
+		$normalized_items = [];
+		$normalized_emails = [];
+
+		foreach ($items as $index => $item) {
+			$label = trim(sanitize_text_field((string) $item));
+			if ($label === '' || in_array($label, $normalized_items, true)) {
 				continue;
 			}
 
-			if (!in_array($label, $normalized, true)) {
-				$normalized[] = $label;
-			}
+			$email = sanitize_email((string) ($recipient_emails[$index] ?? ''));
+			$normalized_items[] = $label;
+			$normalized_emails[] = $email && is_email($email) ? $email : '';
 		}
 
-		return !empty($normalized) ? $normalized : self::get_default_contact_issue_types();
+		if (empty($normalized_items)) {
+			$normalized_items = self::get_default_contact_issue_types();
+			$normalized_emails = self::get_default_contact_issue_recipient_emails();
+		}
+
+		return [
+			'issue_types' => $normalized_items,
+			'recipient_emails' => $normalized_emails,
+		];
+	}
+
+	public static function normalize_contact_issue_types($items) {
+		$routes = self::normalize_contact_issue_routes($items);
+		return $routes['issue_types'];
 	}
 
 	public static function normalize_benefits_gallery_items($items) {
@@ -697,9 +716,12 @@ class AAC_Member_Portal_Settings_Schema {
 		$settings['content']['signup_level_benefits'] = isset($settings['content']['signup_level_benefits']) && is_array($settings['content']['signup_level_benefits'])
 			? self::normalize_signup_level_benefits($settings['content']['signup_level_benefits'], $signup_benefit_catalog)
 			: self::get_default_signup_level_benefits();
-		$settings['content']['contact_issue_types'] = isset($settings['content']['contact_issue_types']) && is_array($settings['content']['contact_issue_types'])
-			? self::normalize_contact_issue_types($settings['content']['contact_issue_types'])
-			: self::get_default_contact_issue_types();
+		$contact_routes = self::normalize_contact_issue_routes(
+			$settings['content']['contact_issue_types'] ?? [],
+			$settings['content']['contact_issue_recipient_emails'] ?? []
+		);
+		$settings['content']['contact_issue_types'] = $contact_routes['issue_types'];
+		$settings['content']['contact_issue_recipient_emails'] = $contact_routes['recipient_emails'];
 		$settings['content']['benefits_gallery_items'] = isset($settings['content']['benefits_gallery_items']) && is_array($settings['content']['benefits_gallery_items'])
 			? self::normalize_benefits_gallery_items($settings['content']['benefits_gallery_items'])
 			: self::get_default_benefits_gallery_items();
@@ -829,8 +851,13 @@ class AAC_Member_Portal_Settings_Schema {
 				: $defaults['content']['contact_recipient_email'];
 		}
 
-		if (array_key_exists('contact_issue_types', $content_input)) {
-			$settings['content']['contact_issue_types'] = self::normalize_contact_issue_types($content_input['contact_issue_types']);
+		if (array_key_exists('contact_issue_types', $content_input) || array_key_exists('contact_issue_recipient_emails', $content_input)) {
+			$contact_routes = self::normalize_contact_issue_routes(
+				$content_input['contact_issue_types'] ?? $settings['content']['contact_issue_types'],
+				$content_input['contact_issue_recipient_emails'] ?? $settings['content']['contact_issue_recipient_emails']
+			);
+			$settings['content']['contact_issue_types'] = $contact_routes['issue_types'];
+			$settings['content']['contact_issue_recipient_emails'] = $contact_routes['recipient_emails'];
 		}
 
 		$url_fields = [

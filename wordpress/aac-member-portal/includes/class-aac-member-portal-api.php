@@ -1091,7 +1091,7 @@ class AAC_Member_Portal_API {
 			return new WP_Error('invalid_input', 'Issue type is required.', ['status' => 400]);
 		}
 
-		$recipient_email = AAC_Member_Portal_Admin::get_contact_recipient_email();
+		$recipient_email = AAC_Member_Portal_Admin::get_contact_recipient_email($issue_type);
 		$subject = sprintf('AAC Member Portal: %s', $issue_type);
 		$body = sprintf(
 			"Name: %s\nEmail: %s\nIssue Type: %s\n\n%s",
