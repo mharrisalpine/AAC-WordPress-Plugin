@@ -4,15 +4,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
-  BadgeCheck,
   Receipt,
   Shield,
-  TrendingDown,
   TrendingUp,
   User,
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MembershipTierSelect } from '@/components/MembershipTierSelect';
 import UpcomingPayment from '@/components/UpcomingPayment';
 import { useAuth } from '@/hooks/useAuth';
 import { useMembershipActions } from '@/hooks/useMembershipActions';
@@ -20,11 +19,8 @@ import { getMemberTransactions } from '@/lib/memberApi';
 import { normalizeAccountInfo } from '@/lib/memberProfile';
 import { getAutoRenewalControl } from '@/lib/autoRenewalControl';
 import { bindBillingProfileRefresh } from '@/lib/billingProfileRefresh';
-import { getAppRuntimeConfig } from '@/lib/backendConfig';
 import {
-  MEMBERSHIP_PLAN_DETAILS,
   MEMBERSHIP_PLAN_ORDER,
-  MEMBERSHIP_PLAN_PRICES,
   formatDollars,
 } from '@/lib/membershipBenefits';
 import {
@@ -36,13 +32,6 @@ import {
 const MANAGE_TABS = [
   { id: 'account', label: 'Account', icon: User },
 ];
-
-const getMembershipPlanPrice = (tier) => {
-  const configuredAmount = Number(getAppRuntimeConfig().pmproLevelPricing?.[tier]?.displayAmount);
-  return Number.isFinite(configuredAmount) && configuredAmount >= 0
-    ? configuredAmount
-    : Number(MEMBERSHIP_PLAN_PRICES[tier] || 0);
-};
 
 const parseMembershipDate = (value) => {
   const normalized = String(value || '').trim();
@@ -205,6 +194,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   const [billingFormHeight, setBillingFormHeight] = React.useState(820);
   const [upgradeCheckout, setUpgradeCheckout] = React.useState(null);
   const [upgradeCheckoutHeight, setUpgradeCheckoutHeight] = React.useState(900);
+  const [selectedUpgradeTier, setSelectedUpgradeTier] = React.useState('');
   const billingFrameRef = React.useRef(null);
   const upgradeFrameRef = React.useRef(null);
   const [checkingRenewal, setCheckingRenewal] = React.useState(false);
@@ -296,7 +286,6 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
 
     return actions?.levels?.[tier]?.action_type === 'upgrade' && Boolean(actions?.levels?.[tier]?.checkout_url);
   });
-  const displayedUpgradePlanOrder = standaloneUpgrade ? visiblePlanOrder : selectablePlanOrder;
   const pendingDowngrade = actions?.pending_downgrade || null;
   const validThrough = getValidThroughDate(profileInfo);
   const autoRenewDisableUrl = getMembershipActionUrl('cancel');
@@ -367,7 +356,6 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
     if (!isActive || currentIndex === -1) {
       return {
         label: 'Choose Membership',
-        icon: TrendingUp,
         type: 'join',
       };
     }
@@ -377,7 +365,6 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
     if (pendingDowngrade?.target_tier === tier) {
       return {
         label: 'Downgrade Scheduled',
-        icon: BadgeCheck,
         disabled: true,
       };
     }
@@ -385,7 +372,6 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
     if (targetIndex === currentIndex) {
       return {
         label: 'Active Membership',
-        icon: BadgeCheck,
         disabled: true,
       };
     }
@@ -393,16 +379,35 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
     if (targetIndex < currentIndex) {
       return {
         label: 'Downgrade Unavailable',
-        icon: TrendingDown,
         disabled: true,
       };
     }
 
     return {
-      label: 'Upgrade Membership',
-      icon: TrendingUp,
+      label: `Upgrade to ${tier}`,
       type: 'upgrade',
     };
+  };
+
+  const getUpgradeTierAction = (tier) => {
+    if (standaloneUpgrade && tier === currentTier) {
+      return hasAutoRenewal
+        ? { label: 'Auto-Renewal Active', disabled: true }
+        : { label: 'Renew Current Level', disabled: false, type: 'renew' };
+    }
+
+    return getCardAction(tier);
+  };
+
+  const continueToSelectedMembership = () => {
+    if (!selectedUpgradeTier) return;
+    const action = getUpgradeTierAction(selectedUpgradeTier);
+    if (action.disabled) return;
+    if (action.type === 'upgrade' || action.type === 'renew') {
+      openUpgradeCheckout(selectedUpgradeTier, action.type);
+      return;
+    }
+    void openMembershipAction(action.type, { targetTier: selectedUpgradeTier });
   };
 
   const renderAccountSection = () => (
@@ -562,73 +567,21 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
         </p>
       ) : null}
 
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        {(standaloneUpgrade ? displayedUpgradePlanOrder : visiblePlanOrder).map((tier, index) => {
-          const details = MEMBERSHIP_PLAN_DETAILS[tier];
-          const planPrice = getMembershipPlanPrice(tier);
-          const action = standaloneUpgrade && tier === currentTier
-            ? (hasAutoRenewal
-              ? { label: 'Auto-Renewal Active', icon: BadgeCheck, type: 'renew', disabled: true }
-              : { label: 'Renew Current Level', icon: BadgeCheck, type: 'renew', disabled: false })
-            : getCardAction(tier);
-
-          const ActionIcon = action.icon;
-          const isCurrent = action.disabled;
-          const annualLabel = planPrice === 0 ? 'Portal preview membership' : 'Annual membership';
-
-          return (
-            <motion.div
-              key={tier}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: index * 0.06 }}
-              className="flex flex-col bg-white py-6"
-            >
-              <div className="mb-6 border-b-2 border-[#b71c1c] pb-4">
-                <p className="text-xs uppercase tracking-[0.25em] text-[#a07f21] mb-2">
-                  Membership Level
-                </p>
-                <h3 className="text-2xl font-bold text-black">{tier}</h3>
-                <div className="mt-3 text-3xl font-bold text-black">
-                  {planPrice === 0 ? 'Free' : formatDollars(planPrice)}
-                </div>
-                <p className="text-sm text-black/60">{annualLabel}</p>
-              </div>
-
-              <p className="text-black/75 mb-5">{details.summary}</p>
-
-              <div className="flex-1 space-y-3 text-sm text-black/80">
-                {details.bullets.map((bullet) => (
-                  <div key={bullet} className="border-t border-stone-200 py-3 text-black">
-                    {bullet}
-                  </div>
-                ))}
-              </div>
-
-              {isCurrent ? (
-                <div className="mt-6 flex items-center justify-center gap-2 border-t-2 border-[#b71c1c] pt-4 font-semibold text-black">
-                  <ActionIcon className="w-4 h-4" />
-                  {action.label}
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    if (action.type === 'upgrade' || action.type === 'renew') {
-                      openUpgradeCheckout(tier, action.type);
-                      return;
-                    }
-                    void openMembershipAction(action.type, { targetTier: tier });
-                  }}
-                  className="mt-6 w-full rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]"
-                >
-                  <ActionIcon className="w-4 h-4 mr-2" />
-                  {action.label}
-                </Button>
-              )}
-            </motion.div>
-          );
-        })}
+        <MembershipTierSelect
+          variant="full"
+          selectedId={selectedUpgradeTier}
+          getTierAction={(tier) => getUpgradeTierAction(tier.id)}
+          onSelect={setSelectedUpgradeTier}
+        />
+        <div className="mt-6 flex justify-end border-t-2 border-[#b71c1c] pt-5">
+          <Button
+            type="button"
+            onClick={continueToSelectedMembership}
+            disabled={!selectedUpgradeTier || getUpgradeTierAction(selectedUpgradeTier).disabled}
+            className="h-12 min-w-48 rounded-none bg-[#b71c1c] px-8 text-base font-bold uppercase tracking-[0.08em] text-white hover:bg-[#8f1515]"
+          >
+            Continue
+          </Button>
         </div>
           </>
         )}

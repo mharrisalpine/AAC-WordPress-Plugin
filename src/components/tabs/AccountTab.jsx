@@ -588,7 +588,7 @@ const AccountTab = ({ profile }) => {
                   <div>
                     <h4 className="text-base font-semibold text-black">Emergency Contact</h4>
                     <p className="text-sm text-black/60">
-                      This information comes from your PMPro Emergency Contact user fields and is saved with your member profile.
+                      This contact information may be used for emergency purposes related to AAC events and your Redpoint emergency coverage.
                     </p>
                   </div>
 

@@ -63,8 +63,9 @@ function TierBenefitsList({ benefits, dense, maxItems }) {
  * @param {string} props.selectedId
  * @param {(id: string) => void} props.onSelect
  * @param {'compact' | 'full'} [props.variant]
+ * @param {(tier: object) => {label?: string, disabled?: boolean}} [props.getTierAction]
  */
-export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact' }) {
+export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact', getTierAction }) {
   const pmproLevelPricing = getAppRuntimeConfig().pmproLevelPricing || {};
   const portalContent = getPortalUiSettings().content || {};
   const membershipLevelBenefits = portalContent.membershipLevelBenefits || {};
@@ -83,6 +84,15 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
       benefits: getTierBenefits(tier),
     }));
   const selectedTierIndex = visibleTiers.findIndex((tier) => tier.id === selectedId);
+  const resolveTierAction = (tier) => {
+    const selected = selectedId === tier.id;
+    const configuredAction = typeof getTierAction === 'function' ? getTierAction(tier) : null;
+
+    return {
+      label: configuredAction?.label || (selected ? 'Selected' : `Select ${tier.label}`),
+      disabled: Boolean(configuredAction?.disabled),
+    };
+  };
   const fallbackCatalog = visibleTiers.flatMap((tier) => tier.benefits || []);
   const configuredCatalog = Array.isArray(portalContent.membershipBenefitCatalog)
     ? portalContent.membershipBenefitCatalog
@@ -104,13 +114,18 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
           {visibleTiers.map((tier) => {
             const selected = selectedId === tier.id;
             const priceLabel = getPriceLabel(tier);
+            const action = resolveTierAction(tier);
             return (
               <button
                 key={tier.id}
                 type="button"
-                onClick={() => onSelect(tier.id)}
+                onClick={() => {
+                  if (!action.disabled) onSelect(tier.id);
+                }}
+                disabled={action.disabled}
                 role="radio"
                 aria-checked={selected}
+                aria-disabled={action.disabled}
                 className={cn(
                   'aac-membership-tier-card relative flex min-h-0 flex-col rounded-none border bg-white p-5 text-left shadow-sm transition',
                   selected
@@ -139,7 +154,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                 <p className="mt-2 pr-8 text-sm leading-5 text-stone-600">{tier.blurb}</p>
                 <TierBenefitsList benefits={tier.benefits} />
                 <span className={cn('mt-4 text-xs font-semibold uppercase tracking-wide', selected ? 'text-[#8f1515]' : 'text-stone-400')}>
-                  {selected ? 'Selected' : `Select ${tier.label}`}
+                  {action.label}
                 </span>
               </button>
             );
@@ -163,6 +178,7 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                 </th>
                 {visibleTiers.map((tier, tierIndex) => {
                   const selected = selectedId === tier.id;
+                  const action = resolveTierAction(tier);
                   const tierBadge = tier.id === 'Partner'
                     ? 'Most popular'
                     : (tier.id === 'Leader' ? 'Best value' : '');
@@ -178,9 +194,13 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                     >
                       <button
                         type="button"
-                        onClick={() => onSelect(tier.id)}
+                        onClick={() => {
+                          if (!action.disabled) onSelect(tier.id);
+                        }}
+                        disabled={action.disabled}
                         role="radio"
                         aria-checked={selected}
+                        aria-disabled={action.disabled}
                         className={cn(
                           'relative !m-0 flex min-h-[112px] !w-full flex-col !items-stretch !p-0 text-center transition focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[#8f1515]',
                           selected ? 'bg-[#ffc72c]' : 'bg-white hover:bg-stone-50',
@@ -204,7 +224,13 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                           )} aria-hidden>
                             <Check className="h-4 w-4" strokeWidth={3} />
                           </span>
-                          <span className="sr-only">{selected ? 'Selected' : `Select ${tier.label}`}</span>
+                          <span className="sr-only">{action.label}</span>
+                        </span>
+                        <span className={cn(
+                          'px-2 pb-2 text-[10px] font-black uppercase tracking-[0.08em]',
+                          action.disabled ? 'text-stone-600' : 'text-[#8f1515]',
+                        )}>
+                          {action.label}
                         </span>
                       </button>
                     </th>
@@ -224,12 +250,16 @@ export function MembershipTierSelect({ selectedId, onSelect, variant = 'compact'
                   {visibleTiers.map((tier, tierIndex) => {
                     const benefit = getBenefitCell(tier.benefits, row);
                     const selected = selectedId === tier.id;
+                    const action = resolveTierAction(tier);
                     return (
                       <td
                         key={tier.id}
-                        onClick={() => onSelect(tier.id)}
+                        onClick={() => {
+                          if (!action.disabled) onSelect(tier.id);
+                        }}
                         className={cn(
-                          'cursor-pointer border-r border-t border-stone-300 px-3 py-2.5 text-center last:border-r-0',
+                          'border-r border-t border-stone-300 px-3 py-2.5 text-center last:border-r-0',
+                          action.disabled ? 'cursor-not-allowed' : 'cursor-pointer',
                           selected && '!border-r-0 !border-t-0 bg-[#ffc72c]',
                           tierIndex + 1 === selectedTierIndex && '!border-r-0',
                         )}

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Signup Alignment Hotfix
  * Description: Keeps PMPro signup account fields aligned and autocomplete results visible.
- * Version: 1.0.10
+ * Version: 1.0.12
  * Author: AAC
  */
 
@@ -35,6 +35,8 @@ add_action('wp_head', static function () {
 			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
 			gap: 20px !important;
 			width: 100% !important;
+			max-width: 100% !important;
+			align-items: start !important;
 		}
 		#pmpro_user_fields #aac-signup-credentials > .pmpro_form_field {
 			display: flex !important; flex-direction: column !important;
@@ -46,8 +48,41 @@ add_action('wp_head', static function () {
 		}
 		#pmpro_user_fields #aac-signup-credentials input,
 		#pmpro_user_fields #aac-signup-credentials .aac-password-input-wrap {
-			box-sizing: border-box !important; height: 52px !important; margin-top: 0 !important;
+			box-sizing: border-box !important; width: 100% !important; max-width: none !important; height: 52px !important; margin-top: 0 !important;
 		}
+		#pmpro_user_fields #aac-signup-credentials .aac-password-input-wrap {
+			position: relative !important;
+			width: 100% !important;
+		}
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password #pmprosp-container {
+			display: block !important;
+			box-sizing: border-box !important;
+			width: 100% !important;
+			height: auto !important;
+			margin: 10px 0 0 !important;
+		}
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password .pmprosp-progressbar {
+			box-sizing: border-box !important;
+			width: 100% !important;
+		}
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password #pmprosp-password-strength {
+			display: block !important;
+			width: 100% !important;
+			margin: 8px 0 0 !important;
+			line-height: 1.3 !important;
+		}
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password #pmprosp-password-notice { display: none !important; }
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password .pmpro_form_label { display: flex !important; align-items: center !important; }
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password .pmprosp-tooltip__password {
+			display: inline-flex !important; align-items: center !important; justify-content: center !important;
+			box-sizing: border-box !important; width: 24px !important; height: 24px !important; margin-left: 9px !important;
+			border: 2px solid #111 !important; border-radius: 50% !important; color: #111 !important;
+			font-size: 16px !important; font-weight: 800 !important; line-height: 1 !important; vertical-align: middle !important;
+		}
+		#pmpro_user_fields #aac-signup-credentials .pmpro_form_field-password .pmprosp-tooltip__password:focus { outline: 3px solid #ffc72c !important; outline-offset: 2px !important; }
+		#pmpro_user_fields #aac-signup-credentials .aac-password-validation-message { margin: 8px 0 0 !important; color: #8f1515 !important; font-size: 0.95rem !important; font-weight: 700 !important; }
+		#pmpro_user_fields .aac-password-requirements { display: none !important; }
+		#pmpro_user_fields .pmpro_form-strong-password-container:empty { display: none !important; }
 		#aac-signup-communications { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; grid-column:1 / -1; margin-top:28px; width:100%; }
 		#aac-signup-communications[hidden] { display:none !important; }
 		#aac-signup-communications .aac-communication-row { display:flex !important; align-items:flex-start; gap:12px; padding:16px 0; cursor:pointer; font-size:16px; font-weight:400; line-height:1.6; text-transform:none; }
@@ -162,10 +197,10 @@ add_action('wp_footer', static function () {
 			const refreshSignupEmbed = function () {
 				document.querySelectorAll('iframe[src*="aac_signup=1"]').forEach(function (iframe) {
 					const url = new URL(iframe.src, window.location.href);
-					if (url.searchParams.get('aac_layout_fix') === '109') {
+					if (url.searchParams.get('aac_layout_fix') === '111') {
 						return;
 					}
-					url.searchParams.set('aac_layout_fix', '109');
+					url.searchParams.set('aac_layout_fix', '111');
 					iframe.src = url.toString();
 				});
 			};
@@ -181,6 +216,18 @@ add_action('wp_footer', static function () {
 					let row = document.getElementById('aac-signup-credentials');
 					if (!row) { row = document.createElement('div'); row.id = 'aac-signup-credentials'; fields.append(row); }
 					if (email.parentElement !== row || password.parentElement !== row) row.append(email, password);
+					password.querySelector('.aac-password-requirements')?.remove();
+					const passwordWrap = password.querySelector('.aac-password-input-wrap');
+					const strengthContainer = document.getElementById('pmprosp-container');
+					document.getElementById('pmprosp-password-notice')?.remove();
+					if (passwordWrap && strengthContainer && (strengthContainer.parentElement !== password || strengthContainer.previousElementSibling !== passwordWrap)) {
+						passwordWrap.insertAdjacentElement('afterend', strengthContainer);
+					}
+					password.querySelectorAll('.pmprosp-tooltip__password').forEach(function (tooltip) {
+						tooltip.tabIndex = 0;
+						tooltip.setAttribute('role', 'button');
+						tooltip.setAttribute('aria-label', 'Password requirements');
+					});
 				}
 				// Keep consent inside the actual Member Information step, not the
 				// legacy billing bridge or an unowned node visible on every step.

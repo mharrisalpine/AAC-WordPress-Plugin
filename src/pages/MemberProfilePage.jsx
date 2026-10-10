@@ -87,6 +87,7 @@ const formatCurrency = (amount) => {
 };
 
 const REDPOINT_EMERGENCY_PHONE_DISPLAY = '+01-628-251-1510';
+const REDPOINT_EMERGENCY_PHONE_LINK = '+16282511510';
 const REDPOINT_EVACUATION_CLAIM_URL = 'https://aac-profile.s3.amazonaws.com/website_assets/MedicalEvacuationClaim_AAC_Redpoint.pdf';
 const REDPOINT_MEDICAL_EXPENSE_CLAIM_URL = 'https://aac-profile.s3.amazonaws.com/website_assets/MedicalExpenseClaim_AAC_Redpoint.pdf';
 
@@ -493,7 +494,14 @@ const MemberProfilePage = () => {
                 </div>
                 <div>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">Emergency Contact</p>
-                  <p className="mt-2 text-xl font-bold text-stone-900">{REDPOINT_EMERGENCY_PHONE_DISPLAY}</p>
+                  <p className="mt-2 text-xl font-bold text-stone-900">
+                    <a
+                      href={`tel:${REDPOINT_EMERGENCY_PHONE_LINK}`}
+                      className="underline decoration-[#b71c1c] decoration-2 underline-offset-4 hover:text-[#b71c1c]"
+                    >
+                      {REDPOINT_EMERGENCY_PHONE_DISPLAY}
+                    </a>
+                  </p>
                   <p className="mt-2 text-sm leading-6 text-stone-600">In case of rescue, contact Redpoint Travel Protection.</p>
                 </div>
               </div>

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.758
+ * Version: 1.0.768
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.758');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.768');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -2357,6 +2357,14 @@ final class AAC_Member_Portal_Plugin {
 			return;
 		}
 		$checkout_level = $this->get_level_at_checkout();
+		$minimum_password_score = max(0, (int) apply_filters(
+			'pmprosp_minimum_password_score',
+			2,
+			[
+				'score' => 0,
+				'feedback' => ['suggestions' => []],
+			]
+		));
 		$summary_base_price = $checkout_level ? max(0, $this->get_level_checkout_display_base_total($checkout_level)) : 0;
 		if ($checkout_level) {
 			$prorated_summary_total = $this->get_prorated_upgrade_initial_total_for_checkout(
@@ -2390,6 +2398,41 @@ final class AAC_Member_Portal_Plugin {
 			.aac-promo-code-section .pmpro_form_fields-inline input[type="button"] { flex: 0 0 auto; }
 			.aac-existing-account-prompt { font-size: 1.25rem !important; line-height: 1.6 !important; }
 			.aac-existing-account-prompt a { font-size: inherit !important; font-weight: 800 !important; }
+			[data-aac-account-row] { align-items: start !important; }
+			[data-aac-account-row] > .pmpro_form_field { box-sizing: border-box; min-width: 0 !important; width: 100% !important; margin-top: 0 !important; }
+			[data-aac-account-row] input[type="email"],
+			[data-aac-account-row] input[type="password"],
+			[data-aac-account-row] input[type="text"] { box-sizing: border-box; width: 100% !important; max-width: none !important; }
+			.aac-password-input-wrap { position: relative; box-sizing: border-box; width: 100%; }
+			.aac-password-input-wrap .pmpro_form_input { padding-right: 132px !important; }
+			.aac-password-input-wrap .aac-password-toggle { position: absolute; top: 50%; right: 14px; margin: 0 !important; padding: 0 !important; transform: translateY(-50%); white-space: nowrap; }
+			.pmpro_form_field-password #pmprosp-container { box-sizing: border-box; width: 100%; margin: 10px 0 0 !important; }
+			.pmpro_form_field-password .pmpro_form-strong-password-indicator { display: block !important; width: 100% !important; margin: 0 !important; }
+			.pmpro_form_field-password .pmprosp-progressbar { box-sizing: border-box; width: 100% !important; }
+			.pmpro_form_field-password #pmprosp-password-strength { display: block !important; width: 100%; margin: 8px 0 0 !important; line-height: 1.3; }
+			.pmpro_form_field-password #pmprosp-password-notice { display: none !important; }
+			.pmpro_form_field-password .pmprosp-tooltip__password {
+				display: inline-flex !important;
+				align-items: center;
+				justify-content: center;
+				width: 24px;
+				height: 24px;
+				margin-left: 9px !important;
+				border: 2px solid #111 !important;
+				border-radius: 50%;
+				color: #111;
+				font-size: 16px !important;
+				font-weight: 800 !important;
+				line-height: 1 !important;
+				vertical-align: middle !important;
+			}
+			.pmpro_form_field-password .pmprosp-tooltip__password:focus { outline: 3px solid #ffc72c; outline-offset: 2px; }
+			.pmpro_form_field-password .pmprosp-tooltip__password:focus::before,
+			.pmpro_form_field-password .pmprosp-tooltip__password:focus::after { visibility: visible; opacity: 1; }
+			.pmpro_form_field-password .pmprosp-tooltip__password:focus::before { transform: translate(5px, 50%) scale(1); }
+			.pmpro_form_field-password .pmprosp-tooltip__password:focus::after { transform: translateY(50%) scaleX(1); }
+			.aac-password-validation-message { margin: 8px 0 0; color: #8f1515; font-size: 0.95rem; font-weight: 700; line-height: 1.4; }
+			.aac-password-validation-message[hidden] { display: none !important; }
 			.aac-promo-autorenew-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; gap: 24px; margin: 0 0 24px; }
 			.aac-promo-autorenew-row > .aac-promo-code-section,
 			.aac-promo-autorenew-row > #pmpro_autorenewal_checkbox { box-sizing: border-box; width: 100%; height: 100%; margin: 0 !important; }
@@ -2440,6 +2483,7 @@ final class AAC_Member_Portal_Plugin {
 		(function () {
 			const checkoutBasePrice = <?php echo wp_json_encode($summary_base_price); ?>;
 			window.__aacCheckoutBasePrice = checkoutBasePrice;
+			const minimumPasswordScore = <?php echo wp_json_encode($minimum_password_score); ?>;
 			const checkoutLevelName = <?php echo wp_json_encode($summary_level_name); ?>;
 			const checkoutLevelId = <?php echo wp_json_encode($checkout_level && isset($checkout_level->id) ? (int) $checkout_level->id : 0); ?>;
 			const promoValidationConfig = {
@@ -2559,6 +2603,32 @@ final class AAC_Member_Portal_Plugin {
 				billingFields.parentNode.insertBefore(fieldset, billingFields);
 				syncMirrors();
 				return fieldset;
+			}
+
+			function positionSignupPasswordUI() {
+				if (!new URLSearchParams(window.location.search).has('aac_signup')) return;
+				const passwordField = document.querySelector('.pmpro_form_field-password');
+				const passwordWrap = passwordField?.querySelector('.aac-password-input-wrap');
+				const strengthContainer = document.getElementById('pmprosp-container');
+				if (!passwordField || !passwordWrap) return;
+				passwordField.querySelector('.aac-password-requirements')?.remove();
+				document.getElementById('pmprosp-password-notice')?.remove();
+				if (strengthContainer && (strengthContainer.parentNode !== passwordField || strengthContainer.previousElementSibling !== passwordWrap)) {
+					passwordWrap.insertAdjacentElement('afterend', strengthContainer);
+				}
+				passwordField.querySelectorAll('.pmprosp-tooltip__password').forEach(function (tooltip) {
+					tooltip.tabIndex = 0;
+					tooltip.setAttribute('role', 'button');
+					tooltip.setAttribute('aria-label', 'Password requirements');
+				});
+				if (!passwordField.querySelector('.aac-password-validation-message')) {
+					const message = document.createElement('p');
+					message.className = 'aac-password-validation-message';
+					message.id = 'aac-password-validation-message';
+					message.setAttribute('role', 'alert');
+					message.hidden = true;
+					(strengthContainer || passwordWrap).insertAdjacentElement('afterend', message);
+				}
 			}
 
 			function bindSignupEmailAvailability(form) {
@@ -2689,6 +2759,54 @@ final class AAC_Member_Portal_Plugin {
 					|| document.getElementById('pmpro_account_loggedin');
 				enforceSignupAccountCopy(accountFields);
 				bindSignupEmailAvailability(form);
+				positionSignupPasswordUI();
+				const validateSignupPassword = (reportError = false) => {
+					const currentPasswordInput = form.querySelector('input[name="password"]');
+					if (!currentPasswordInput || !new URLSearchParams(window.location.search).has('aac_signup')) return true;
+					const password = String(currentPasswordInput.value || '');
+					const message = document.getElementById('aac-password-validation-message');
+					currentPasswordInput.setCustomValidity('');
+					if (!password) {
+						if (message) { message.textContent = ''; message.hidden = true; }
+						return true;
+					}
+					let score = null;
+					try {
+						const passwordStrength = window.wp?.passwordStrength;
+						if (typeof passwordStrength?.meter === 'function') {
+							const disallowed = typeof passwordStrength.userInputDisallowedList === 'function'
+								? passwordStrength.userInputDisallowedList()
+								: (typeof passwordStrength.userInputBlacklist === 'function' ? passwordStrength.userInputBlacklist() : []);
+							score = Number(passwordStrength.meter(password, disallowed, password));
+						}
+					} catch (error) {
+						score = null;
+					}
+					const valid = Number.isFinite(score) && score > minimumPasswordScore;
+					if (valid) {
+						if (message) { message.textContent = ''; message.hidden = true; }
+						return true;
+					}
+					const errorMessage = score === null
+						? 'Please wait while password strength is checked.'
+						: 'Your password is too weak. Please choose a stronger password.';
+					currentPasswordInput.setCustomValidity(errorMessage);
+					if (message && reportError) { message.textContent = errorMessage; message.hidden = false; }
+					if (reportError) {
+						currentPasswordInput.reportValidity();
+						currentPasswordInput.focus({ preventScroll: false });
+					}
+					return false;
+				};
+				const livePasswordInput = form.querySelector('input[name="password"]');
+				if (livePasswordInput && livePasswordInput.dataset.aacStrengthValidationBound !== 'true') {
+					livePasswordInput.addEventListener('input', function () {
+						const message = document.getElementById('aac-password-validation-message');
+						const wasVisible = Boolean(message && !message.hidden);
+						validateSignupPassword(wasVisible);
+					});
+					livePasswordInput.dataset.aacStrengthValidationBound = 'true';
+				}
 				const memberFields = document.getElementById('pmpro_billing_address_fields');
 				const publicationFields = document.getElementById('pmpro_form_fieldset-publication-preferences');
 				if (isLoggedInMemberCheckout) {
@@ -2775,7 +2893,9 @@ final class AAC_Member_Portal_Plugin {
 					}, window.location.origin);
 				};
 				const validateCurrent = () => {
-					const controls = Array.from(entries[simpleCheckoutWizardStep].panel.querySelectorAll('input, select, textarea'));
+					const currentPanel = entries[simpleCheckoutWizardStep].panel;
+					if (currentPanel.querySelector('input[name="password"]') && !validateSignupPassword(true)) return false;
+					const controls = Array.from(currentPanel.querySelectorAll('input, select, textarea'));
 					const invalid = controls.find((control) => !control.disabled && control.type !== 'hidden' && control.offsetParent !== null && !control.checkValidity());
 					if (!invalid) return true;
 					invalid.reportValidity();
@@ -2818,6 +2938,17 @@ final class AAC_Member_Portal_Plugin {
 				continueButton.addEventListener('click', () => {
 					if (validateCurrent()) goToStep(simpleCheckoutWizardStep + 1);
 				});
+				if (form.dataset.aacPasswordSubmitGuard !== 'true') {
+					form.addEventListener('submit', function (event) {
+						if (validateSignupPassword(false)) return;
+						event.preventDefault();
+						event.stopImmediatePropagation();
+						const accountStep = entries.findIndex((entry) => entry.panel.querySelector('input[name="password"]'));
+						if (accountStep >= 0) goToStep(accountStep);
+						window.setTimeout(function () { validateSignupPassword(true); }, 0);
+					}, true);
+					form.dataset.aacPasswordSubmitGuard = 'true';
+				}
 				form.dataset.aacSimpleCheckoutWizard = 'true';
 				if ('ResizeObserver' in window) {
 					const wizardResizeObserver = new ResizeObserver(syncHeight);
@@ -3059,6 +3190,24 @@ final class AAC_Member_Portal_Plugin {
 				const showMilitary = selectedDiscount === 'military' && !eligibleFamilySelected;
 
 				if (discountFields) {
+					const discountFieldsHeading = discountFields.querySelector('.pmpro_form_heading, legend, h2, h3');
+					if (discountFieldsHeading) {
+						discountFieldsHeading.textContent = 'Member Discount Information';
+					}
+					let studentEligibilityNote = discountFields.querySelector('.aac-student-discount-eligibility');
+					if (!studentEligibilityNote) {
+						studentEligibilityNote = document.createElement('p');
+						studentEligibilityNote.className = 'aac-student-discount-eligibility';
+						studentEligibilityNote.textContent = 'Student discount valid only while an active student.';
+						const headingContainer = discountFieldsHeading?.closest('.pmpro_card_content, .pmpro_form_fieldset') || discountFields;
+						if (discountFieldsHeading?.parentNode) {
+							discountFieldsHeading.insertAdjacentElement('afterend', studentEligibilityNote);
+						} else {
+							headingContainer.prepend(studentEligibilityNote);
+						}
+					}
+					studentEligibilityNote.hidden = !showStudent;
+					studentEligibilityNote.style.display = showStudent ? '' : 'none';
 					const service = document.querySelector('#pmpro_form_fieldset-discount-fields .pmpro_form_field:has(select[name*="service_component"], select[id*="service_component"])');
 					const graduation = document.querySelector('#pmpro_form_fieldset-discount-fields .pmpro_form_field:has(input[name*="graduation_date"], input[id*="graduation_date"])');
 					const university = document.querySelector('#pmpro_form_fieldset-discount-fields .pmpro_form_field:has(input[name*="university_or_school"], input[id*="university_or_school"])');
@@ -3370,6 +3519,7 @@ final class AAC_Member_Portal_Plugin {
 			document.addEventListener('DOMContentLoaded', organizeMemberDetails);
 			document.addEventListener('DOMContentLoaded', bindCheckoutTshirtAvailability);
 			document.addEventListener('DOMContentLoaded', syncOrderSummary);
+			document.addEventListener('DOMContentLoaded', positionSignupPasswordUI);
 			document.addEventListener('DOMContentLoaded', function () { window.setTimeout(enhanceSimpleCheckoutWizard, 100); });
 			window.addEventListener('load', syncDiscountDetailPanels);
 			window.addEventListener('load', captureMagazineSelections);
@@ -3378,17 +3528,20 @@ final class AAC_Member_Portal_Plugin {
 			window.addEventListener('load', organizeMemberDetails);
 			window.addEventListener('load', bindCheckoutTshirtAvailability);
 			window.addEventListener('load', syncOrderSummary);
+			window.addEventListener('load', positionSignupPasswordUI);
 			window.addEventListener('load', function () { window.setTimeout(enhanceSimpleCheckoutWizard, 100); });
 			window.setTimeout(syncDiscountDetailPanels, 500);
 			window.setTimeout(enhanceDonation, 500);
 			window.setTimeout(syncPublicationCardControls, 500);
 			window.setTimeout(organizeMemberDetails, 500);
 			window.setTimeout(syncOrderSummary, 500);
+			window.setTimeout(positionSignupPasswordUI, 500);
 			window.setTimeout(syncDiscountDetailPanels, 1500);
 			window.setTimeout(enhanceDonation, 1500);
 			window.setTimeout(syncPublicationCardControls, 1500);
 			window.setTimeout(organizeMemberDetails, 1500);
 			window.setTimeout(syncOrderSummary, 1500);
+			window.setTimeout(positionSignupPasswordUI, 1500);
 			window.setTimeout(enhanceSimpleCheckoutWizard, 1700);
 
 			document.addEventListener('change', function (event) {
