@@ -3,5 +3,7 @@ node_modules/
 dist/
 tmp/
 wordpress/aac-member-portal.zip
+wordpress/aac-salesforce-sync/
+wordpress/aac-salesforce-sync.zip
 Member Portal.zip
 *.log
