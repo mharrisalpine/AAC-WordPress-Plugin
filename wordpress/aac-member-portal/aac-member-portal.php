@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.797
+ * Version: 1.0.798
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.797');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.798');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -2444,6 +2444,14 @@ final class AAC_Member_Portal_Plugin {
 			}
 		}
 		$summary_level_name = $checkout_level && !empty($checkout_level->name) ? (string) $checkout_level->name : __('Membership', 'aac-member-portal');
+        $checkout_discount_quotes = [];
+        if ($checkout_level && !empty($checkout_level->id) && $this->supports_discount_tiers((int) $checkout_level->id)) {
+            foreach (['STUDENT', 'MILITARY'] as $code) {
+                $quote = $this->validate_pmpro_discount_code_for_level($code, (int) $checkout_level->id);
+                if (!is_wp_error($quote)) $checkout_discount_quotes[strtolower($code)] = $quote;
+            }
+        }
+
 		?>
 		<style id="aac-checkout-order-summary-styles">
             .aac-upgrade-autorenew { display:block !important; padding:24px; margin:24px 0; border:1px solid #dedbd5; background:#fff; }
@@ -2628,6 +2636,8 @@ final class AAC_Member_Portal_Plugin {
 				});
 			}
 
+			const checkoutDiscountQuotes = <?php echo wp_json_encode($checkout_discount_quotes); ?>;
+			const checkoutDiscountQuotesExpireAt = Date.now() + 5 * 60 * 1000;
 			let membershipPreviewRequest = 0;
 			async function validatePromoForSummary(codeOverride = '') {
 				captureMagazineSelections();
@@ -2635,6 +2645,13 @@ final class AAC_Member_Portal_Plugin {
 				const code = String(codeOverride || input?.value || '').trim();
 				const requestId = ++membershipPreviewRequest;
 				if (!code || !checkoutLevelId) return;
+                const quote = Date.now() < checkoutDiscountQuotesExpireAt ? checkoutDiscountQuotes[code.toLowerCase()] : null;
+                if (quote && Number(quote.level_id) === Number(checkoutLevelId)) {
+                    window.__aacValidatedMembershipDiscount = quote;
+                    syncOrderSummary();
+                    document.dispatchEvent(new CustomEvent('aac:pricing-updated'));
+                    return;
+                }
 				const body = new URLSearchParams({
 					action: 'aac_validate_pmpro_discount_code',
 					nonce: promoValidationConfig.nonce,

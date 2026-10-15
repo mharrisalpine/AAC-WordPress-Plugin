@@ -148,6 +148,26 @@
     if (pending) return;
     pending = true;
     form.setAttribute('aria-busy', 'true');
+    let progress = form.querySelector('[data-aac-security-progress]');
+    if (!progress) {
+      progress = document.createElement('div');
+      progress.dataset.aacSecurityProgress = 'true';
+      progress.className = 'pmpro_message';
+      progress.setAttribute('role', 'status');
+      progress.setAttribute('aria-live', 'polite');
+      form.prepend(progress);
+    }
+    progress.textContent = 'Checking checkout security… Please wait. Do not submit again.';
+    progress.hidden = false;
+    const submitButton = button || event.submitter || form.querySelector('#pmpro_btn-submit');
+    const originalLabel = submitButton?.tagName === 'INPUT' ? submitButton.value : submitButton?.textContent;
+    const setButtonLabel = label => {
+      if (!submitButton) return;
+      if (submitButton.tagName === 'INPUT') submitButton.value = label;
+      else submitButton.textContent = label;
+    };
+    setButtonLabel('Checking checkout security…');
+
     try {
       const response = await fetch(config.url, {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
@@ -166,6 +186,8 @@
       tokens.forEach(input => { input.value = result.data.nonce; });
       form.querySelectorAll('[name="aac_communications_nonce"]').forEach(input => { input.value = result.data.communicationsNonce; });
       form.querySelector('[data-aac-security-error]')?.remove();
+      progress.hidden = true;
+      setButtonLabel(originalLabel);
       readyUntil = Date.now() + 30000;
       replay = true;
       try {
@@ -178,6 +200,8 @@
         ? 'Checkout security took too long to respond. Your entries are still here and no payment was submitted. Please try again.'
         : 'We could not refresh checkout security. Your entries are still here and no payment was submitted. Please try again.');
     } finally {
+      progress.hidden = true;
+      if (Date.now() >= readyUntil) setButtonLabel(originalLabel);
       pending = false;
       form.removeAttribute('aria-busy');
     }
