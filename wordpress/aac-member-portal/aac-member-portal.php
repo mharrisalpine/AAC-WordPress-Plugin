@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.793
+ * Version: 1.0.794
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.793');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.794');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -2446,6 +2446,17 @@ final class AAC_Member_Portal_Plugin {
 		$summary_level_name = $checkout_level && !empty($checkout_level->name) ? (string) $checkout_level->name : __('Membership', 'aac-member-portal');
 		?>
 		<style id="aac-checkout-order-summary-styles">
+            .aac-upgrade-autorenew { display:block !important; padding:24px; margin:24px 0; border:1px solid #dedbd5; background:#fff; }
+            .aac-upgrade-autorenew .aac-checkout-autorenew { display:flex; align-items:center; justify-content:space-between; gap:24px; }
+            .aac-upgrade-autorenew .aac-checkout-autorenew__copy { display:grid; gap:6px; }
+            .aac-upgrade-autorenew .aac-managed-toggle { position:relative; display:inline-flex; align-items:center; gap:10px; cursor:pointer; }
+            .aac-upgrade-autorenew .aac-managed-toggle input { position:absolute; opacity:0; width:52px; height:28px; margin:0; }
+            .aac-upgrade-autorenew .aac-managed-toggle__track { display:block; position:relative; width:52px; height:28px; border-radius:20px; background:#737373; }
+            .aac-upgrade-autorenew .aac-managed-toggle__track::after { content:''; position:absolute; top:4px; left:4px; width:20px; height:20px; border-radius:50%; background:#fff; transition:transform .15s; }
+            .aac-upgrade-autorenew input:checked + .aac-managed-toggle__track { background:#b52025; }
+            .aac-upgrade-autorenew input:checked + .aac-managed-toggle__track::after { transform:translateX(24px); }
+            .aac-upgrade-autorenew input:focus-visible + .aac-managed-toggle__track { outline:2px solid #111; outline-offset:3px; }
+
 			#pmpro_pricing_fields .aac-checkout-summary-rows { margin-top: 18px; border-top: 1px solid #dedbd5; }
 			#pmpro_pricing_fields .aac-checkout-summary-row { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding: 13px 0; border-bottom: 1px solid #dedbd5; }
 			#pmpro_pricing_fields .aac-checkout-summary-row span { color: #282522; }
@@ -3135,7 +3146,7 @@ final class AAC_Member_Portal_Plugin {
 								<span>Keep this membership active with recurring annual renewal.</span>
 							</div>
 							<label class="aac-managed-toggle">
-								<input type="checkbox" data-aac-checkout-autorenew-toggle checked />
+								<input type="checkbox" aria-label="Auto-Renew" data-aac-checkout-autorenew-toggle checked />
 								<span class="aac-managed-toggle__track" aria-hidden="true"></span>
 								<span class="aac-managed-toggle__state">On</span>
 							</label>
@@ -3194,7 +3205,16 @@ final class AAC_Member_Portal_Plugin {
 
 				const alignedPromoSection = document.querySelector('.aac-promo-code-section');
 				const autoRenewSection = document.getElementById('pmpro_autorenewal_checkbox');
-				if (alignedPromoSection && autoRenewSection && summary.parentNode) {
+				const upgradeCheckout = new URLSearchParams(window.location.search).get('aac_membership_action') === 'upgrade';
+				if (upgradeCheckout && autoRenewSection) {
+					const payment = document.getElementById('pmpro_payment_information_fields');
+					autoRenewSection.classList.add('aac-upgrade-autorenew');
+					autoRenewSection.hidden = false;
+					if (payment?.parentNode && payment.previousElementSibling !== autoRenewSection) payment.parentNode.insertBefore(autoRenewSection, payment);
+					const heading = autoRenewSection.querySelector('.aac-checkout-autorenew__copy strong');
+					if (heading) heading.textContent = 'Auto-Renew';
+					autoRenewSection.querySelector('[data-aac-checkout-autorenew-toggle]')?.setAttribute('aria-label', 'Auto-Renew');
+				} else if (alignedPromoSection && autoRenewSection && summary.parentNode) {
 					let promoAutorenewRow = document.querySelector('.aac-promo-autorenew-row');
 					if (!promoAutorenewRow) {
 						promoAutorenewRow = document.createElement('div');
