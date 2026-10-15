@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.794
+ * Version: 1.0.795
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.794');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.795');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -3169,9 +3169,18 @@ final class AAC_Member_Portal_Plugin {
 			function syncOrderSummary() {
 				restoreMagazineSelections();
 				const summary = document.getElementById('pmpro_pricing_fields');
+				const renewal = ensureCheckoutAutoRenewSection();
+                if (new URLSearchParams(window.location.search).get('aac_membership_action') === 'upgrade' && renewal) {
+                    const payment = document.getElementById('pmpro_payment_information_fields');
+                    renewal.classList.add('aac-upgrade-autorenew');
+                    renewal.hidden = false;
+                    if (payment?.parentNode && payment.previousElementSibling !== renewal) payment.parentNode.insertBefore(renewal, payment);
+                    const heading = renewal.querySelector('.aac-checkout-autorenew__copy strong');
+                    if (heading) heading.textContent = 'Auto-Renew';
+                    renewal.querySelector('[data-aac-checkout-autorenew-toggle]')?.setAttribute('aria-label', 'Auto-Renew');
+                }
 				const content = summary?.querySelector('.pmpro_card_content');
 				if (!summary || !content) return;
-				ensureCheckoutAutoRenewSection();
 				const summaryHeading = summary.querySelector('.pmpro_card_title');
 				if (summaryHeading) summaryHeading.textContent = 'Order summary';
 				const promoActions = summary.querySelector('.pmpro_card_actions')
