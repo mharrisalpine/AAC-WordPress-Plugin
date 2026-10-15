@@ -575,7 +575,7 @@ const MemberJoinPage = () => {
                     <h2 className="text-3xl font-extrabold leading-tight tracking-tight text-[#16130f] sm:text-4xl">Select Your Plan</h2>
                     <p className="mt-3 text-base leading-7 text-[#6e675d] sm:text-lg">
                       Choose the annual membership that fits your climbing life.
-                      <span className="block">Discounts and Family Plans can be added at checkout.</span>
+                      <span className="block">Family, Military, and Student plans can be added at checkout to the Partner level only.</span>
                     </p>
                   </div>
                 </div>
