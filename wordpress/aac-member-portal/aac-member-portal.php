@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.802
+ * Version: 1.0.803
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.802');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.803');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -10589,6 +10589,10 @@ CSS;
 		display: none !important;
 	}
 
+	/* The theme gives the sticky utility bar a white background. Match its
+	 * foreground to that surface, including when no mega menu is open. */
+	html.aac-member-profile-page #site-header.headroom--not-top .utility-nav .utility-nav-item,
+	body.aac-member-profile-page #site-header.headroom--not-top .utility-nav .utility-nav-item,
 	html.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-nav-item,
 	html.aac-member-profile-page #site-header:has(.mega-menu:focus-within) .utility-nav .utility-nav-item,
 	body.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-nav-item,
@@ -10596,6 +10600,8 @@ CSS;
 		color: #000000 !important;
 	}
 
+	html.aac-member-profile-page #site-header.headroom--not-top .utility-nav .utility-icon--light,
+	body.aac-member-profile-page #site-header.headroom--not-top .utility-nav .utility-icon--light,
 	html.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-icon--light,
 	html.aac-member-profile-page #site-header:has(.mega-menu:focus-within) .utility-nav .utility-icon--light,
 	body.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-icon--light,
@@ -10604,6 +10610,8 @@ CSS;
 		opacity: 0 !important;
 	}
 
+	html.aac-member-profile-page #site-header.headroom--not-top .utility-nav .utility-icon--dark,
+	body.aac-member-profile-page #site-header.headroom--not-top .utility-nav .utility-icon--dark,
 	html.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-icon--dark,
 	html.aac-member-profile-page #site-header:has(.mega-menu:focus-within) .utility-nav .utility-icon--dark,
 	body.aac-member-profile-page #site-header:has(.mega-menu-item:hover) .utility-nav .utility-icon--dark,
