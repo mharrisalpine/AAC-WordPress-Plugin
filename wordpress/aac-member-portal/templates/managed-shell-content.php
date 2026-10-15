@@ -4077,6 +4077,7 @@ const formatUsd = (value) => new Intl.NumberFormat('en-US', {
 	maximumFractionDigits: 2,
 }).format(Number.isFinite(value) ? value : 0);
 const checkoutProfileDefaults = <?php echo wp_json_encode($checkout_profile_defaults); ?>;
+<?php require __DIR__ . '/checkout-profile-prefill.php'; ?>
 const configuredTshirtSizeOptions = <?php echo wp_json_encode($checkout_tshirt_size_options); ?>;
 const fallbackTshirtSizeOptions = [
 	{ value: 'No T-shirt', label: 'No T-shirt' },
@@ -4449,7 +4450,6 @@ const defaultPublicationCardImages = {
 			<div class="aac-magazine-addons__promo" data-aac-discount-code>
 				<div class="aac-magazine-addons__promo-copy">
 					<p class="aac-magazine-addons__promo-label">Promo or Discount Code</p>
-					<p>Apply a PMPro-generated discount code before payment.</p>
 				</div>
 				<div class="aac-magazine-addons__promo-form" data-aac-discount-code-form>
 					<input
@@ -8596,6 +8596,7 @@ const defaultPublicationCardImages = {
 				bindSignupAccountCopy();
 				preparePmproUsernameField();
 				bindEmailAvailabilityCheck();
+				fillUpgradeProfileDefaults();
 				enhancePmproProfileInformation();
 				enhanceCheckoutAutoRenewFieldset();
 				enhancePmproDonationFieldset();
@@ -8620,6 +8621,7 @@ const defaultPublicationCardImages = {
 			bindSignupAccountCopy();
 			preparePmproUsernameField();
 			bindEmailAvailabilityCheck();
+			fillUpgradeProfileDefaults();
 			enhancePmproProfileInformation();
 			enhanceCheckoutAutoRenewFieldset();
 			enhancePmproDonationFieldset();
