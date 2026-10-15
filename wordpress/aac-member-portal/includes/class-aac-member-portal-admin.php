@@ -1179,6 +1179,7 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publication_description_acj]', 'American Climbing Journal subtext / description', $settings['content']['publication_description_acj']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_title_guidebook]', 'Guidebook to Membership name', $settings['content']['publication_title_guidebook']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publication_description_guidebook]', 'Guidebook to Membership subtext / description', $settings['content']['publication_description_guidebook']); ?>
+			<tr><td colspan="2"><p class="description">These URLs control the Download PDF buttons in Benefits &gt; Books &amp; Media. Leave a URL blank to disable that publication’s download button.</p></td></tr>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_aaj]', 'AAJ View URL', $settings['content']['publication_view_url_aaj'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_anac]', 'ANAC View URL', $settings['content']['publication_view_url_anac'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_acj]', 'American Climbing Journal View URL', $settings['content']['publication_view_url_acj'], 'url'); ?>

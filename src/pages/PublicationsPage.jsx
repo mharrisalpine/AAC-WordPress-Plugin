@@ -143,12 +143,18 @@ const PublicationsPage = () => {
                     </p>
                     <p className="mt-3 text-sm leading-6 text-stone-600 line-clamp-4">{item.description}</p>
                     <div className="mt-auto space-y-3 pt-4">
-                      <Button asChild className="min-h-[2.75rem] w-full rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]">
-                        <a href={item.href} target="_blank" rel="noreferrer">
-                          Download PDF
-                          <Download className="ml-2 h-4 w-4" />
-                        </a>
-                      </Button>
+                      {item.href ? (
+                        <Button asChild className="min-h-[2.75rem] w-full rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]">
+                          <a href={item.href} target="_blank" rel="noreferrer">
+                            Download PDF
+                            <Download className="ml-2 h-4 w-4" />
+                          </a>
+                        </Button>
+                      ) : (
+                        <Button disabled className="min-h-[2.75rem] w-full rounded-none">
+                          Download unavailable
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </article>

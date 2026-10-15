@@ -48,7 +48,7 @@ export function getPublicationLibraryItems() {
     ...item,
     title: portalSettings.content?.[`publication_title_${item.id}`]?.trim() || item.title,
     description: portalSettings.content?.[`publication_description_${item.id}`] ?? item.description,
-    href: publicationViewUrls[item.id] || item.href,
+    href: String(publicationViewUrls[item.id] ?? '').trim(),
     imageUrl: publicationTileImages[item.id] || item.imageUrl || '',
   }));
 }
