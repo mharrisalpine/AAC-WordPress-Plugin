@@ -4585,7 +4585,8 @@ const defaultPublicationCardImages = {
 		const currentLevelSupportsDiscountTiers = () => {
 			const levelName = String(getCurrentCheckoutLevelName() || '').trim().toLowerCase();
 			if (!levelName || levelName === 'membership') {
-				return false;
+				// The server only renders these choices for eligible checkout levels.
+				return Boolean(document.querySelector('#pmpro_form_fieldset-membership-discounts input[name="aac_membership_discount"]')) && isCheckoutCountryUS();
 			}
 
 			return levelName === 'partner' && isCheckoutCountryUS();
@@ -6049,7 +6050,7 @@ const defaultPublicationCardImages = {
 			}
 		}
 
-		const roots = [fieldset].filter(Boolean);
+		const roots = [fieldset, document.querySelector('[data-aac-checkout-discount-details]')].filter(Boolean);
 		for (const root of roots) {
 			const match = Array.from(root.querySelectorAll('.pmpro_form_field')).find((field) => {
 			const labelText = (field.querySelector('label')?.textContent || '').trim();

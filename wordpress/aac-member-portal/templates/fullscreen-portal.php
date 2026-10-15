@@ -5663,7 +5663,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		const currentLevelSupportsDiscountTiers = () => {
 			const levelName = String(getCurrentCheckoutLevelName() || '').trim().toLowerCase();
 			if (!levelName || levelName === 'membership') {
-				return false;
+				// The server only renders these choices for eligible checkout levels.
+				return Boolean(document.querySelector('#pmpro_form_fieldset-membership-discounts input[name="aac_membership_discount"]')) && isCheckoutCountryUS();
 			}
 
 			return levelName === 'partner' && isCheckoutCountryUS();
