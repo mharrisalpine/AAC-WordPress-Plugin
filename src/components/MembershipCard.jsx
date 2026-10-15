@@ -161,15 +161,6 @@ const MembershipCard = ({ profile }) => {
     context.fillRect(0, 0, 1080, 1920);
     context.fillStyle = '#b71c1c';
     context.fillRect(0, 0, 24, 1920);
-    context.strokeStyle = 'rgba(248,194,53,.16)';
-    context.lineWidth = 3;
-    for (let y = 120; y < 1850; y += 105) {
-      context.beginPath();
-      context.moveTo(25, y);
-      context.bezierCurveTo(270, y - 70, 560, y + 70, 1080, y - 20);
-      context.stroke();
-    }
-
     drawCardText(context, 'AMERICAN ALPINE CLUB', 84, 120, { font: '800 42px Arial', color: '#ffffff' });
     drawCardText(context, 'DIGITAL MEMBERSHIP CARD', 84, 174, { font: '600 20px Arial', color: '#f8c235' });
     drawCardText(context, displayedStatus.toUpperCase(), 996, 120, { font: '700 24px Arial', color: isMemberActive ? '#86efac' : '#ff6b63', align: 'right' });
@@ -354,7 +345,7 @@ const MembershipCard = ({ profile }) => {
             onClick={handleDownloadConfirmationLetter}
             className="flex min-h-[2.85rem] flex-1 items-center justify-center gap-2 rounded-none bg-[#b71c1c] text-white hover:bg-[#8f1515]"
           >
-            <FileText size={16} /> View Confirmation Letter
+            <FileText size={16} /> Proof of Membership
           </Button>
         </div>
       </div>

@@ -125,10 +125,7 @@ const buildEmbeddedCheckoutUrl = (tierId, wizardStep = 'account') => {
   checkoutUrl.searchParams.set('aac_embed', '1');
   checkoutUrl.searchParams.set('aac_signup', '1');
   checkoutUrl.searchParams.set('aac_wizard_step', wizardStep);
-  if (normalizedTier === 'Supporter') {
-    checkoutUrl.searchParams.set('aac_skip_publications', '1');
-  }
-  checkoutUrl.searchParams.set('aac_rev', 'utility-nav-contact-routing-770');
+  checkoutUrl.searchParams.set('aac_rev', 'supporter-digital-777');
 
   return checkoutUrl.toString();
 };

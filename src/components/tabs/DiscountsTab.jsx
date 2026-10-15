@@ -16,6 +16,7 @@ const DISCOUNT_CATEGORIES = [
   { id: 'climbing-guides', label: 'Climbing Guides' },
   { id: 'climbing-gyms', label: 'Climbing Gym Discounts' },
   { id: 'lodging', label: 'Lodging' },
+  { id: 'magazines', label: 'Magazines' },
 ];
 const DISCOUNT_CATEGORY_IDS = DISCOUNT_CATEGORIES.map((category) => category.id);
 const DISCOUNT_BRAND_CATEGORY = 'discount-brands';
@@ -151,21 +152,12 @@ const BENEFIT_GALLERY_ITEMS = [
   },
   {
     id: 'member-store',
-    title: 'Member Store',
+    title: 'AAC Store',
     imageUrl: 'https://images.unsplash.com/photo-1501555088652-021faa106b9b?auto=format&fit=crop&w=1200&q=82',
     url: 'https://americanalpineclub.myshopify.com/',
-    actionLabel: 'Open Member Store',
+    actionLabel: 'Open AAC Store',
     description:
       'Shop AAC apparel, books, gifts, and member merchandise from the American Alpine Club store.',
-  },
-  {
-    id: 'library',
-    title: 'Library',
-    imageUrl: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=1200&q=82',
-    url: 'https://americanalpine.wpenginepowered.com/library/',
-    actionLabel: 'Open Library',
-    description:
-      'For climbing bibliophiles. The Club has one of the most extensive climbing libraries in the world. The library is housed in Golden, CO, but we’ll ship you whatever you want to read, for free!',
   },
   {
     id: 'lodging',
@@ -174,7 +166,7 @@ const BENEFIT_GALLERY_ITEMS = [
     url: 'https://americanalpine.wpenginepowered.com/lodging/',
     actionLabel: 'Open Lodging',
     description:
-      'Leader level members receive deep discounts at AAC lodging facilities across the country, as well as huts and affiliates throughout the globe.',
+      'Members receive deep discounts at AAC lodging facilities across the country, as well as huts and affiliates throughout the globe.',
   },
   {
     id: 'grants',
@@ -198,13 +190,15 @@ const normalizeBenefitGalleryItems = (items = []) => {
     const rawDescription = String(raw.description || '').trim();
     return {
       id: fallback.id,
-      title: isBooksMedia && (!rawTitle || rawTitle === 'Publications') ? fallback.title : String(raw.title || fallback.title || '').trim(),
+      title: fallback.id === 'member-store' ? 'AAC Store' : isBooksMedia && (!rawTitle || rawTitle === 'Publications') ? fallback.title : String(raw.title || fallback.title || '').trim(),
       imageUrl: String(raw.imageUrl || raw.image_url || fallback.imageUrl || '').trim(),
       url: isBooksMedia && (!rawUrl || rawUrl.includes('/publications/')) ? fallback.url : String(raw.url || fallback.url || '').trim(),
-      actionLabel: isBooksMedia && String(raw.actionLabel || raw.action_label || '').trim() === 'Open Publications'
+      actionLabel: fallback.id === 'member-store' ? 'Open AAC Store' : isBooksMedia && String(raw.actionLabel || raw.action_label || '').trim() === 'Open Publications'
         ? fallback.actionLabel
         : String(raw.actionLabel || raw.action_label || fallback.actionLabel || '').trim(),
-      description: isRescue && rawDescription.includes('As a Leader level member')
+      description: fallback.id === 'lodging'
+        ? String(rawDescription || fallback.description).replace(/\b(?:supporter|partner|leader|advocate)(?:[- ]level)?\s+members/gi, 'Members')
+        : isRescue && rawDescription.includes('As a Leader level member')
         ? fallback.description
         : isBooksMedia && rawDescription.includes('digital copies of Accidents')
         ? fallback.description
@@ -615,6 +609,54 @@ const ExpandableDirectorySection = ({ category, cards, membershipTier, handleVis
   );
 };
 
+const MAGAZINES = [
+  { id: 'alpinist', title: 'Alpinist', description: 'In-depth climbing stories, mountain history, and striking photography celebrating the art of ascent.' },
+  { id: 'backcountry', title: 'Backcountry', description: 'Skiing and snowboarding beyond the lifts, with adventure stories, gear coverage, and mountain perspectives.' },
+  { id: 'summit', title: 'Summit', description: 'Long-form climbing stories and photography that explore the people, places, and culture of the mountains.' },
+  { id: 'climbing_zine', title: 'Climbing Zine', description: 'Independent climbing stories celebrating adventure, community, and life on and off the rock.' },
+  { id: 'gripped', title: 'Gripped', description: 'Climbing stories, destinations, athlete profiles, and gear coverage from Canada and around the world.' },
+];
+
+const MagazineGallery = ({ images, cards = {} }) => (
+  <section aria-label="Magazine discounts" className="space-y-6 bg-white">
+    <SectionHero
+      imageUrl={GUIDE_HEADER_IMAGE_URL}
+      kicker="Member Magazine Discounts"
+      title="Climbing stories and mountain inspiration"
+      description="Explore climbing and mountain magazines from our publishing partners, with discounted access for AAC members."
+    />
+    <p className="border-l-4 border-[#b71c1c] bg-stone-50 px-5 py-4 text-base leading-7 text-black">
+      Use password <strong className="font-bold text-[#8f1515]">MEMBERMAGAZINE</strong> to access the discounted store.
+    </p>
+    <div className="flex flex-wrap justify-center gap-3">
+      {MAGAZINES.map(({ id, title, description: defaultDescription }) => {
+        const { description: savedDescription = '', url = '' } = cards[id] || {};
+        const description = savedDescription.trim() || defaultDescription;
+        const href = /^https?:\/\//i.test(url) ? url : '';
+        const Card = href ? 'a' : 'article';
+        return (
+          <div key={id} className="flex min-w-0 basis-[calc((100%-0.75rem)/2)] flex-col md:basis-[calc((100%-1.5rem)/3)] lg:basis-[calc((100%-2.25rem)/4)] xl:basis-[calc((100%-3.75rem)/6)]">
+            <h3 className="mb-3 text-center text-base font-bold text-black">{title}</h3>
+          <Card
+            {...(href ? { href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `${title} (opens in a new tab)` } : {})}
+            className={`flex min-w-0 flex-1 flex-col border border-stone-300 bg-white ${href ? 'transition-colors hover:border-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black' : ''}`}
+          >
+            <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-3">
+              {images[id] ? (
+                <img src={images[id]} alt={`${title} magazine`} className="h-full w-full object-contain" loading="lazy" />
+              ) : (
+                <span className="text-base font-bold text-stone-600">{title}</span>
+              )}
+            </div>
+            {description && <p className="whitespace-pre-line break-words p-3 text-sm leading-relaxed text-stone-700">{description}</p>}
+          </Card>
+          </div>
+        );
+      })}
+    </div>
+  </section>
+);
+
 const BenefitsGallery = ({ items, onOpenDiscounts, onOpenLodging, onOpenBooksMedia, onOpenInternal, onOpenExternal }) => (
   <div className="space-y-6 bg-white">
     <div className="border-b-[3px] border-[#b71c1c] pb-5">
@@ -623,11 +665,11 @@ const BenefitsGallery = ({ items, onOpenDiscounts, onOpenLodging, onOpenBooksMed
       </p>
       <h2 className="text-3xl font-bold text-black sm:text-4xl">AAC Benefits</h2>
       <p className="mt-3 max-w-3xl text-sm leading-7 text-black/68 sm:text-base">
-        Explore membership benefits across discounts, rescue support, publications, library access, lodging, and grants.
+        Explore membership benefits across discounts, rescue support, publications, lodging, and grants.
       </p>
     </div>
 
-    <div className="flex flex-wrap justify-center gap-5 bg-white">
+    <div className="grid grid-cols-1 items-stretch gap-5 bg-white md:grid-cols-2 xl:grid-cols-3">
       {items.map((item, index) => {
         const clickable = item.id === 'discounts' || item.id === 'lodging' || Boolean(item.url);
         const CardTag = clickable ? 'button' : 'article';
@@ -662,7 +704,7 @@ const BenefitsGallery = ({ items, onOpenDiscounts, onOpenLodging, onOpenBooksMed
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: index * 0.05 }}
-            className="flex w-full md:w-[calc(50%-0.625rem)] xl:w-[calc(25%-0.9375rem)]"
+            className="flex min-w-0"
           >
             <CardTag
               type={clickable ? 'button' : undefined}
@@ -798,7 +840,7 @@ const DiscountsTab = ({ profile }) => {
         </div>
 
         {!isLocked ? (
-          <div className="mb-6 grid w-full grid-cols-1 gap-3 border-b border-stone-200 bg-white pb-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-6 grid w-full grid-cols-1 gap-3 border-b border-stone-200 bg-white pb-4 sm:grid-cols-2 xl:grid-cols-6">
             {DISCOUNT_CATEGORIES.map((category) => {
               const active = category.id === activeCategory;
               return (
@@ -833,6 +875,8 @@ const DiscountsTab = ({ profile }) => {
               </p>
             )}
           </div>
+        ) : activeCategory === 'magazines' ? (
+          <MagazineGallery images={portalDesign.publicationTileImages || {}} cards={portalDesign.magazineCards || {}} />
         ) : activeCategory === 'expertvoice' ? (
           <ExpertVoiceSection handleVisitOffer={handleVisitOffer} />
         ) : activeCategory === 'lodging' ? (

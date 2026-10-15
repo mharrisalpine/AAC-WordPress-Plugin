@@ -20,12 +20,36 @@ class AAC_Member_Portal_Admin {
 		add_filter('parent_file', [$this, 'set_npc_sf_sync_parent_menu']);
 		add_filter('submenu_file', [$this, 'set_npc_sf_sync_submenu']);
 		add_action('admin_init', [$this, 'register_settings']);
+		add_action('update_option_' . self::OPTION_KEY, [$this, 'queue_settings_cache_refresh'], 10, 0);
+		add_action('add_option_' . self::OPTION_KEY, [$this, 'queue_settings_cache_refresh'], 10, 0);
 		add_action('admin_post_aac_member_portal_backfill_pmpro_fields', [$this, 'handle_backfill_pmpro_fields']);
 		add_action('admin_post_aac_member_portal_link_family_invite', [$this, 'handle_link_family_invite']);
 		add_action('admin_post_aac_member_portal_add_family_member', [$this, 'handle_add_family_member']);
 		add_action('admin_post_aac_member_portal_export_error_log', [$this, 'handle_export_error_log']);
 		add_action('admin_post_aac_member_portal_clear_error_log', [$this, 'handle_clear_error_log']);
 		add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+	}
+
+	private $settings_cache_refresh_queued = false;
+
+	public function queue_settings_cache_refresh() {
+		if ($this->settings_cache_refresh_queued || !is_callable(['WpeCommon', 'purge_varnish_cache'])) {
+			return;
+		}
+		$this->settings_cache_refresh_queued = true;
+		// Wait until all option writes finish so rebuilt pages use the saved settings.
+		add_action('shutdown', [$this, 'refresh_settings_page_cache'], 20);
+	}
+
+	public function refresh_settings_page_cache() {
+		if (!$this->settings_cache_refresh_queued) {
+			return;
+		}
+		$this->settings_cache_refresh_queued = false;
+		if (is_callable(['WpeCommon', 'purge_varnish_cache'])) {
+			// Portal settings also supply global navigation, styling, and public page copy.
+			WpeCommon::purge_varnish_cache();
+		}
 	}
 
 	public static function get_defaults() {
@@ -371,7 +395,7 @@ class AAC_Member_Portal_Admin {
 			<?php else : ?>
 				<form method="post" action="options.php" novalidate>
 					<?php settings_fields('aac_member_portal_settings_group'); ?>
-					<div style="display:grid;gap:24px;max-width:1100px;">
+					<div style="display:grid;gap:24px;min-width:0;width:100%;">
 						<?php
 						switch ($tab) {
 							case 'home':
@@ -653,7 +677,7 @@ class AAC_Member_Portal_Admin {
 		<h3 style="margin:24px 0 12px;">Custom Member Profile Blocks</h3>
 		<p class="description" style="margin-bottom:12px;">Add, remove, and edit custom cards and the entries inside them. These blocks appear on the member profile beneath the built-in AAC profile cards.</p>
 		<div class="aac-discount-admin">
-			<div id="aac-member-profile-blocks" class="aac-discount-admin__list">
+			<div id="aac-member-profile-blocks" class="aac-discount-admin__list" data-active-category="discount-brands">
 				<?php foreach ($member_profile_blocks as $index => $block) : ?>
 					<?php $this->render_member_profile_block_editor($index, $block); ?>
 				<?php endforeach; ?>
@@ -956,6 +980,13 @@ class AAC_Member_Portal_Admin {
 						<td>
 							<input type="hidden" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefit_catalog][' . $row_index . '][key]'); ?>" value="<?php echo esc_attr($benefit_key); ?>" />
 							<input type="text" class="large-text" name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefit_catalog][' . $row_index . '][label]'); ?>" value="<?php echo esc_attr($benefit_label); ?>" required />
+							<label style="display:block;margin-top:8px;">Benefit value
+								<select name="<?php echo esc_attr(self::OPTION_KEY . '[content][signup_benefit_catalog][' . $row_index . '][amount_source]'); ?>" style="width:100%;">
+									<?php foreach (AAC_Member_Portal_Settings_Schema::get_signup_benefit_amount_sources() as $source => $source_label) : ?>
+										<option value="<?php echo esc_attr($source); ?>" <?php selected($benefit_row['amount_source'], $source); ?>><?php echo esc_html($source_label); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</label>
 						</td>
 						<?php foreach ($levels as $level_id => $level_label) : ?>
 							<td style="text-align:center;">
@@ -992,7 +1023,7 @@ class AAC_Member_Portal_Admin {
 				const reindexRows = () => {
 					const rows = Array.from(list.querySelectorAll('[data-aac-signup-benefit-row]'));
 					rows.forEach((row, index) => {
-						row.querySelectorAll('input[name*="[signup_benefit_catalog]"]').forEach((input) => {
+						row.querySelectorAll('[name*="[signup_benefit_catalog]"]').forEach((input) => {
 							input.name = input.name.replace(/\[signup_benefit_catalog\]\[[^\]]+\]/, '[signup_benefit_catalog][' + index + ']');
 						});
 						const upButton = row.querySelector('[data-aac-move-signup-benefit="up"]');
@@ -1028,6 +1059,20 @@ class AAC_Member_Portal_Admin {
 					row.setAttribute('data-aac-signup-benefit-row', '1');
 					const checkboxCells = levels.map((level) => '<td style="text-align:center"><input type="checkbox" name="' + optionKey + '[content][signup_level_benefits][' + level + '][' + benefitKey + ']" value="1" /></td>').join('');
 					row.innerHTML = '<td><input type="hidden" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][key]" value="' + benefitKey + '" /><input type="text" class="large-text" name="' + optionKey + '[content][signup_benefit_catalog][' + index + '][label]" value="" placeholder="Benefit name" required /></td>' + checkboxCells + '<td><div style="display:flex;align-items:center;gap:6px;white-space:nowrap;"><button type="button" class="button button-small" data-aac-move-signup-benefit="up" aria-label="Move benefit up" title="Move up">&uarr;</button><button type="button" class="button button-small" data-aac-move-signup-benefit="down" aria-label="Move benefit down" title="Move down">&darr;</button><button type="button" class="button-link-delete" data-aac-remove-signup-benefit>Remove</button></div></td>';
+					const sourceLabel = document.createElement('label');
+					sourceLabel.style.cssText = 'display:block;margin-top:8px';
+					sourceLabel.textContent = 'Benefit value ';
+					const sourceSelect = document.createElement('select');
+					sourceSelect.name = optionKey + '[content][signup_benefit_catalog][' + index + '][amount_source]';
+					sourceSelect.style.width = '100%';
+					Object.entries(<?php echo wp_json_encode(AAC_Member_Portal_Settings_Schema::get_signup_benefit_amount_sources()); ?>).forEach(([value, label]) => {
+						const option = document.createElement('option');
+						option.value = value;
+						option.textContent = label;
+						sourceSelect.appendChild(option);
+					});
+					sourceLabel.appendChild(sourceSelect);
+					row.querySelector('td').appendChild(sourceLabel);
 					list.appendChild(row);
 					bindRowActions(row);
 					reindexRows();
@@ -1126,6 +1171,14 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publications_locked_title]', 'Locked-state title', $settings['content']['publications_locked_title']); ?>
 			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publications_locked_description]', 'Locked-state description', $settings['content']['publications_locked_description']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publications_upgrade_button_label]', 'Upgrade button label', $settings['content']['publications_upgrade_button_label']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_title_aaj]', 'American Alpine Journal name', $settings['content']['publication_title_aaj']); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publication_description_aaj]', 'American Alpine Journal subtext / description', $settings['content']['publication_description_aaj']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_title_anac]', 'Accidents in North American Climbing name', $settings['content']['publication_title_anac']); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publication_description_anac]', 'Accidents in North American Climbing subtext / description', $settings['content']['publication_description_anac']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_title_acj]', 'American Climbing Journal name', $settings['content']['publication_title_acj']); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publication_description_acj]', 'American Climbing Journal subtext / description', $settings['content']['publication_description_acj']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_title_guidebook]', 'Guidebook to Membership name', $settings['content']['publication_title_guidebook']); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[content][publication_description_guidebook]', 'Guidebook to Membership subtext / description', $settings['content']['publication_description_guidebook']); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_aaj]', 'AAJ View URL', $settings['content']['publication_view_url_aaj'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_anac]', 'ANAC View URL', $settings['content']['publication_view_url_anac'], 'url'); ?>
 			<?php $this->render_input_row(self::OPTION_KEY . '[content][publication_view_url_acj]', 'American Climbing Journal View URL', $settings['content']['publication_view_url_acj'], 'url'); ?>
@@ -1135,7 +1188,20 @@ class AAC_Member_Portal_Admin {
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_acj]', 'American Climbing Journal tile image', $settings['design']['publication_tile_image_acj'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][publication_tile_image_guidebook]', 'Guidebook tile image', $settings['design']['publication_tile_image_guidebook'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_alpinist]', 'Alpinist magazine image', $settings['design']['magazine_tile_image_alpinist'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[design][magazine_description_alpinist]', 'Alpinist description', $settings['design']['magazine_description_alpinist']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[design][magazine_url_alpinist]', 'Alpinist card URL', $settings['design']['magazine_url_alpinist'], 'url', 'Makes the entire card a link. Leave blank for a non-clickable card.'); ?>
 			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_backcountry]', 'Backcountry magazine image', $settings['design']['magazine_tile_image_backcountry'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[design][magazine_description_backcountry]', 'Backcountry description', $settings['design']['magazine_description_backcountry']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[design][magazine_url_backcountry]', 'Backcountry card URL', $settings['design']['magazine_url_backcountry'], 'url', 'Makes the entire card a link. Leave blank for a non-clickable card.'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_summit]', 'Summit magazine image', $settings['design']['magazine_tile_image_summit'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[design][magazine_description_summit]', 'Summit description', $settings['design']['magazine_description_summit']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[design][magazine_url_summit]', 'Summit card URL', $settings['design']['magazine_url_summit'], 'url', 'Makes the entire card a link. Leave blank for a non-clickable card.'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_climbing_zine]', 'Climbing Zine magazine image', $settings['design']['magazine_tile_image_climbing_zine'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[design][magazine_description_climbing_zine]', 'Climbing Zine description', $settings['design']['magazine_description_climbing_zine']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[design][magazine_url_climbing_zine]', 'Climbing Zine card URL', $settings['design']['magazine_url_climbing_zine'], 'url', 'Makes the entire card a link. Leave blank for a non-clickable card.'); ?>
+			<?php $this->render_media_row(self::OPTION_KEY . '[design][magazine_tile_image_gripped]', 'Gripped magazine image', $settings['design']['magazine_tile_image_gripped'], 'Upload a new image or select one from the WordPress Media Library.', 'Select / Upload Image'); ?>
+			<?php $this->render_textarea_row(self::OPTION_KEY . '[design][magazine_description_gripped]', 'Gripped description', $settings['design']['magazine_description_gripped']); ?>
+			<?php $this->render_input_row(self::OPTION_KEY . '[design][magazine_url_gripped]', 'Gripped card URL', $settings['design']['magazine_url_gripped'], 'url', 'Makes the entire card a link. Leave blank for a non-clickable card.'); ?>
 		</tbody></table>
 		<?php
 		$this->close_panel();
@@ -1919,25 +1985,25 @@ class AAC_Member_Portal_Admin {
 					</div>
 					<p class="description" style="margin:6px 0 0;">Members only see cards enabled for their membership tier. The percentage shown to a logged-in member comes from that member's tier field below. GRF and Lifetime use Advocate visibility.</p>
 				</div>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Supporter %</strong><br />
 						<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[discount_percent_supporter]'); ?>" value="<?php echo esc_attr($discount_percent_supporter); ?>" placeholder="15%" />
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Partner %</strong><br />
 						<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[discount_percent_partner]'); ?>" value="<?php echo esc_attr($discount_percent_partner); ?>" placeholder="20%" />
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Leader %</strong><br />
 						<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[discount_percent_leader]'); ?>" value="<?php echo esc_attr($discount_percent_leader); ?>" placeholder="25%" />
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Advocate %</strong><br />
 						<input type="text" class="regular-text" name="<?php echo esc_attr($base_name . '[discount_percent_advocate]'); ?>" value="<?php echo esc_attr($discount_percent_advocate); ?>" placeholder="30%" />
@@ -1950,25 +2016,25 @@ class AAC_Member_Portal_Admin {
 						<span class="description">Used only when the selected member level details below are blank.</span>
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Supporter Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_supporter]'); ?>" placeholder="Supporter discount details."><?php echo esc_textarea($discount_code_text_supporter); ?></textarea>
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Partner Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_partner]'); ?>" placeholder="Partner discount details."><?php echo esc_textarea($discount_code_text_partner); ?></textarea>
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Leader Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_leader]'); ?>" placeholder="Leader discount details."><?php echo esc_textarea($discount_code_text_leader); ?></textarea>
 					</label>
 				</p>
-				<p>
+				<p class="aac-discount-card-editor__level-field">
 					<label>
 						<strong>Advocate Details</strong><br />
 						<textarea rows="2" class="large-text" name="<?php echo esc_attr($base_name . '[discount_code_text_advocate]'); ?>" placeholder="Advocate discount details."><?php echo esc_textarea($discount_code_text_advocate); ?></textarea>
@@ -2013,6 +2079,14 @@ class AAC_Member_Portal_Admin {
 		?>
 		<template id="aac-discount-card-template"><?php echo str_replace('__INDEX__', '__INDEX__', $template); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></template>
 		<style>
+			.aac-discount-admin__list:is([data-active-category="discount-brands"],[data-active-category="climbing-guides"],[data-active-category="climbing-gyms"]){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+			.aac-discount-admin__list:is([data-active-category="discount-brands"],[data-active-category="climbing-guides"],[data-active-category="climbing-gyms"]) .aac-discount-card-editor{min-width:0;margin-bottom:0}
+			.aac-discount-card-editor:is([data-aac-discount-category="climbing-guides"],[data-aac-discount-category="climbing-gyms"]) .aac-discount-card-editor__level-field{display:none}
+			.aac-discount-card-editor .regular-text,.aac-discount-card-editor textarea{width:100%;max-width:100%;box-sizing:border-box}
+			.aac-discount-card-editor__grid>p{min-width:0}
+			.aac-discount-card-editor__header,.aac-discount-card-editor__actions{flex-wrap:wrap}
+			@media (max-width:1200px){.aac-discount-admin__list:is([data-active-category="discount-brands"],[data-active-category="climbing-guides"],[data-active-category="climbing-gyms"]){grid-template-columns:repeat(2,minmax(0,1fr))}}
+			@media (max-width:782px){.aac-discount-admin__list:is([data-active-category="discount-brands"],[data-active-category="climbing-guides"],[data-active-category="climbing-gyms"]){grid-template-columns:1fr}}
 			.aac-discount-card-editor{border:1px solid #dcdcde;border-radius:12px;padding:16px;background:#fff;margin-bottom:16px}
 			.aac-discount-admin__toolbar{display:flex;justify-content:flex-start;margin:0 0 16px}
 			.aac-discount-admin__tabs{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
@@ -2093,6 +2167,7 @@ class AAC_Member_Portal_Admin {
 				let activeCategory = 'discount-brands';
 
 				const applyCategoryFilter = () => {
+					list.dataset.activeCategory = activeCategory;
 					list.querySelectorAll('[data-aac-discount-card]').forEach((card) => {
 						const cardCategory = card.dataset.aacDiscountCategory || 'discount-brands';
 						card.hidden = cardCategory !== activeCategory;

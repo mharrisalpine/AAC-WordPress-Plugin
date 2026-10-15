@@ -241,10 +241,10 @@ const DEFAULT_SETTINGS = {
       },
       {
         id: 'member-store',
-        title: 'Member Store',
+        title: 'AAC Store',
         imageUrl: 'https://images.unsplash.com/photo-1501555088652-021faa106b9b?auto=format&fit=crop&w=1200&q=82',
         url: 'https://americanalpineclub.myshopify.com/',
-        actionLabel: 'Open Member Store',
+        actionLabel: 'Open AAC Store',
         description:
           'Shop AAC apparel, books, gifts, and member merchandise from the American Alpine Club store.',
       },
@@ -264,7 +264,7 @@ const DEFAULT_SETTINGS = {
         url: 'https://americanalpine.wpenginepowered.com/lodging/',
         actionLabel: 'Open Lodging',
         description:
-          'Leader level members receive deep discounts at AAC lodging facilities across the country, as well as huts and affiliates throughout the globe.',
+          'Members receive deep discounts at AAC lodging facilities across the country, as well as huts and affiliates throughout the globe.',
       },
       {
         id: 'grants',
@@ -379,11 +379,17 @@ Golden, CO 80401 USA`,
     loginBackgroundImageUrl: '/assets/join-hero-static-image.jpg',
     homeIntroImageUrl: 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-2.jpg',
     homeIntroAccentImageUrl: 'https://americanalpine.wpenginepowered.com/wp-content/uploads/2025/12/Calder-Davey-Homepage-Filler-3.jpg',
+    magazineCards: {},
     publicationTileImages: {
       aaj: '',
       anac: '',
       acj: '',
       guidebook: '',
+      alpinist: '',
+      backcountry: '',
+      summit: '',
+      climbing_zine: '',
+      gripped: '',
     },
   },
   navigation: {

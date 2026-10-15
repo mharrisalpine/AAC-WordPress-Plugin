@@ -152,7 +152,8 @@
       const response = await fetch(config.url, {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         body: new URLSearchParams({ action: 'aac_refresh_pmpro_checkout_nonce' }),
-        signal: AbortSignal.timeout(15000),
+        // WordPress may take more than 15 seconds to bootstrap on this host.
+        signal: AbortSignal.timeout(60000),
       });
       const result = await response.json();
       if (!response.ok || !result.success || !result.data?.nonce) throw new Error('refresh');
@@ -172,7 +173,10 @@
         else form.requestSubmit(event.submitter || undefined);
       } finally { replay = false; }
     } catch (error) {
-      showError(form, 'We could not refresh checkout security. Your entries are still here. Please check your connection and try again.');
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      showError(form, timedOut
+        ? 'Checkout security took too long to respond. Your entries are still here and no payment was submitted. Please try again.'
+        : 'We could not refresh checkout security. Your entries are still here and no payment was submitted. Please try again.');
     } finally {
       pending = false;
       form.removeAttribute('aria-busy');

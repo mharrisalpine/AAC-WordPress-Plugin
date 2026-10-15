@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.770
+ * Version: 1.0.792
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.770');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.792');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -95,6 +95,8 @@ final class AAC_Member_Portal_Plugin {
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_portal_for_shortcode'], 15);
 		add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_shell_styles'], 15);
 		add_action('wp_enqueue_scripts', [$this, 'isolate_embedded_checkout_assets'], PHP_INT_MAX);
+		add_filter('pmpro_ajax_timeout', [$this, 'discount_code_ajax_timeout'], 10, 2);
+		add_action('pmpro_applydiscountcode_return_js', [$this, 'render_applied_discount_summary_result'], 10, 4);
 		add_action('wp_ajax_aac_validate_pmpro_discount_code', [$this, 'ajax_validate_pmpro_discount_code']);
 		add_action('wp_ajax_nopriv_aac_validate_pmpro_discount_code', [$this, 'ajax_validate_pmpro_discount_code']);
 		add_action('wp_footer', [$this, 'render_public_join_link_rewriter'], 99);
@@ -138,6 +140,7 @@ final class AAC_Member_Portal_Plugin {
 		add_filter('login_headertext', [$this, 'filter_wp_login_logo_text']);
 		add_filter('login_body_class', [$this, 'filter_wp_login_body_classes'], 10, 2);
 		add_filter('pmpro_required_user_fields', [$this, 'filter_pmpro_required_user_fields']);
+		add_action('init', [$this, 'enforce_supporter_signup_publications'], 3);
 		add_filter('pmpro_show_discount_code', [$this, 'show_discount_code_on_checkout']);
 			add_filter('pmpro_required_billing_fields', [$this, 'filter_pmpro_required_billing_fields']);
 			add_filter('pmpro_registration_checks', [$this, 'validate_pmpro_required_profile_fields'], 20);
@@ -151,6 +154,7 @@ final class AAC_Member_Portal_Plugin {
 		add_action('wp_footer', [$this, 'render_checkout_donation_ui_script'], 99);
 		add_action('pmpro_checkout_after_user_fields', [$this, 'render_pmpro_checkout_publication_preferences'], 10);
 		add_action('pmpro_checkout_after_user_fields', [$this, 'render_pmpro_partner_family_options'], 12);
+		add_filter('pmpro_checkout_level', [$this, 'capture_validated_checkout_promo_totals'], 1);
 		add_filter('pmpro_checkout_level', [$this, 'filter_pmpro_checkout_level_for_magazine_addons'], 20);
 		add_filter('pmpro_checkout_start_date', [$this, 'filter_pmpro_checkout_start_date_for_autorenew_reactivation'], 20, 2);
 		add_filter('pmpro_level_cost_text', [$this, 'filter_pmpro_level_cost_text_for_autorenew_reactivation'], 20, 4);
@@ -544,6 +548,23 @@ final class AAC_Member_Portal_Plugin {
 			}
 		</style>
 		<?php
+	}
+
+	public function discount_code_ajax_timeout($timeout, $action = '') {
+		// PMPro defaults to five seconds, shorter than this site's WordPress bootstrap.
+		return $action === 'applydiscountcode' ? max(60000, (int) $timeout) : $timeout;
+	}
+
+	public function render_applied_discount_summary_result($code, $code_id, $level_id, $level) {
+		// Reuse PMPro's validated, filtered result instead of a second AJAX request
+		// and a separate interpretation of the discount tables.
+		$result = [
+			'code' => (string) $code,
+			'level_id' => (int) $level_id,
+			'valid' => is_object($level) && isset($level->initial_payment) && is_numeric($level->initial_payment),
+			'initial_payment' => is_object($level) && isset($level->initial_payment) ? (float) ($level->aac_validated_promo_totals['initial'] ?? $level->initial_payment) : null,
+		];
+		echo 'document.dispatchEvent(new CustomEvent("aac:discount-applied", { detail: ' . wp_json_encode($result, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ' }));';
 	}
 
 	public function ajax_validate_pmpro_discount_code() {
@@ -1363,7 +1384,7 @@ final class AAC_Member_Portal_Plugin {
 
 		$level = $this->get_level_at_checkout();
 		$level_id = isset($level->id) ? (int) $level->id : 0;
-		if ($level_id <= 2 || !class_exists('DOMDocument')) {
+		if (($level_id <= 2 && !$this->is_supporter_signup_checkout()) || !class_exists('DOMDocument')) {
 			return $content;
 		}
 
@@ -1406,8 +1427,8 @@ final class AAC_Member_Portal_Plugin {
 				'id' => 'aaj_preference_div',
 				'name' => 'aaj_preference',
 				'eyebrow' => 'Annual',
-				'title' => 'American Alpine Journal',
-				'description' => 'Annual climbing journal. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_aaj'] ?? 'American Alpine Journal',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_aaj'] ?? 'Annual climbing journal. Choose print delivery or digital-only access.',
 				'image_key' => 'aaj',
 				'theme_class' => 'aac-member-preferences__card--journal',
 			],
@@ -1415,8 +1436,8 @@ final class AAC_Member_Portal_Plugin {
 				'id' => 'anac_preference_div',
 				'name' => 'anac_preference',
 				'eyebrow' => 'Annual',
-				'title' => 'Accidents in North American Climbing',
-				'description' => 'Annual accident review. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_anac'] ?? 'Accidents in North American Climbing',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_anac'] ?? 'Annual accident review. Choose print delivery or digital-only access.',
 				'image_key' => 'anac',
 				'theme_class' => 'aac-member-preferences__card--accidents',
 			],
@@ -1424,8 +1445,8 @@ final class AAC_Member_Portal_Plugin {
 				'id' => 'american_climbing_journal_preference_div',
 				'name' => 'american_climbing_journal_preference',
 				'eyebrow' => 'Journal',
-				'title' => 'American Climbing Journal',
-				'description' => 'Member stories and club updates. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_acj'] ?? 'American Climbing Journal',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_acj'] ?? 'Member stories and club updates. Choose print delivery or digital-only access.',
 				'image_key' => 'acj',
 				'theme_class' => 'aac-member-preferences__card--journal',
 			],
@@ -1433,8 +1454,8 @@ final class AAC_Member_Portal_Plugin {
 				'id' => 'guidebook_preferences_div',
 				'name' => 'guidebook_preferences',
 				'eyebrow' => 'Quarterly',
-				'title' => 'Guidebook to Membership',
-				'description' => 'Quarterly member publication. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_guidebook'] ?? 'Guidebook to Membership',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_guidebook'] ?? 'Quarterly member publication. Choose print delivery or digital-only access.',
 				'image_key' => 'guidebook',
 				'theme_class' => 'aac-member-preferences__card--guidebook',
 			],
@@ -1558,6 +1579,39 @@ final class AAC_Member_Portal_Plugin {
 		return is_string($updated) && $updated !== '' ? $updated : $content;
 	}
 
+	public function is_supporter_signup_checkout() {
+		if (!$this->is_pmpro_checkout_request() || (isset($_REQUEST['aac_member_checkout']) && $_REQUEST['aac_member_checkout'] === '1')) {
+			return false;
+		}
+		// Read the requested ID directly: resolving a filtered checkout level here
+		// can recurse through profile defaults before PMPro has chosen a level.
+		$level_id = 0;
+		foreach (['level', 'pmpro_level', 'membership_level', 'membership_id'] as $key) {
+			if (isset($_REQUEST[$key]) && !is_array($_REQUEST[$key]) && absint($_REQUEST[$key]) > 0) {
+				$level_id = absint($_REQUEST[$key]);
+				break;
+			}
+		}
+		$level = $level_id > 0 && function_exists('pmpro_getLevel') ? pmpro_getLevel($level_id) : null;
+		return is_object($level) && strcasecmp(trim((string) $level->name), 'Supporter') === 0;
+	}
+
+	public function enforce_supporter_signup_publications() {
+		if (!$this->is_supporter_signup_checkout()) {
+			return;
+		}
+		// Normalize before PMPro validates or saves its native user fields.
+		foreach (array_merge(AAC_Member_Portal_Publication_Preferences::FIELDS, [
+			'publications_preference', 'anan_preference', 'acj_preference', 'guidebook_preference',
+			'aac_aaj_pref', 'aac_anac_pref', 'aac_acj_pref', 'aac_guidebook_pref',
+		]) as $field) {
+			$_REQUEST[$field] = 'Digital';
+			if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+				$_POST[$field] = 'Digital';
+			}
+		}
+	}
+
 	public function render_pmpro_checkout_publication_preferences() {
 		if (is_admin() || !$this->is_pmpro_checkout_request()) {
 			return;
@@ -1565,7 +1619,7 @@ final class AAC_Member_Portal_Plugin {
 
 		$level = $this->get_level_at_checkout();
 		$level_id = isset($level->id) ? (int) $level->id : 0;
-		if ($level_id <= 2) {
+		if ($level_id <= 2 && !$this->is_supporter_signup_checkout()) {
 			return;
 		}
 
@@ -1582,32 +1636,32 @@ final class AAC_Member_Portal_Plugin {
 			[
 				'name' => 'aaj_preference',
 				'eyebrow' => 'Annual',
-				'title' => 'American Alpine Journal',
-				'description' => 'Annual climbing journal. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_aaj'] ?? 'American Alpine Journal',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_aaj'] ?? 'Annual climbing journal. Choose print delivery or digital-only access.',
 				'image_key' => 'aaj',
 				'theme_class' => 'aac-member-preferences__card--journal',
 			],
 			[
 				'name' => 'anac_preference',
 				'eyebrow' => 'Annual',
-				'title' => 'Accidents in North American Climbing',
-				'description' => 'Annual accident review. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_anac'] ?? 'Accidents in North American Climbing',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_anac'] ?? 'Annual accident review. Choose print delivery or digital-only access.',
 				'image_key' => 'anac',
 				'theme_class' => 'aac-member-preferences__card--accidents',
 			],
 			[
 				'name' => 'american_climbing_journal_preference',
 				'eyebrow' => 'Journal',
-				'title' => 'American Climbing Journal',
-				'description' => 'Member stories and club updates. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_acj'] ?? 'American Climbing Journal',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_acj'] ?? 'Member stories and club updates. Choose print delivery or digital-only access.',
 				'image_key' => 'acj',
 				'theme_class' => 'aac-member-preferences__card--journal',
 			],
 			[
 				'name' => 'guidebook_preferences',
 				'eyebrow' => 'Quarterly',
-				'title' => 'Guidebook to Membership',
-				'description' => 'Quarterly member publication. Choose print delivery or digital-only access.',
+				'title' => AAC_Member_Portal_Admin::get_settings()['content']['publication_title_guidebook'] ?? 'Guidebook to Membership',
+				'description' => AAC_Member_Portal_Admin::get_settings()['content']['publication_description_guidebook'] ?? 'Quarterly member publication. Choose print delivery or digital-only access.',
 				'image_key' => 'guidebook',
 				'theme_class' => 'aac-member-preferences__card--guidebook',
 			],
@@ -1653,28 +1707,37 @@ final class AAC_Member_Portal_Plugin {
 	}
 
 	private function build_pmpro_publication_preferences_markup($cards) {
+		$digital_only = $this->is_supporter_signup_checkout();
 		$markup = '<div class="aac-server-member-preferences">';
-		$markup .= '<p class="aac-member-preferences__intro">' . esc_html__('Unselect a publication to receive a digital copy only. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.', 'aac-member-portal') . '</p>';
+		$markup .= '<p class="aac-member-preferences__intro">' . esc_html($digital_only
+			? __('Supporter membership includes Digital publications only.', 'aac-member-portal')
+			: __('Unselect a publication to receive a digital copy only. Publications you do not select for print will be delivered digitally and can be accessed through your member profile.', 'aac-member-portal')) . '</p>';
 		$markup .= '<div class="aac-member-preferences__grid">';
 
 		foreach ($cards as $card) {
-			$markup .= '<article class="aac-member-preferences__card ' . esc_attr($card['theme_class']) . '">';
+			$markup .= '<article class="aac-member-preferences__card ' . esc_attr($card['theme_class']) . '"' . ($digital_only ? ' data-aac-digital-only="true" aria-disabled="true"' : '') . '>';
 			$markup .= '<div class="aac-member-preferences__art">';
 			if (!empty($card['image_url'])) {
 				$markup .= '<img src="' . esc_url($card['image_url']) . '" alt="' . esc_attr($card['title'] . ' cover') . '" class="aac-member-preferences__cover-image" />';
 			}
 			$markup .= '</div>';
+			if ($digital_only) {
+				$markup .= '<div class="aac-publication-card-selection"><span>Digital</span></div>';
+			}
 			$markup .= '<div class="aac-member-preferences__content">';
 			$markup .= '<div class="aac-member-preferences__title-block">';
 			$markup .= '<span class="aac-member-preferences__eyebrow">' . esc_html($card['eyebrow']) . '</span>';
 			$markup .= '<h3 class="aac-member-preferences__title">' . esc_html($card['title']) . '</h3>';
 			$markup .= '</div>';
-			$markup .= '<p class="aac-member-preferences__description">' . esc_html($card['description']) . '</p>';
+			$markup .= '<p class="aac-member-preferences__description">' . esc_html($digital_only ? __('Digital access included with Supporter membership.', 'aac-member-portal') : $card['description']) . '</p>';
 			$markup .= '<div class="aac-member-preferences__choices">';
 
-			foreach (['Print', 'Digital'] as $option) {
+			if ($digital_only) {
+				$markup .= '<input type="hidden" name="' . esc_attr($card['name']) . '" value="Digital" />';
+			}
+			foreach ($digital_only ? [] : ['Print', 'Digital'] as $option) {
 				$markup .= '<label class="aac-member-preferences__option">';
-				$markup .= '<input class="aac-member-preferences__input" type="radio" name="' . esc_attr($card['name']) . '" value="' . esc_attr($option) . '" ' . checked($card['selected_value'], $option, false) . ' required />';
+				$markup .= '<input class="aac-member-preferences__input" type="radio" name="' . esc_attr($card['name']) . '" value="' . esc_attr($option) . '" ' . checked($digital_only ? 'Digital' : $card['selected_value'], $option, false) . ($digital_only && $option === 'Print' ? ' disabled' : '') . ' required />';
 				$markup .= '<span class="aac-member-preferences__choice">' . esc_html($option) . '</span>';
 				$markup .= '</label>';
 			}
@@ -2486,6 +2549,35 @@ final class AAC_Member_Portal_Plugin {
 			const minimumPasswordScore = <?php echo wp_json_encode($minimum_password_score); ?>;
 			const checkoutLevelName = <?php echo wp_json_encode($summary_level_name); ?>;
 			const checkoutLevelId = <?php echo wp_json_encode($checkout_level && isset($checkout_level->id) ? (int) $checkout_level->id : 0); ?>;
+			// Preserve a validated promo after a checkout validation error/reload.
+			window.__aacValidatedDiscountCode = <?php echo wp_json_encode(
+				$checkout_level && !empty($checkout_level->code_id) && !empty($checkout_level->discount_code)
+					&& isset($checkout_level->aac_validated_promo_totals['initial'])
+					? [
+						'code' => (string) $checkout_level->discount_code,
+						'level_id' => (int) $checkout_level->id,
+						'initial_payment' => (float) $checkout_level->aac_validated_promo_totals['initial'],
+					]
+					: null
+			); ?>;
+			window.__aacUpgradePricing = <?php echo wp_json_encode($checkout_level->aac_upgrade_pricing ?? null); ?>;
+			window.__aacBuildUpgradeMembershipRows = function (code, label) {
+				const pricing = window.__aacUpgradePricing;
+				if (!pricing) return null;
+				const normalizedCode = String(code || '').trim().toLowerCase();
+				const validated = [window.__aacValidatedDiscountCode, window.__aacValidatedMembershipDiscount]
+					.find(value => normalizedCode && String(value?.code || '').trim().toLowerCase() === normalizedCode
+						&& Number(value?.level_id) === Number(pricing.level_id)
+						&& Number.isFinite(Number.parseFloat(value?.initial_payment ?? '')));
+				const price = validated ? Math.max(0, Number(validated.initial_payment)) : pricing.catalog;
+				const discount = Math.round((pricing.catalog - price) * 100) / 100;
+				const credit = Math.min(price, pricing.credit);
+				return [
+					{label: 'Membership', amount: pricing.catalog},
+					...(discount !== 0 ? [{label: String(label || 'Membership discount').replace(/\s*\([\d.]+%\)/g, ''), amount: -discount, isDiscount: true, discount: true}] : []),
+					...(credit > 0 ? [{label: 'Unused membership credit', amount: -credit, isDiscount: true, discount: true}] : []),
+				];
+			};
 			const promoValidationConfig = {
 				endpoint: <?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>,
 				nonce: <?php echo wp_json_encode(wp_create_nonce('aac_validate_pmpro_discount_code')); ?>,
@@ -2520,10 +2612,12 @@ final class AAC_Member_Portal_Plugin {
 				});
 			}
 
+			let membershipPreviewRequest = 0;
 			async function validatePromoForSummary(codeOverride = '') {
 				captureMagazineSelections();
 				const input = document.getElementById('pmpro_other_discount_code');
 				const code = String(codeOverride || input?.value || '').trim();
+				const requestId = ++membershipPreviewRequest;
 				if (!code || !checkoutLevelId) return;
 				const body = new URLSearchParams({
 					action: 'aac_validate_pmpro_discount_code',
@@ -2539,13 +2633,27 @@ final class AAC_Member_Portal_Plugin {
 						body,
 					});
 					const payload = await response.json();
-					window.__aacValidatedDiscountCode = payload?.success ? payload.data : null;
+					if (requestId !== membershipPreviewRequest) return;
+					window.__aacValidatedMembershipDiscount = payload?.success ? payload.data : null;
 				} catch (error) {
-					window.__aacValidatedDiscountCode = null;
+					if (requestId !== membershipPreviewRequest) return;
+					window.__aacValidatedMembershipDiscount = null;
 				}
 				restoreMagazineSelections();
 				window.setTimeout(syncOrderSummary, 0);
+				document.dispatchEvent(new CustomEvent('aac:pricing-updated'));
 			}
+
+			document.addEventListener('aac:discount-applied', function (event) {
+				const result = event.detail;
+				const enteredCode = String(window.__aacAppliedDiscountCode || document.querySelector('input[name="aac_membership_discount"]:checked')?.dataset.aacMembershipDiscountCode || document.getElementById('pmpro_other_discount_code')?.value || '').trim().toLowerCase();
+				if (Number(result?.level_id) !== Number(checkoutLevelId)
+					|| String(result?.code || '').trim().toLowerCase() !== enteredCode) return;
+				window.__aacValidatedDiscountCode = result.valid ? result : null;
+				document.dispatchEvent(new CustomEvent('aac:pricing-updated'));
+				restoreMagazineSelections();
+				syncOrderSummary();
+			});
 
 			function ensureSignupAccountFields(form) {
 				if (!form || !new URLSearchParams(window.location.search).has('aac_signup')) return null;
@@ -2649,53 +2757,78 @@ final class AAC_Member_Portal_Plugin {
 
 				let requestCounter = 0;
 				let debounceTimer = null;
+				let activeController = null;
+				let checkedEmail = '';
+				let checkedAt = 0;
 				const setStatus = (state, message) => {
 					statusNode.dataset.state = state;
 					statusNode.textContent = message || '';
 				};
+				const cancelCheck = () => {
+					++requestCounter;
+					if (activeController) activeController.abort();
+					activeController = null;
+				};
 				const runCheck = async () => {
+					window.clearTimeout(debounceTimer);
 					const email = String(emailInput.value || '').trim();
+					// Input, change and blur can all fire for the same address.
+					if (email === checkedEmail && (activeController || Date.now() - checkedAt < 30000)) return;
+					cancelCheck();
 					emailInput.setCustomValidity('');
-					if (!email) {
-						setStatus('idle', '');
+					if (!email || !emailInput.checkValidity()) {
+						setStatus('idle', email ? 'Enter a valid email address.' : '');
 						return;
 					}
-					if (!emailInput.checkValidity()) {
-						setStatus('idle', 'Enter a valid email address.');
-						return;
-					}
-
-					const currentRequest = ++requestCounter;
+					checkedEmail = email;
+					checkedAt = 0;
+					const currentRequest = requestCounter;
+					const controller = new AbortController();
+					activeController = controller;
+					const timeout = window.setTimeout(() => controller.abort(), 5000);
 					setStatus('checking', 'Checking email availability...');
 					try {
 						const endpoint = new URL('/wp-json/aac/v1/email-availability', window.location.origin);
 						endpoint.searchParams.set('email', email);
 						const response = await fetch(endpoint.toString(), {
 							credentials: 'same-origin',
+							cache: 'no-store',
+							signal: controller.signal,
 							headers: { Accept: 'application/json' },
 						});
 						if (!response.ok) throw new Error('Email availability request failed.');
 						const result = await response.json();
 						if (currentRequest !== requestCounter) return;
-						if (result?.valid && result?.available) {
-							emailInput.setCustomValidity('');
-							setStatus('available', result.message || 'Email address is available.');
-							return;
+						if (typeof result?.valid !== 'boolean' || typeof result?.available !== 'boolean') {
+							throw new Error('Invalid email availability response.');
 						}
-						const message = result?.message || 'An account with this email already exists.';
-						emailInput.setCustomValidity(message);
-						setStatus('unavailable', message);
+						checkedAt = Date.now();
+						if (result.valid && result.available) {
+							setStatus('available', result.message || 'Email address is available.');
+						} else {
+							const message = result.message || 'An account with this email already exists.';
+							emailInput.setCustomValidity(message);
+							setStatus('unavailable', message);
+						}
 					} catch (error) {
 						if (currentRequest !== requestCounter) return;
+						checkedEmail = '';
 						emailInput.setCustomValidity('');
-						setStatus('idle', 'Unable to check email availability right now.');
+						setStatus('idle', 'Email will be verified when you submit your signup.');
+					} finally {
+						window.clearTimeout(timeout);
+						if (currentRequest === requestCounter) activeController = null;
 					}
 				};
 				const scheduleCheck = () => {
 					window.clearTimeout(debounceTimer);
-					debounceTimer = window.setTimeout(runCheck, 280);
+					cancelCheck();
+					checkedEmail = '';
+					checkedAt = 0;
+					emailInput.setCustomValidity('');
+					setStatus('idle', '');
+					debounceTimer = window.setTimeout(runCheck, 200);
 				};
-
 				emailInput.addEventListener('input', scheduleCheck);
 				emailInput.addEventListener('change', runCheck);
 				emailInput.addEventListener('blur', runCheck);
@@ -3091,28 +3224,22 @@ final class AAC_Member_Portal_Plugin {
 				const promoCode = Array.from(document.querySelectorAll('#pmpro_other_discount_code, input[name="discount_code"], input[name="pmpro_discount_code"], input[name="other_discount_code"]'))
 					.map((input) => String(input.value || '').trim())
 					.find(Boolean) || '';
-				const hasSeparatePromo = promoCode !== '' && promoCode.toLowerCase() !== membershipCode;
-				const nativeCostText = document.getElementById('pmpro_level_cost')?.innerText || '';
-				const nativePriceMatch = nativeCostText.match(/\$\s*([0-9,]+(?:\.\d{1,2})?)/);
-				const scrapedMembershipPrice = nativePriceMatch ? Number.parseFloat(nativePriceMatch[1].replace(/,/g, '')) : checkoutBasePrice;
 				const validatedPromo = window.__aacValidatedDiscountCode || null;
 				const validatedPromoCode = String(validatedPromo?.code || '').trim().toLowerCase();
-				const validatedPromoPrice = validatedPromoCode === promoCode.toLowerCase()
-					? Number.parseFloat(validatedPromo?.initial_payment ?? validatedPromo?.billing_amount ?? '')
-					: Number.NaN;
-				const validatedMembershipPrice = validatedPromoCode === membershipCode
-					? Number.parseFloat(validatedPromo?.initial_payment ?? validatedPromo?.billing_amount ?? '')
-					: Number.NaN;
-				const pmproCodePrice = Number.parseFloat(window.pmpropbc?.code_level?.initial_payment ?? '');
-				const nativeMembershipPrice = Number.isFinite(validatedPromoPrice)
-					? validatedPromoPrice
-					: (hasSeparatePromo && Number.isFinite(pmproCodePrice) ? pmproCodePrice : scrapedMembershipPrice);
+				const nativeMembershipPrice = validatedPromoCode === promoCode.toLowerCase()
+					&& Number(validatedPromo?.level_id) === Number(checkoutLevelId)
+					? Number.parseFloat(validatedPromo?.initial_payment ?? '') : Number.NaN;
+				const hasSeparatePromo = promoCode !== '' && promoCode.toLowerCase() !== membershipCode
+					&& Number.isFinite(nativeMembershipPrice);
+				const validatedMembership = window.__aacValidatedMembershipDiscount || null;
+				const validatedMembershipPrice = String(validatedMembership?.code || '').trim().toLowerCase() === membershipCode
+					? Number.parseFloat(validatedMembership?.initial_payment ?? '') : Number.NaN;
 				const selectedMembershipPrice = Number.isFinite(validatedMembershipPrice)
 					? validatedMembershipPrice
 					: (Number.isFinite(previewMembershipPrice) && previewMembershipPrice >= 0
 						? previewMembershipPrice
 						: Math.max(0, checkoutBasePrice * (1 - discountRate)));
-				const membershipDiscount = selectedDiscount
+				const membershipDiscount = selectedDiscount && !hasSeparatePromo
 					? Math.max(0, Math.round((checkoutBasePrice - selectedMembershipPrice) * 100) / 100)
 					: 0;
 				const discountedMembership = Math.max(0, checkoutBasePrice - membershipDiscount);
@@ -3126,14 +3253,15 @@ final class AAC_Member_Portal_Plugin {
 						magazine: true,
 					}))
 					.filter((row) => row.amount > 0);
+				const upgradeRows = window.__aacBuildUpgradeMembershipRows(promoCode || membershipCode, discountLabel);
 				const rows = [
-					{ label: `${checkoutLevelName} membership`, amount: checkoutBasePrice },
-					...(membershipDiscount > 0 ? [{ label: discountLabel, amount: -membershipDiscount, discount: true }] : []),
+					...(upgradeRows || [{ label: `${checkoutLevelName} membership`, amount: checkoutBasePrice },
+					...(membershipDiscount > 0 ? [{ label: discountLabel, amount: -membershipDiscount, discount: true }] : [])]),
 					...(adultAmount > 0 ? [{ label: 'Additional adult', amount: adultAmount }] : []),
 					...(dependentAmount > 0 ? [{ label: `${dependentCount} ${dependentCount === 1 ? 'dependent' : 'dependents'}`, amount: dependentAmount }] : []),
 					...magazineRows,
 					...(donationAmount > 0 ? [{ label: 'Donation', amount: donationAmount }] : []),
-					...(hasSeparatePromo ? [{ label: `Promo code (${promoCode})`, amount: -promoDiscount, discount: promoDiscount > 0 }] : []),
+					...(!upgradeRows && hasSeparatePromo ? [{ label: `Promo code (${promoCode})`, amount: -promoDiscount, discount: promoDiscount > 0 }] : []),
 				];
 				const total = Math.max(0, rows.reduce((sum, row) => sum + row.amount, 0));
 				content.innerHTML = `
@@ -3256,9 +3384,7 @@ final class AAC_Member_Portal_Plugin {
 					const nativeSelect = Array.from(document.querySelectorAll('select')).find(function (select) {
 						return select.name.indexOf(fieldPrefix) === 0 || select.id.indexOf(fieldPrefix) === 0;
 					});
-					if (!nativeSelect) return;
-
-					const nativeField = nativeSelect.closest('.pmpro_form_field');
+					const nativeField = nativeSelect?.closest('.pmpro_form_field');
 					if (nativeField) {
 						nativeField.hidden = true;
 						nativeField.style.display = 'none';
@@ -3268,8 +3394,14 @@ final class AAC_Member_Portal_Plugin {
 					const printRadio = Array.from(radios).find(function (radio) { return radio.value === 'Print'; });
 					const digitalRadio = Array.from(radios).find(function (radio) { return radio.value === 'Digital'; });
 					const card = printRadio?.closest('.aac-member-preferences__card') || digitalRadio?.closest('.aac-member-preferences__card');
+					const digitalOnly = card?.dataset.aacDigitalOnly === 'true';
+					if (digitalOnly) {
+						if (nativeSelect) nativeSelect.value = 'Digital';
+						if (printRadio) { printRadio.checked = false; printRadio.disabled = true; }
+						if (digitalRadio) digitalRadio.checked = true;
+					}
 					const syncValue = function (radio) {
-						if (!radio.checked) return;
+						if (!radio.checked || !nativeSelect) return;
 						nativeSelect.value = radio.value;
 						nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
 					};
@@ -3290,9 +3422,10 @@ final class AAC_Member_Portal_Plugin {
 					};
 					if (card && printRadio && digitalRadio && card.dataset.aacCardToggle !== 'true') {
 						card.dataset.aacCardToggle = 'true';
-						card.tabIndex = 0;
+						card.tabIndex = digitalOnly ? -1 : 0;
 						card.setAttribute('role', 'checkbox');
 						const toggleCard = function () {
+							if (digitalOnly) return;
 							const nextRadio = printRadio.checked ? digitalRadio : printRadio;
 							nextRadio.checked = true;
 							nextRadio.dispatchEvent(new Event('change', { bubbles: true }));
@@ -3319,7 +3452,17 @@ final class AAC_Member_Portal_Plugin {
 			function organizeMemberDetails() {
 				const personal = document.getElementById('pmpro_form_fieldset-personal-details');
 				const memberInformation = document.getElementById('pmpro_billing_address_fields');
-				const publicationPreferences = document.getElementById('pmpro_form_fieldset-publication-preferences');
+				let publicationPreferences = document.getElementById('pmpro_form_fieldset-publication-preferences');
+				const lockedPublications = document.querySelector('.aac-server-member-preferences:has([data-aac-digital-only="true"])');
+				if (!publicationPreferences && lockedPublications) {
+					// PMPro may omit the publication field group for the Supporter level.
+					publicationPreferences = document.createElement('fieldset');
+					publicationPreferences.id = 'pmpro_form_fieldset-publication-preferences';
+					publicationPreferences.className = 'pmpro_form_fieldset pmpro_card';
+					publicationPreferences.innerHTML = '<h2 class="pmpro_form_heading">Publications Preferences</h2><div class="pmpro_form_fields"></div>';
+					lockedPublications.before(publicationPreferences);
+					publicationPreferences.querySelector('.pmpro_form_fields').appendChild(lockedPublications);
+				}
 				const birthdate = document.getElementById('birthdatebirthdate_div')
 					|| document.getElementById('birthdate_div')
 					|| document.querySelector('.pmpro_form_field:has(input[name*="birthdate"])');
@@ -3556,7 +3699,8 @@ final class AAC_Member_Portal_Plugin {
 						if (event.target.checked) {
 							validatePromoForSummary(event.target.dataset.aacMembershipDiscountCode || '');
 						} else {
-							window.__aacValidatedDiscountCode = null;
+							++membershipPreviewRequest;
+							window.__aacValidatedMembershipDiscount = null;
 						}
 					}
 					window.setTimeout(syncDiscountDetailPanels, 0);
@@ -3569,8 +3713,10 @@ final class AAC_Member_Portal_Plugin {
 				}
 			});
 			document.addEventListener('click', function (event) {
-				if (event.target.closest('#other_discount_code_button')) {
-					validatePromoForSummary();
+				if (event.target.closest('#other_discount_code_button, #discount_code_button')) {
+					captureMagazineSelections();
+					window.__aacValidatedDiscountCode = null;
+					syncOrderSummary();
 				}
 			}, true);
 			document.addEventListener('click', function (event) {
@@ -3585,6 +3731,10 @@ final class AAC_Member_Portal_Plugin {
 				}
 			});
 			document.addEventListener('input', function (event) {
+				if (event.target.matches('#pmpro_other_discount_code, #pmpro_discount_code')) {
+					window.__aacValidatedDiscountCode = null;
+					syncOrderSummary();
+				}
 				if (event.target.matches('#donation, #aac_partner_family_dependents')) {
 					window.setTimeout(syncOrderSummary, 0);
 				}
@@ -3768,6 +3918,13 @@ final class AAC_Member_Portal_Plugin {
 		<?php
 	}
 
+	public function capture_validated_checkout_promo_totals($level) {
+		if (is_object($level)) {
+			$this->get_validated_promo_checkout_totals($level);
+		}
+		return $level;
+	}
+
 	private function get_validated_promo_checkout_totals($level) {
 		// These markers are set by PMPro only after pmpro_checkDiscountCode succeeds.
 		// Never treat the presence of a code in $_REQUEST as validated pricing.
@@ -3808,7 +3965,7 @@ final class AAC_Member_Portal_Plugin {
 		$base_membership_recurring_total = $is_public_signup_checkout && $catalog_membership_total !== null
 			? max(0, (float) $catalog_membership_total)
 			: max(0, $this->get_level_recurring_total($level));
-		$validated_promo_totals = $is_public_signup_checkout ? $this->get_validated_promo_checkout_totals($level) : null;
+		$validated_promo_totals = $this->get_validated_promo_checkout_totals($level);
 		if ($validated_promo_totals !== null) {
 			$base_membership_initial_total = $validated_promo_totals['initial'];
 			$base_membership_recurring_total = $validated_promo_totals['recurring'];
@@ -7056,7 +7213,7 @@ final class AAC_Member_Portal_Plugin {
 		$country = $country !== ''
 			? $country
 			: ($account_info['country'] ?? 'US');
-		if ($this->is_international_country($country)) {
+		if ($this->is_supporter_signup_checkout() || $this->is_international_country($country)) {
 			$preferences['aaj_pref'] = 'Digital';
 			$preferences['anac_pref'] = 'Digital';
 			$preferences['acj_pref'] = 'Digital';
@@ -8415,6 +8572,12 @@ final class AAC_Member_Portal_Plugin {
 			$target_total = max(0, (float) $target_recurring_total);
 		}
 
+		$catalog_total = max(0, (float) $target_total);
+		$promo_totals = $this->get_validated_promo_checkout_totals($level);
+		if ($promo_totals !== null) {
+			$target_total = $promo_totals['initial'];
+		}
+
 		$current_total = $this->get_current_term_parent_membership_paid_amount($user_id, $current_level_id);
 		if ($current_total === null) {
 			$current_total = $this->get_aac_membership_level_base_total_by_name((string) ($current_membership['tier'] ?? ''));
@@ -8428,10 +8591,6 @@ final class AAC_Member_Portal_Plugin {
 
 		$target_total = max(0, (float) $target_total);
 		$current_total = max(0, (float) $current_total);
-		$annual_difference = $target_total - $current_total;
-		if ($annual_difference <= 0) {
-			return null;
-		}
 
 		$term_end_date = sanitize_text_field((string) (($current_membership['renewal_date'] ?? '') ?: ($current_membership['expiration_date'] ?? '')));
 		if ($term_end_date === '') {
@@ -8462,7 +8621,12 @@ final class AAC_Member_Portal_Plugin {
 		$unused_parent_credit = round($current_total * $remaining_ratio, 2);
 		$prorated_total = round(max(0, $target_total - $unused_parent_credit), 2);
 
-		return $prorated_total > 0 ? $prorated_total : null;
+		$level->aac_upgrade_pricing = [
+			'catalog' => $catalog_total,
+			'credit' => $unused_parent_credit,
+			'level_id' => $target_level_id,
+		];
+		return $prorated_total;
 	}
 
 	/**
@@ -11646,6 +11810,9 @@ CSS;
 				'guidebook' => set_url_scheme($settings['design']['publication_tile_image_guidebook'], 'https'),
 				'alpinist' => set_url_scheme($settings['design']['magazine_tile_image_alpinist'] ?? '', 'https'),
 				'backcountry' => set_url_scheme($settings['design']['magazine_tile_image_backcountry'] ?? '', 'https'),
+				'summit' => set_url_scheme($settings['design']['magazine_tile_image_summit'] ?? '', 'https'),
+				'climbing_zine' => set_url_scheme($settings['design']['magazine_tile_image_climbing_zine'] ?? '', 'https'),
+				'gripped' => set_url_scheme($settings['design']['magazine_tile_image_gripped'] ?? '', 'https'),
 			],
 		];
 	}

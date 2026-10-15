@@ -914,7 +914,40 @@ class AAC_Member_Portal_API {
 	}
 
 	public function update_profile(WP_REST_Request $request) {
-		$user_id = get_current_user_id();
+		return $this->save_profile_for_user(get_current_user_id(), $request);
+	}
+
+	public function admin_update_member($user_id, $changes) {
+		$user_id = absint($user_id);
+		if (!current_user_can('manage_options') || !current_user_can('edit_user', $user_id)) {
+			return new WP_Error('forbidden', 'You cannot edit this member.', ['status' => 403]);
+		}
+		if (!get_user_by('id', $user_id)) {
+			return new WP_Error('not_found', 'Member not found.', ['status' => 404]);
+		}
+		if (!is_array($changes) || empty($changes)) {
+			return new WP_Error('invalid_input', 'No member changes provided.', ['status' => 400]);
+		}
+		$profile = $this->build_profile($user_id);
+		$account = is_array($profile['account_info'] ?? null) ? $profile['account_info'] : [];
+		$allowed = AAC_Member_Portal_Member_Database::editable_member_fields();
+		foreach ($allowed as $key => $label) {
+			if (array_key_exists($key, $changes)) {
+				if (!is_scalar($changes[$key])) {
+					return new WP_Error('invalid_input', 'Invalid field value.', ['status' => 400]);
+				}
+				if ($key === 'student_university' && $changes[$key] !== ($account[$key] ?? '')) {
+					$account['student_university_id'] = '';
+				}
+				$account[$key] = $changes[$key];
+			}
+		}
+		$request = new WP_REST_Request('PATCH');
+		$request->set_param('account_info', $account);
+		return $this->save_profile_for_user($user_id, $request);
+	}
+
+	private function save_profile_for_user($user_id, WP_REST_Request $request) {
 		$account_info = $request->get_param('account_info');
 		$profile_info = $request->get_param('profile_info');
 		$benefits_info = $request->get_param('benefits_info');

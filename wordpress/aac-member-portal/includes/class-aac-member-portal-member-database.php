@@ -15,6 +15,7 @@ class AAC_Member_Portal_Member_Database {
 
 	public function __construct() {
 		add_action('admin_menu', [$this, 'register_admin_page']);
+		add_action('admin_post_aac_member_portal_edit_member', [$this, 'handle_edit_member']);
 		add_action('init', [$this, 'maybe_install_schema']);
 		add_action('admin_post_aac_member_portal_export_member_database', [$this, 'handle_export_member_database']);
 		add_action('admin_post_aac_member_portal_save_member_export_fields', [$this, 'handle_save_member_export_fields']);
@@ -1800,6 +1801,95 @@ class AAC_Member_Portal_Member_Database {
 		return is_string($json) ? $json : '';
 	}
 
+
+	public static function editable_member_fields() {
+		return [
+			'first_name' => 'First name', 'last_name' => 'Last name', 'email' => 'Email',
+			'phone' => 'Phone', 'birthdate' => 'Birthdate',
+			'street' => 'Street address', 'address2' => 'Address 2', 'city' => 'City',
+			'state' => 'State / Province', 'zip' => 'ZIP / Postal code', 'country' => 'Country',
+			'shipping_address_different' => 'Use a separate shipping address',
+			'shipping_address_1' => 'Shipping street address', 'shipping_address_2' => 'Shipping address 2',
+			'shipping_city' => 'Shipping city', 'shipping_state' => 'Shipping state / province',
+			'shipping_postal_code' => 'Shipping ZIP / Postal code', 'shipping_country' => 'Shipping country',
+			'emergency_contact_first_name' => 'Emergency contact first name',
+			'emergency_contact_last_name' => 'Emergency contact last name',
+			'emergency_contact_phone' => 'Emergency contact phone',
+			'emergency_contact_email' => 'Emergency contact email',
+			'emergency_contact_relationship' => 'Emergency contact relationship',
+			'student_university' => 'School / University', 'graduation_date' => 'Graduation date',
+			'service_component' => 'Service component', 'size' => 'T-shirt size',
+			'aaj_pref' => 'AAJ preference', 'anac_pref' => 'Accidents preference',
+			'acj_pref' => 'ACJ preference', 'guidebook_pref' => 'Guidebook preference',
+		];
+	}
+
+	public function handle_edit_member() {
+		$member_id = isset($_POST['member_id']) ? absint($_POST['member_id']) : 0;
+		if (!current_user_can('manage_options') || !current_user_can('edit_user', $member_id)) {
+			wp_die('You cannot edit this member.', '', ['response' => 403]);
+		}
+		check_admin_referer('aac_edit_member_' . $member_id);
+		$changes = isset($_POST['member']) && is_array($_POST['member']) ? wp_unslash($_POST['member']) : [];
+		$api = AAC_Member_Portal_API::get_instance();
+		$result = $api ? $api->admin_update_member($member_id, $changes) : new WP_Error('unavailable', 'Member editing is unavailable.');
+		if (is_wp_error($result)) {
+			wp_die(esc_html($result->get_error_message()), 'Member not saved', ['back_link' => true]);
+		}
+		update_user_meta($member_id, 'aac_last_admin_profile_edit', ['admin_id' => get_current_user_id(), 'at' => current_time('mysql')]);
+		$this->sync_member($member_id);
+		wp_safe_redirect($this->build_admin_url(['member_id' => $member_id, 'tab' => 'profile', 'aac_member_saved' => 1]));
+		exit;
+	}
+
+	private function render_edit_member_form($member_id) {
+		if (!current_user_can('edit_user', $member_id)) {
+			echo '<p>You cannot edit this member.</p>';
+			return;
+		}
+		$api = AAC_Member_Portal_API::get_instance();
+		$profile = $api ? $api->get_profile_for_user($member_id) : [];
+		$account = $profile['account_info'] ?? [];
+		$required = ['first_name', 'last_name', 'email', 'street', 'city', 'state', 'zip', 'country'];
+		?>
+		<h3>Edit Member</h3>
+		<p>Update this member's profile and publication preferences. Fields marked * are required.</p>
+		<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+			<input type="hidden" name="action" value="aac_member_portal_edit_member" />
+			<input type="hidden" name="member_id" value="<?php echo esc_attr($member_id); ?>" />
+			<?php wp_nonce_field('aac_edit_member_' . $member_id); ?>
+			<table class="form-table"><tbody>
+			<?php foreach (self::editable_member_fields() as $key => $label) :
+				$value = $account[$key] ?? '';
+				$is_required = in_array($key, $required, true);
+				$options = null;
+				if (substr($key, -5) === '_pref') { $options = ['Print', 'Digital']; }
+				if ($key === 'service_component') { $options = ['Active', 'Reserve', 'Veteran', 'Retired']; }
+				if ($key === 'size') { $options = ['No T-shirt', 'Unisex Small', 'Unisex Medium', 'Unisex Large', 'Unisex X-Large', 'Unisex XX-Large']; }
+				if ($key === 'emergency_contact_relationship') { $options = $account['emergency_contact_relationship_options'] ?? null; }
+				?>
+				<tr><th><label for="aac-edit-<?php echo esc_attr($key); ?>"><?php echo esc_html($label . ($is_required ? ' *' : '')); ?></label></th><td>
+				<?php if ($key === 'shipping_address_different') : ?>
+					<input type="hidden" name="member[<?php echo esc_attr($key); ?>]" value="0" />
+					<input id="aac-edit-<?php echo esc_attr($key); ?>" type="checkbox" name="member[<?php echo esc_attr($key); ?>]" value="1" <?php checked(!empty($value)); ?> />
+				<?php elseif (is_array($options) && !empty($options) && is_string(reset($options))) :
+					$options = array_unique(array_merge(['', (string) $value], array_values($options))); ?>
+					<select id="aac-edit-<?php echo esc_attr($key); ?>" name="member[<?php echo esc_attr($key); ?>]">
+					<?php foreach ($options as $option) : ?><option value="<?php echo esc_attr($option); ?>" <?php selected((string) $value, $option); ?>><?php echo esc_html($option ?: 'Select'); ?></option><?php endforeach; ?>
+					</select>
+				<?php else :
+					$type = strpos($key, 'email') !== false ? 'email' : (in_array($key, ['birthdate', 'graduation_date'], true) ? 'date' : 'text'); ?>
+					<input class="regular-text" id="aac-edit-<?php echo esc_attr($key); ?>" type="<?php echo esc_attr($type); ?>" name="member[<?php echo esc_attr($key); ?>]" value="<?php echo esc_attr($value); ?>" <?php echo $is_required ? 'required' : ''; ?> />
+				<?php endif; ?>
+				</td></tr>
+			<?php endforeach; ?>
+			</tbody></table>
+			<?php submit_button('Save Member Changes'); ?>
+			<a class="button" href="<?php echo esc_url($this->build_admin_url(['member_id' => $member_id])); ?>">Cancel</a>
+		</form>
+		<?php
+	}
+
 	public function render_admin_page() {
 		if (!current_user_can('manage_options')) {
 			return;
@@ -1976,6 +2066,7 @@ class AAC_Member_Portal_Member_Database {
 	private function render_member_detail_panel($member_id, $profile_row, $tab, $search, $paged, $did_sync, $history_rows, $subscription_rows, $transaction_rows) {
 		$tabs = [
 			'profile' => 'Profile',
+			'edit' => 'Edit Member',
 			'preferences' => 'Preferences',
 			'membership-history' => 'Membership History',
 			'subscriptions' => 'Subscriptions',
@@ -2004,6 +2095,7 @@ class AAC_Member_Portal_Member_Database {
 			</div>
 		</div>
 
+		<?php if (!empty($_GET['aac_member_saved'])) : ?><div class="notice notice-success inline"><p>Member changes saved.</p></div><?php endif; ?>
 		<?php if ($did_sync) : ?>
 			<div class="notice notice-success inline" style="margin:16px 0 0;">
 				<p>Member mirror refreshed.</p>
@@ -2020,7 +2112,9 @@ class AAC_Member_Portal_Member_Database {
 
 		<div style="margin-top:20px;">
 			<?php
-			if ($tab === 'preferences') {
+			if ($tab === 'edit') {
+				$this->render_edit_member_form($member_id);
+			} elseif ($tab === 'preferences') {
 				$this->render_preferences_tab($profile_row);
 			} elseif ($tab === 'membership-history') {
 				$this->render_json_tab_table($history_rows, 'No mirrored membership history found.', 'membership');

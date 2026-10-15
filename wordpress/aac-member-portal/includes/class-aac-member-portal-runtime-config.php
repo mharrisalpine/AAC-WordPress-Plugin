@@ -22,6 +22,13 @@ class AAC_Member_Portal_Runtime_Config {
 		$settings = is_array($settings) ? $settings : [];
 		$content = isset($settings['content']) && is_array($settings['content']) ? $settings['content'] : [];
 		$design = isset($settings['design']) && is_array($settings['design']) ? $settings['design'] : [];
+		$magazine_cards = [];
+		foreach (['alpinist', 'backcountry', 'summit', 'climbing_zine', 'gripped'] as $magazine_id) {
+			$magazine_cards[$magazine_id] = [
+				'description' => $design['magazine_description_' . $magazine_id] ?? '',
+				'url' => esc_url_raw($design['magazine_url_' . $magazine_id] ?? '', ['http', 'https']),
+			];
+		}
 		$signup_hero_image_url = AAC_MEMBER_PORTAL_URL . 'app/assets/join-hero-static-image.jpg';
 
 		$content_settings = array_merge(
@@ -86,6 +93,7 @@ class AAC_Member_Portal_Runtime_Config {
 				'loginBackgroundImageUrl' => !empty($design['login_background_image_url']) ? $design['login_background_image_url'] : $signup_hero_image_url,
 				'homeIntroImageUrl' => $design['home_intro_image_url'] ?? '',
 				'homeIntroAccentImageUrl' => $design['home_intro_accent_image_url'] ?? '',
+				'magazineCards' => $magazine_cards,
 				'publicationTileImages' => [
 					'aaj' => set_url_scheme($design['publication_tile_image_aaj'] ?? '', 'https'),
 					'anac' => set_url_scheme($design['publication_tile_image_anac'] ?? '', 'https'),
@@ -93,6 +101,9 @@ class AAC_Member_Portal_Runtime_Config {
 					'guidebook' => set_url_scheme($design['publication_tile_image_guidebook'] ?? '', 'https'),
 					'alpinist' => set_url_scheme($design['magazine_tile_image_alpinist'] ?? '', 'https'),
 					'backcountry' => set_url_scheme($design['magazine_tile_image_backcountry'] ?? '', 'https'),
+					'summit' => set_url_scheme($design['magazine_tile_image_summit'] ?? '', 'https'),
+					'climbing_zine' => set_url_scheme($design['magazine_tile_image_climbing_zine'] ?? '', 'https'),
+					'gripped' => set_url_scheme($design['magazine_tile_image_gripped'] ?? '', 'https'),
 				],
 			],
 			'navigation' => [
@@ -117,7 +128,7 @@ class AAC_Member_Portal_Runtime_Config {
 	private function build_signup_level_benefits($settings) {
 		$levels = AAC_Member_Portal_Admin::get_signup_level_labels();
 		$content = isset($settings['content']) && is_array($settings['content']) ? $settings['content'] : [];
-		$catalog = AAC_Member_Portal_Settings_Schema::signup_benefit_catalog_rows_to_map($content['signup_benefit_catalog'] ?? []);
+		$catalog = AAC_Member_Portal_Settings_Schema::normalize_signup_benefit_catalog($content['signup_benefit_catalog'] ?? []);
 		$selected = isset($content['signup_level_benefits']) && is_array($content['signup_level_benefits'])
 			? $content['signup_level_benefits']
 			: AAC_Member_Portal_Admin::get_default_signup_level_benefits();
@@ -141,16 +152,15 @@ class AAC_Member_Portal_Runtime_Config {
 			$runtime[$level_id] = [];
 			$rescue_level = $rescue_levels_by_name[strtolower($level_id)] ?? [];
 			$selected_lookup = array_fill_keys(is_array($selected[$level_id] ?? null) ? $selected[$level_id] : [], true);
-			foreach ($catalog as $benefit_key => $benefit_label) {
+			foreach ($catalog as $benefit_row) {
+				$benefit_key = $benefit_row['key'];
+				$benefit_label = $benefit_row['label'];
 				if (empty($selected_lookup[$benefit_key])) {
 					continue;
 				}
-				if ($benefit_key === 'rescue_coverage') {
-					$benefit_label = $this->format_signup_benefit_amount_label($benefit_label, $rescue_level['rescue_amount'] ?? null);
-				} elseif ($benefit_key === 'medical_expense_coverage') {
-					$benefit_label = $this->format_signup_benefit_amount_label($benefit_label, $rescue_level['medical_amount'] ?? null);
-				} elseif ($benefit_key === 'mortal_remains_transport') {
-					$benefit_label = $this->format_signup_benefit_amount_label($benefit_label, $rescue_level['mortal_remains_amount'] ?? null);
+				$amount_source = $benefit_row['amount_source'];
+				if ($amount_source !== '') {
+					$benefit_label = $this->format_signup_benefit_amount_label($benefit_label, $rescue_level[$amount_source] ?? null);
 				}
 				$runtime[$level_id][] = $benefit_label;
 			}

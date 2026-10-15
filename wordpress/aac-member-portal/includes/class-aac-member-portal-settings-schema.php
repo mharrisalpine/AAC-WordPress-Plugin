@@ -80,6 +80,14 @@ class AAC_Member_Portal_Settings_Schema {
 				'publications_locked_title' => 'Books & Media Unlocks at Partner',
 				'publications_locked_description' => 'The AAC publication library is available to Partner members and above. Upgrade your membership to open digital issues and manage your publication preferences.',
 				'publications_upgrade_button_label' => 'Upgrade Membership',
+				'publication_title_aaj' => 'American Alpine Journal',
+				'publication_description_aaj' => 'Published since 1929, the American Alpine Journal (AAJ) is renowned as the most comprehensive worldwide source of information on long new climbs. AAC members receive a copy of the 368-page book in the fall. Members also can download a PDF copy at the link below. To opt out of receiving a print copy (and save resources), visit Account Preferences on your Member Profile.',
+				'publication_title_anac' => 'Accidents in North American Climbing',
+				'publication_description_anac' => 'Published annually since 1948, Accidents in North American Climbing documents the year’s most significant and teachable climbing accidents. AAC members will be mailed a copy of the book in the fall. Members also can download a PDF copy at the link below. To opt out of receiving a print copy (and save resources), visit Account Preferences on your Member Profile.',
+				'publication_title_acj' => 'American Climbing Journal',
+				'publication_description_acj' => 'American Climbing Journal access is being prepared for the member portal. Use the View button for the current placeholder destination while the final digital edition link is added.',
+				'publication_title_guidebook' => 'Guidebook to Membership',
+				'publication_description_guidebook' => 'The Guidebook is a quarterly publication that features the human stories of the Club\'s work-how AAC community members are delving into accessibility, route development, advocacy, climbing expeditions, translating AAC books for international audiences, giving back to their local community, researching mountain ecosystems, and more! AAC Partner members receive print editions as well as digital access at the link below. Visit your settings to change your mailing preferences.',
 				'publication_view_url_aaj' => 'https://aac-publications.s3.us-east-1.amazonaws.com/aaj/AAJ+2025.pdf',
 				'publication_view_url_anac' => 'https://aac-publications.s3.us-east-1.amazonaws.com/ANAC+2025+Book_Digital_reduced.pdf',
 				'publication_view_url_acj' => 'https://americanalpineclub.org/publications/',
@@ -170,6 +178,19 @@ class AAC_Member_Portal_Settings_Schema {
 				'publication_tile_image_guidebook' => '',
 				'magazine_tile_image_alpinist' => '',
 				'magazine_tile_image_backcountry' => '',
+				'magazine_tile_image_summit' => '',
+				'magazine_tile_image_climbing_zine' => '',
+				'magazine_tile_image_gripped' => '',
+				'magazine_description_alpinist' => '',
+				'magazine_url_alpinist' => '',
+				'magazine_description_backcountry' => '',
+				'magazine_url_backcountry' => '',
+				'magazine_description_summit' => '',
+				'magazine_url_summit' => '',
+				'magazine_description_climbing_zine' => '',
+				'magazine_url_climbing_zine' => '',
+				'magazine_description_gripped' => '',
+				'magazine_url_gripped' => '',
 			],
 			'components' => [
 				'section_titles' => [
@@ -206,10 +227,30 @@ class AAC_Member_Portal_Settings_Schema {
 		];
 	}
 
+	public static function get_signup_benefit_amount_sources() {
+		return [
+			'' => 'Checkmark only (no dollar amount)',
+			'rescue_amount' => 'Redpoint: Rescue Coverage',
+			'medical_amount' => 'Redpoint: Medical Expense Coverage',
+			'mortal_remains_amount' => 'Redpoint: Mortal Remains Transport',
+		];
+	}
+
+	private static function signup_benefit_amount_source($row, $key, $label) {
+		if (array_key_exists('amount_source', $row)) {
+			$source = sanitize_key($row['amount_source']);
+			return array_key_exists($source, self::get_signup_benefit_amount_sources()) ? $source : '';
+		}
+		// Preserve legacy coverage rows only when their original label still matches.
+		$legacy = ['rescue_coverage' => 'rescue_amount', 'medical_expense_coverage' => 'medical_amount', 'mortal_remains_transport' => 'mortal_remains_amount'];
+		$labels = self::get_signup_level_benefit_catalog();
+		return isset($legacy[$key]) && strcasecmp(trim($label), $labels[$key]) === 0 ? $legacy[$key] : '';
+	}
+
 	public static function get_default_signup_benefit_catalog_rows() {
 		$rows = [];
 		foreach (self::get_signup_level_benefit_catalog() as $key => $label) {
-			$rows[] = ['key' => $key, 'label' => $label];
+			$rows[] = ['key' => $key, 'label' => $label, 'amount_source' => self::signup_benefit_amount_source([], $key, $label)];
 		}
 		return $rows;
 	}
@@ -239,7 +280,7 @@ class AAC_Member_Portal_Settings_Schema {
 				$suffix++;
 			}
 			$seen[$key] = true;
-			$normalized[] = ['key' => $key, 'label' => $label];
+			$normalized[] = ['key' => $key, 'label' => $label, 'amount_source' => self::signup_benefit_amount_source($row, $key, $label)];
 		}
 
 		return !empty($normalized) ? $normalized : self::get_default_signup_benefit_catalog_rows();
@@ -394,10 +435,10 @@ class AAC_Member_Portal_Settings_Schema {
 			],
 			[
 				'id' => 'member-store',
-				'title' => 'Member Store',
+				'title' => 'AAC Store',
 				'image_url' => 'https://images.unsplash.com/photo-1501555088652-021faa106b9b?auto=format&fit=crop&w=1200&q=82',
 				'url' => 'https://americanalpineclub.myshopify.com/',
-				'action_label' => 'Open Member Store',
+				'action_label' => 'Open AAC Store',
 				'description' => 'Shop AAC apparel, books, gifts, and member merchandise from the American Alpine Club store.',
 			],
 			[
@@ -414,7 +455,7 @@ class AAC_Member_Portal_Settings_Schema {
 				'image_url' => 'https://images.unsplash.com/photo-1518780664697-55e3ad937233?auto=format&fit=crop&w=1200&q=82',
 				'url' => 'https://americanalpine.wpenginepowered.com/lodging/',
 				'action_label' => 'Open Lodging',
-				'description' => 'Leader level members receive deep discounts at AAC lodging facilities across the country, as well as huts and affiliates throughout the globe.',
+				'description' => 'Members receive deep discounts at AAC lodging facilities across the country, as well as huts and affiliates throughout the globe.',
 			],
 			[
 				'id' => 'grants',
@@ -750,6 +791,10 @@ class AAC_Member_Portal_Settings_Schema {
 
 		$content_input = isset($input['content']) && is_array($input['content']) ? $input['content'] : [];
 		$text_fields = [
+			'publication_title_aaj',
+			'publication_title_anac',
+			'publication_title_acj',
+			'publication_title_guidebook',
 			'home_hero_kicker',
 			'home_hero_title',
 			'home_primary_cta_label',
@@ -807,6 +852,10 @@ class AAC_Member_Portal_Settings_Schema {
 		}
 
 		$textarea_fields = [
+			'publication_description_aaj',
+			'publication_description_anac',
+			'publication_description_acj',
+			'publication_description_guidebook',
 			'home_hero_description',
 			'home_membership_chip_description',
 			'home_intro_description',
@@ -929,10 +978,25 @@ class AAC_Member_Portal_Settings_Schema {
 			'publication_tile_image_guidebook',
 			'magazine_tile_image_alpinist',
 			'magazine_tile_image_backcountry',
+			'magazine_tile_image_summit',
+			'magazine_tile_image_climbing_zine',
+			'magazine_tile_image_gripped',
+			'magazine_url_alpinist',
+			'magazine_url_backcountry',
+			'magazine_url_summit',
+			'magazine_url_climbing_zine',
+			'magazine_url_gripped',
 		];
 		foreach ($design_url_fields as $field) {
 			if (array_key_exists($field, $design_input)) {
 				$settings['design'][$field] = esc_url_raw($design_input[$field]);
+			}
+		}
+
+		foreach (['alpinist', 'backcountry', 'summit', 'climbing_zine', 'gripped'] as $magazine_id) {
+			$field = 'magazine_description_' . $magazine_id;
+			if (array_key_exists($field, $design_input)) {
+				$settings['design'][$field] = sanitize_textarea_field($design_input[$field]);
 			}
 		}
 

@@ -661,28 +661,28 @@ const AccountTab = ({ profile }) => {
                   </p>
                   <CommunicationPreferenceToggle
                     label="American Alpine Journal"
-                    description="Annual publication delivery"
+                    description="Annual publication delivered in fall"
                     value={accountData.aaj_pref || 'Print'}
                     lastUpdated={accountData.aaj_preference_last_updated}
                     onChange={(value) => patchAccountData({ aaj_pref: value })}
                   />
                   <CommunicationPreferenceToggle
                     label="Accidents in North American Climbing"
-                    description="Annual publication delivery"
+                    description="Annual publication delivered in fall"
                     value={accountData.anac_pref || 'Print'}
                     lastUpdated={accountData.anac_preference_last_updated}
                     onChange={(value) => patchAccountData({ anac_pref: value })}
                   />
                   <CommunicationPreferenceToggle
                     label="American Climbing Journal"
-                    description="Journal delivery"
+                    description="Annual publication delivered in fall"
                     value={accountData.acj_pref || 'Print'}
                     lastUpdated={accountData.american_climbing_journal_preference_last_updated}
                     onChange={(value) => patchAccountData({ acj_pref: value })}
                   />
                   <CommunicationPreferenceToggle
                     label="Guidebook to Membership"
-                    description="AAC guide content delivery"
+                    description="Quarterly storytelling magazine"
                     value={accountData.guidebook_pref || 'Print'}
                     lastUpdated={accountData.guidebook_preferences_last_updated}
                     onChange={(value) => patchAccountData({ guidebook_pref: value })}

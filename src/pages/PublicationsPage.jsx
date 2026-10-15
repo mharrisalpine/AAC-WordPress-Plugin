@@ -9,13 +9,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { isPartnerOrAboveMembershipTierId } from '@/lib/membershipTiers';
 import { normalizeAccountInfo, normalizePrintDigitalPreference } from '@/lib/memberProfile';
 
-const PUBLICATION_PREFERENCE_LABELS = {
-  aaj: 'American Alpine Journal',
-  anac: 'Accidents in North American Climbing',
-  acj: 'American Climbing Journal',
-  guidebook: 'Guidebook to Membership',
-};
-
 const PODCASTS = [
   {
     title: 'American Alpine Club Podcast',
@@ -123,7 +116,7 @@ const PublicationsPage = () => {
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {publicationItems.map((item) => {
               const selection = getPublicationSelectionForItem(accountInfo, item.id);
-              const selectionLabel = PUBLICATION_PREFERENCE_LABELS[item.id] || item.title;
+              const selectionLabel = item.title;
 
               return (
                 <article key={item.id} className="aac-publication-card flex h-full flex-col bg-white">

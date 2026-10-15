@@ -26,6 +26,7 @@ if (!defined('ABSPATH')) {
 }
 
 $portal_plugin = $GLOBALS['aac_member_portal_plugin'] ?? null;
+$supporter_publications_digital_only = $portal_plugin instanceof AAC_Member_Portal_Plugin && $portal_plugin->is_supporter_signup_checkout();
 $portal_design_settings = $portal_plugin instanceof AAC_Member_Portal_Plugin
 	? $portal_plugin->get_template_design_settings()
 	: [
@@ -4559,6 +4560,8 @@ const defaultPublicationCardImages = {
 		}
 	};
 
+	const supporterPublicationsDigitalOnly = <?php echo wp_json_encode($supporter_publications_digital_only); ?>;
+
 	const getCurrentCheckoutLevelId = () => Number.parseInt(document.getElementById('pmpro_level')?.value || '0', 10) || 0;
 
 	const getCurrentCheckoutLevelName = () => {
@@ -4943,8 +4946,8 @@ const defaultPublicationCardImages = {
 			createPreferenceCard({
 				themeClass: 'aac-member-preferences__card--journal',
 				eyebrow: 'Annual',
-				title: 'American Alpine Journal',
-				description: 'Annual climbing journal. Choose print delivery or digital-only access.',
+				title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_aaj'] ?? 'American Alpine Journal', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+				description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_aaj'] ?? 'Annual climbing journal. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 				fieldName: 'aaj_preference',
 				selectElement: aajSelect,
 				imageUrl: resolvedPublicationCardImages.aaj,
@@ -4958,8 +4961,8 @@ const defaultPublicationCardImages = {
 			createPreferenceCard({
 				themeClass: 'aac-member-preferences__card--accidents',
 				eyebrow: 'Annual',
-				title: 'Accidents in North American Climbing',
-				description: 'Annual accident review. Choose print delivery or digital-only access.',
+				title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_anac'] ?? 'Accidents in North American Climbing', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+				description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_anac'] ?? 'Annual accident review. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 				fieldName: 'anac_preference',
 				selectElement: anacSelect,
 				imageUrl: resolvedPublicationCardImages.anac,
@@ -4967,8 +4970,8 @@ const defaultPublicationCardImages = {
 			createPreferenceCard({
 				themeClass: 'aac-member-preferences__card--journal',
 				eyebrow: 'Journal',
-				title: 'American Climbing Journal',
-				description: 'Member stories and club updates. Choose print delivery or digital-only access.',
+				title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_acj'] ?? 'American Climbing Journal', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+				description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_acj'] ?? 'Member stories and club updates. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 				fieldName: 'american_climbing_journal_preference',
 				selectElement: acjSelect,
 				imageUrl: resolvedPublicationCardImages.acj,
@@ -4976,8 +4979,8 @@ const defaultPublicationCardImages = {
 			createPreferenceCard({
 				themeClass: 'aac-member-preferences__card--guidebook',
 				eyebrow: 'Quarterly',
-				title: 'Guidebook to Membership',
-				description: 'Quarterly member publication. Choose print delivery or digital-only access.',
+				title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_guidebook'] ?? 'Guidebook to Membership', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+				description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_guidebook'] ?? 'Quarterly member publication. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 				fieldName: 'guidebook_preferences',
 				selectElement: guidebookSelect,
 				imageUrl: resolvedPublicationCardImages.guidebook,
@@ -5543,7 +5546,8 @@ const defaultPublicationCardImages = {
 		return summary;
 	};
 
-	const syncMagazineAddonSummary = () => {
+	document.addEventListener('aac:pricing-updated', () => window.setTimeout(syncMagazineAddonSummary, 0));
+		const syncMagazineAddonSummary = () => {
 		if (document.body.classList.contains('pmpro-cancel')) {
 			document.querySelectorAll('[data-aac-magazine-summary], .aac-magazine-addons__summary, [data-aac-discount-code], .aac-magazine-addons__promo').forEach((node) => node.remove());
 			return;
@@ -5614,9 +5618,12 @@ const defaultPublicationCardImages = {
 		const membershipSummaryLabel = showsProratedMembershipAmount
 			? `${buildMembershipLineItemLabel(membershipName)} (prorated amount due today)`
 			: getProratedMembershipSummaryLabel(membershipName);
+		const upgradeRows = window.__aacBuildUpgradeMembershipRows?.(promoDiscountCode || selectedDiscountInput?.dataset.aacMembershipDiscountCode, promoDiscountLabel);
 		const lineItems = [
-			{ label: membershipSummaryLabel, amount: membershipLineAmount },
-			...(promoDiscountAmount > 0 ? [{ label: promoDiscountLabel, amount: 0 - promoDiscountAmount, isDiscount: true }] : []),
+			...(upgradeRows || [
+				{ label: membershipSummaryLabel, amount: membershipLineAmount },
+				...(promoDiscountAmount > 0 ? [{ label: promoDiscountLabel, amount: 0 - promoDiscountAmount, isDiscount: true }] : []),
+			]),
 			...(familyAdultAmount > 0 ? [{ label: 'Additional adult', amount: familyAdultAmount }] : []),
 			...(familyDependentsAmount > 0 ? [{ label: `${familyDependentCount} ${familyDependentCount === 1 ? 'dependent' : 'dependents'}`, amount: familyDependentsAmount }] : []),
 			...(donationAmount > 0 ? [{ label: 'Donation', amount: donationAmount }] : []),
@@ -5769,7 +5776,7 @@ const defaultPublicationCardImages = {
 		const syncMembershipDiscountCodeSelection = (selectedInput) => {
 			const selectedCode = selectedInput?.checked ? String(selectedInput.dataset.aacMembershipDiscountCode || '').trim() : '';
 			if (selectedCode) {
-				if (normalizeDiscountCode(getDiscountCodeState()) !== normalizeDiscountCode(selectedCode)) {
+				if (normalizeDiscountCode(window.__aacAppliedDiscountCode) !== normalizeDiscountCode(selectedCode)) {
 					applyNativeDiscountCode(selectedCode, true);
 			}
 			return;
@@ -5983,7 +5990,7 @@ const defaultPublicationCardImages = {
 			}
 
 			if (memberPreferencesFieldset) {
-				const showPublications = isUS && getCurrentCheckoutLevelId() > 2;
+				const showPublications = isUS && (supporterPublicationsDigitalOnly || getCurrentCheckoutLevelId() > 2);
 				memberPreferencesFieldset.hidden = !showPublications;
 				memberPreferencesFieldset.style.display = showPublications ? '' : 'none';
 				if (!showPublications) {
@@ -6851,7 +6858,7 @@ const defaultPublicationCardImages = {
 	};
 
 	const enhancePublicationPreferenceCards = () => {
-		const skipPublicationPreferences = new URLSearchParams(window.location.search).get('aac_skip_publications') === '1';
+		const skipPublicationPreferences = !supporterPublicationsDigitalOnly && new URLSearchParams(window.location.search).get('aac_skip_publications') === '1';
 		if (skipPublicationPreferences) {
 			document.querySelectorAll('.aac-server-member-preferences, #pmpro_form_fieldset-publication-preferences, #pmpro_form_fieldset-member-preferences, #pmpro_form_fieldset-more-information').forEach((surface) => {
 				surface.hidden = true;
@@ -7338,75 +7345,81 @@ const defaultPublicationCardImages = {
 
 			let requestCounter = 0;
 			let debounceTimer = null;
-
+			let activeController = null;
+			let checkedEmail = '';
+			let checkedAt = 0;
 			const setStatus = (state, message) => {
 				statusNode.dataset.state = state;
 				statusNode.textContent = message || '';
 			};
-
-			const runAvailabilityCheck = async () => {
-				const email = String(emailInput.value || '').trim();
-				emailInput.setCustomValidity('');
-
-				if (!email) {
-					setStatus('idle', '');
-					return;
-				}
-
-				if (!emailInput.checkValidity()) {
-					setStatus('idle', 'Enter a valid email address.');
-					return;
-				}
-
-				const currentRequest = ++requestCounter;
-				setStatus('checking', 'Checking email availability...');
-
-				try {
-					const url = new URL(emailAvailabilityEndpoint);
-					url.searchParams.set('email', email);
-
-					const response = await fetch(url.toString(), {
-						credentials: 'same-origin',
-						headers: {
-							Accept: 'application/json',
-						},
-					});
-
-					if (!response.ok) {
-						throw new Error(`Email check failed with status ${response.status}`);
-					}
-
-					const result = await response.json();
-					if (currentRequest !== requestCounter) {
-						return;
-					}
-
-					if (result?.valid && result?.available) {
-						emailInput.setCustomValidity('');
-						setStatus('available', result.message || 'Email address is available.');
-						return;
-					}
-
-					const message = result?.message || 'An account with this email already exists.';
-					emailInput.setCustomValidity(message);
-					setStatus('unavailable', message);
-				} catch (error) {
-					if (currentRequest !== requestCounter) {
-						return;
-					}
-
-					emailInput.setCustomValidity('');
-					setStatus('idle', 'Unable to check email availability right now.');
-				}
+			const cancelCheck = () => {
+				++requestCounter;
+				if (activeController) activeController.abort();
+				activeController = null;
 			};
-
-			const scheduleAvailabilityCheck = () => {
+			const runCheck = async () => {
 				window.clearTimeout(debounceTimer);
-				debounceTimer = window.setTimeout(runAvailabilityCheck, 280);
+				const email = String(emailInput.value || '').trim();
+				// Input, change and blur can all fire for the same address.
+				if (email === checkedEmail && (activeController || Date.now() - checkedAt < 30000)) return;
+				cancelCheck();
+				emailInput.setCustomValidity('');
+				if (!email || !emailInput.checkValidity()) {
+					setStatus('idle', email ? 'Enter a valid email address.' : '');
+					return;
+				}
+				checkedEmail = email;
+				checkedAt = 0;
+				const currentRequest = requestCounter;
+				const controller = new AbortController();
+				activeController = controller;
+				const timeout = window.setTimeout(() => controller.abort(), 5000);
+				setStatus('checking', 'Checking email availability...');
+				try {
+					const endpoint = new URL('/wp-json/aac/v1/email-availability', window.location.origin);
+					endpoint.searchParams.set('email', email);
+					const response = await fetch(endpoint.toString(), {
+						credentials: 'same-origin',
+						cache: 'no-store',
+						signal: controller.signal,
+						headers: { Accept: 'application/json' },
+					});
+					if (!response.ok) throw new Error('Email availability request failed.');
+					const result = await response.json();
+					if (currentRequest !== requestCounter) return;
+					if (typeof result?.valid !== 'boolean' || typeof result?.available !== 'boolean') {
+						throw new Error('Invalid email availability response.');
+					}
+					checkedAt = Date.now();
+					if (result.valid && result.available) {
+						setStatus('available', result.message || 'Email address is available.');
+					} else {
+						const message = result.message || 'An account with this email already exists.';
+						emailInput.setCustomValidity(message);
+						setStatus('unavailable', message);
+					}
+				} catch (error) {
+					if (currentRequest !== requestCounter) return;
+					checkedEmail = '';
+					emailInput.setCustomValidity('');
+					setStatus('idle', 'Email will be verified when you submit your signup.');
+				} finally {
+					window.clearTimeout(timeout);
+					if (currentRequest === requestCounter) activeController = null;
+				}
 			};
-
-			emailInput.addEventListener('input', scheduleAvailabilityCheck);
-			emailInput.addEventListener('change', runAvailabilityCheck);
+			const scheduleCheck = () => {
+				window.clearTimeout(debounceTimer);
+				cancelCheck();
+				checkedEmail = '';
+				checkedAt = 0;
+				emailInput.setCustomValidity('');
+				setStatus('idle', '');
+				debounceTimer = window.setTimeout(runCheck, 200);
+			};
+			emailInput.addEventListener('input', scheduleCheck);
+			emailInput.addEventListener('change', runCheck);
+			emailInput.addEventListener('blur', runCheck);
 			emailInput.dataset.aacEmailAvailabilityBound = 'true';
 		};
 
@@ -7588,7 +7601,7 @@ const defaultPublicationCardImages = {
 				return;
 			}
 			const params = new URLSearchParams(window.location.search);
-			document.body.classList.toggle('aac-skip-publication-preferences', params.get('aac_skip_publications') === '1');
+			document.body.classList.toggle('aac-skip-publication-preferences', !supporterPublicationsDigitalOnly && params.get('aac_skip_publications') === '1');
 			const form = document.querySelector('form.pmpro_form');
 			if (!form) {
 				return;
@@ -7697,7 +7710,7 @@ const defaultPublicationCardImages = {
 			syncConditionalDiscountDetailFields();
 			bindStudentUniversityFieldObserver();
 
-			const showPublicationStep = params.get('aac_skip_publications') !== '1' && getCurrentCheckoutLevelId() > 2 && isCheckoutCountryUS();
+			const showPublicationStep = (supporterPublicationsDigitalOnly || params.get('aac_skip_publications') !== '1') && (supporterPublicationsDigitalOnly || getCurrentCheckoutLevelId() > 2) && isCheckoutCountryUS();
 			const stepDefinitions = [
 				{
 					label: 'Create Account',

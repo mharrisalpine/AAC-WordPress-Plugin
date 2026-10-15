@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
 $post = get_post();
 $is_portal_page = $post instanceof WP_Post && has_shortcode($post->post_content, AAC_Member_Portal_Plugin::SHORTCODE);
 $portal_plugin = $GLOBALS['aac_member_portal_plugin'] ?? null;
+$supporter_publications_digital_only = $portal_plugin instanceof AAC_Member_Portal_Plugin && $portal_plugin->is_supporter_signup_checkout();
 $portal_url = $portal_plugin instanceof AAC_Member_Portal_Plugin ? $portal_plugin->get_portal_page_url() : home_url('/');
 $portal_url = untrailingslashit($portal_url) . '/';
 $managed_account_url = $portal_url . '#/membership';
@@ -75,7 +76,7 @@ $requested_checkout_level = $requested_checkout_level_id > 0 && function_exists(
 $requested_checkout_level_name = is_object($requested_checkout_level) && !empty($requested_checkout_level->name)
 	? sanitize_text_field((string) $requested_checkout_level->name)
 	: '';
-$skip_publication_preferences = isset($_GET['aac_skip_publications']) && sanitize_text_field(wp_unslash($_GET['aac_skip_publications'])) === '1';
+$skip_publication_preferences = !$supporter_publications_digital_only && isset($_GET['aac_skip_publications']) && sanitize_text_field(wp_unslash($_GET['aac_skip_publications'])) === '1';
 $is_embedded_checkout = $is_checkout_page && $is_embed_request;
 $is_embedded_confirmation = $is_confirmation_page && $is_embed_request;
 $is_embedded_billing = $is_billing_page && $is_embed_request;
@@ -5622,6 +5623,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			}
 		};
 
+		const supporterPublicationsDigitalOnly = <?php echo wp_json_encode($supporter_publications_digital_only); ?>;
+
 		const getCurrentCheckoutLevelId = () => {
 			const params = new URLSearchParams(window.location.search);
 			return Number.parseInt(
@@ -6068,8 +6071,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				createPreferenceCard({
 					themeClass: 'aac-member-preferences__card--journal',
 					eyebrow: 'Annual',
-					title: 'American Alpine Journal',
-					description: 'Annual climbing journal. Choose print delivery or digital-only access.',
+					title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_aaj'] ?? 'American Alpine Journal', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+					description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_aaj'] ?? 'Annual climbing journal. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 					fieldName: 'aaj_preference',
 					selectElement: aajSelect,
 					imageUrl: resolvedPublicationCardImages.aaj,
@@ -6083,8 +6086,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				createPreferenceCard({
 					themeClass: 'aac-member-preferences__card--accidents',
 					eyebrow: 'Annual',
-					title: 'Accidents in North American Climbing',
-					description: 'Annual accident review. Choose print delivery or digital-only access.',
+					title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_anac'] ?? 'Accidents in North American Climbing', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+					description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_anac'] ?? 'Annual accident review. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 					fieldName: 'anac_preference',
 					selectElement: anacSelect,
 					imageUrl: resolvedPublicationCardImages.anac,
@@ -6092,8 +6095,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				createPreferenceCard({
 					themeClass: 'aac-member-preferences__card--journal',
 					eyebrow: 'Journal',
-					title: 'American Climbing Journal',
-					description: 'Member stories and club updates. Choose print delivery or digital-only access.',
+					title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_acj'] ?? 'American Climbing Journal', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+					description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_acj'] ?? 'Member stories and club updates. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 					fieldName: 'american_climbing_journal_preference',
 					selectElement: acjSelect,
 					imageUrl: resolvedPublicationCardImages.acj,
@@ -6101,8 +6104,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				createPreferenceCard({
 					themeClass: 'aac-member-preferences__card--guidebook',
 					eyebrow: 'Quarterly',
-					title: 'Guidebook to Membership',
-					description: 'Quarterly member publication. Choose print delivery or digital-only access.',
+					title: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_title_guidebook'] ?? 'Guidebook to Membership', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+					description: <?php echo wp_json_encode(AAC_Member_Portal_Admin::get_settings()['content']['publication_description_guidebook'] ?? 'Quarterly member publication. Choose print delivery or digital-only access.', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
 					fieldName: 'guidebook_preferences',
 					selectElement: guidebookSelect,
 					imageUrl: resolvedPublicationCardImages.guidebook,
@@ -6786,6 +6789,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			summary.appendChild(autoRenewFieldset);
 		};
 
+		document.addEventListener('aac:pricing-updated', () => window.setTimeout(syncMagazineAddonSummary, 0));
 		const syncMagazineAddonSummary = () => {
 			if (document.body.classList.contains('pmpro-cancel')) {
 				document.querySelectorAll('[data-aac-magazine-summary], .aac-magazine-addons__summary, [data-aac-discount-code], .aac-magazine-addons__promo').forEach((node) => node.remove());
@@ -6855,9 +6859,12 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				: (showsProratedMembershipAmount
 				? `${buildMembershipLineItemLabel(membershipName)} (prorated amount due today)`
 				: getProratedMembershipSummaryLabel(membershipName));
+			const upgradeRows = window.__aacBuildUpgradeMembershipRows?.(promoDiscountCode || selectedDiscountInput?.dataset.aacMembershipDiscountCode, promoDiscountLabel);
 			const lineItems = [
-				{ label: membershipSummaryLabel, amount: membershipLineAmount },
-				...(promoDiscountAmount > 0 ? [{ label: promoDiscountLabel, amount: 0 - promoDiscountAmount, isDiscount: true }] : []),
+				...(upgradeRows || [
+					{ label: membershipSummaryLabel, amount: membershipLineAmount },
+					...(promoDiscountAmount > 0 ? [{ label: promoDiscountLabel, amount: 0 - promoDiscountAmount, isDiscount: true }] : []),
+				]),
 				...(familyAdultAmount > 0 ? [{ label: 'Additional adult', amount: familyAdultAmount }] : []),
 				...(familyDependentsAmount > 0 ? [{ label: `${familyDependentCount} ${familyDependentCount === 1 ? 'dependent' : 'dependents'}`, amount: familyDependentsAmount }] : []),
 				...(donationAmount > 0 ? [{ label: 'Donation', amount: donationAmount }] : []),
@@ -7012,7 +7019,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		const syncMembershipDiscountCodeSelection = (selectedInput) => {
 			const selectedCode = selectedInput?.checked ? String(selectedInput.dataset.aacMembershipDiscountCode || '').trim() : '';
 			if (selectedCode) {
-				if (normalizeDiscountCode(getDiscountCodeState()) !== normalizeDiscountCode(selectedCode)) {
+				if (normalizeDiscountCode(window.__aacAppliedDiscountCode) !== normalizeDiscountCode(selectedCode)) {
 					applyNativeDiscountCode(selectedCode, true);
 				}
 				return;
@@ -7185,7 +7192,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			}
 
 			if (memberPreferencesFieldset) {
-				const showPublications = isUS && getCurrentCheckoutLevelId() > 1;
+				const showPublications = isUS && (supporterPublicationsDigitalOnly || getCurrentCheckoutLevelId() > 1);
 				memberPreferencesFieldset.hidden = !showPublications;
 				memberPreferencesFieldset.style.display = showPublications ? '' : 'none';
 				if (!showPublications) {
@@ -8062,7 +8069,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		};
 
 		const enhancePublicationPreferenceCards = () => {
-			const skipPublicationPreferences = new URLSearchParams(window.location.search).get('aac_skip_publications') === '1';
+			const skipPublicationPreferences = !supporterPublicationsDigitalOnly && new URLSearchParams(window.location.search).get('aac_skip_publications') === '1';
 			if (skipPublicationPreferences) {
 				document.querySelectorAll('.aac-server-member-preferences, #pmpro_form_fieldset-publication-preferences, #pmpro_form_fieldset-member-preferences, #pmpro_form_fieldset-more-information').forEach((surface) => {
 					surface.hidden = true;
@@ -8576,75 +8583,81 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 
 			let requestCounter = 0;
 			let debounceTimer = null;
-
+			let activeController = null;
+			let checkedEmail = '';
+			let checkedAt = 0;
 			const setStatus = (state, message) => {
 				statusNode.dataset.state = state;
 				statusNode.textContent = message || '';
 			};
-
-			const runAvailabilityCheck = async () => {
-				const email = String(emailInput.value || '').trim();
-				emailInput.setCustomValidity('');
-
-				if (!email) {
-					setStatus('idle', '');
-					return;
-				}
-
-				if (!emailInput.checkValidity()) {
-					setStatus('idle', 'Enter a valid email address.');
-					return;
-				}
-
-				const currentRequest = ++requestCounter;
-				setStatus('checking', 'Checking email availability...');
-
-				try {
-					const url = new URL(emailAvailabilityEndpoint);
-					url.searchParams.set('email', email);
-
-					const response = await fetch(url.toString(), {
-						credentials: 'same-origin',
-						headers: {
-							Accept: 'application/json',
-						},
-					});
-
-					if (!response.ok) {
-						throw new Error(`Email check failed with status ${response.status}`);
-					}
-
-					const result = await response.json();
-					if (currentRequest !== requestCounter) {
-						return;
-					}
-
-					if (result?.valid && result?.available) {
-						emailInput.setCustomValidity('');
-						setStatus('available', result.message || 'Email address is available.');
-						return;
-					}
-
-					const message = result?.message || 'An account with this email already exists.';
-					emailInput.setCustomValidity(message);
-					setStatus('unavailable', message);
-				} catch (error) {
-					if (currentRequest !== requestCounter) {
-						return;
-					}
-
-					emailInput.setCustomValidity('');
-					setStatus('idle', 'Unable to check email availability right now.');
-				}
+			const cancelCheck = () => {
+				++requestCounter;
+				if (activeController) activeController.abort();
+				activeController = null;
 			};
-
-			const scheduleAvailabilityCheck = () => {
+			const runCheck = async () => {
 				window.clearTimeout(debounceTimer);
-				debounceTimer = window.setTimeout(runAvailabilityCheck, 280);
+				const email = String(emailInput.value || '').trim();
+				// Input, change and blur can all fire for the same address.
+				if (email === checkedEmail && (activeController || Date.now() - checkedAt < 30000)) return;
+				cancelCheck();
+				emailInput.setCustomValidity('');
+				if (!email || !emailInput.checkValidity()) {
+					setStatus('idle', email ? 'Enter a valid email address.' : '');
+					return;
+				}
+				checkedEmail = email;
+				checkedAt = 0;
+				const currentRequest = requestCounter;
+				const controller = new AbortController();
+				activeController = controller;
+				const timeout = window.setTimeout(() => controller.abort(), 5000);
+				setStatus('checking', 'Checking email availability...');
+				try {
+					const endpoint = new URL('/wp-json/aac/v1/email-availability', window.location.origin);
+					endpoint.searchParams.set('email', email);
+					const response = await fetch(endpoint.toString(), {
+						credentials: 'same-origin',
+						cache: 'no-store',
+						signal: controller.signal,
+						headers: { Accept: 'application/json' },
+					});
+					if (!response.ok) throw new Error('Email availability request failed.');
+					const result = await response.json();
+					if (currentRequest !== requestCounter) return;
+					if (typeof result?.valid !== 'boolean' || typeof result?.available !== 'boolean') {
+						throw new Error('Invalid email availability response.');
+					}
+					checkedAt = Date.now();
+					if (result.valid && result.available) {
+						setStatus('available', result.message || 'Email address is available.');
+					} else {
+						const message = result.message || 'An account with this email already exists.';
+						emailInput.setCustomValidity(message);
+						setStatus('unavailable', message);
+					}
+				} catch (error) {
+					if (currentRequest !== requestCounter) return;
+					checkedEmail = '';
+					emailInput.setCustomValidity('');
+					setStatus('idle', 'Email will be verified when you submit your signup.');
+				} finally {
+					window.clearTimeout(timeout);
+					if (currentRequest === requestCounter) activeController = null;
+				}
 			};
-
-			emailInput.addEventListener('input', scheduleAvailabilityCheck);
-			emailInput.addEventListener('change', runAvailabilityCheck);
+			const scheduleCheck = () => {
+				window.clearTimeout(debounceTimer);
+				cancelCheck();
+				checkedEmail = '';
+				checkedAt = 0;
+				emailInput.setCustomValidity('');
+				setStatus('idle', '');
+				debounceTimer = window.setTimeout(runCheck, 200);
+			};
+			emailInput.addEventListener('input', scheduleCheck);
+			emailInput.addEventListener('change', runCheck);
+			emailInput.addEventListener('blur', runCheck);
 			emailInput.dataset.aacEmailAvailabilityBound = 'true';
 		};
 
@@ -8827,7 +8840,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			}
 			const params = new URLSearchParams(window.location.search);
 			const isLoggedInMemberCheckout = params.get('aac_member_checkout') === '1';
-			document.body.classList.toggle('aac-skip-publication-preferences', params.get('aac_skip_publications') === '1');
+			document.body.classList.toggle('aac-skip-publication-preferences', !supporterPublicationsDigitalOnly && params.get('aac_skip_publications') === '1');
 			const form = document.querySelector('form.pmpro_form');
 			if (!form || form.dataset.aacCheckoutWizardEnhanced === 'true' || form.querySelector('.aac-checkout-wizard')) {
 				return;
@@ -8959,7 +8972,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			ensureCheckoutOrderSummary();
 			bindStudentUniversityFieldObserver();
 
-			const showPublicationStep = !isLoggedInMemberCheckout && params.get('aac_skip_publications') !== '1' && getCurrentCheckoutLevelId() > 1 && isCheckoutCountryUS();
+			const showPublicationStep = !isLoggedInMemberCheckout && (supporterPublicationsDigitalOnly || params.get('aac_skip_publications') !== '1') && (supporterPublicationsDigitalOnly || getCurrentCheckoutLevelId() > 1) && isCheckoutCountryUS();
 			const stepDefinitions = [
 				{
 					label: 'Create Account',
