@@ -6,8 +6,8 @@ const source=fs.readFileSync('wordpress/aac-member-portal/aac-member-portal.php'
 const a=source.indexOf('window.__aacBuildUpgradeMembershipRows = function');
 const b=source.indexOf('const promoValidationConfig',a);
 function rows(price,code='STUDENT',level=3){
- const window={__aacUpgradePricing:{catalog:125,credit:55,level_id:3},__aacValidatedDiscountCode:price===null?null:{code,level_id:level,initial_payment:price}};
- vm.runInNewContext(source.slice(a,b),{window});
+ const window={location:{search:'?aac_membership_action=upgrade'},__aacUpgradePricing:{catalog:125,credit:55,level_id:3},__aacValidatedDiscountCode:price===null?null:{code,level_id:level,initial_payment:price}};
+ vm.runInNewContext(source.slice(a,b),{window,URLSearchParams,checkoutBasePrice:125,checkoutLevelId:3});
  return window.__aacBuildUpgradeMembershipRows('STUDENT','Student discount');
 }
 test('upgrade summary itemizes catalog, exact discount and unused credit',()=>{
@@ -39,5 +39,16 @@ test('selecting a discount requests validation even when selected card already r
   const context={window,normalizeDiscountCode:v=>String(v||'').toLowerCase(),getDiscountCodeState:()=> 'STUDENT',getMembershipDiscountLabelForCode:()=> 'Student',applyNativeDiscountCode:(code)=>{calls.push(code);window.__aacAppliedDiscountCode=code;}};
   vm.runInNewContext(block+'\nsyncMembershipDiscountCodeSelection({checked:true,dataset:{aacMembershipDiscountCode:"STUDENT"}});',context);
   assert.deepEqual(calls,['STUDENT']);
+ }
+});
+
+test('upgrade without proration metadata uses validated Student and Military totals',()=>{
+ for (const code of ['STUDENT','MILITARY']) {
+  const window={location:{search:'?aac_membership_action=upgrade'},__aacUpgradePricing:null,__aacValidatedMembershipDiscount:{code,level_id:3,initial_payment:85}};
+  vm.runInNewContext(source.slice(a,b),{window,URLSearchParams,checkoutBasePrice:125,checkoutLevelId:3});
+  const result=window.__aacBuildUpgradeMembershipRows(code,code+' discount');
+  assert.deepEqual(Array.from(result,x=>x.amount),[125,-40]);
+  assert.equal(result.reduce((total,row)=>total+row.amount,0),85);
+  assert.equal(window.__aacBuildUpgradeMembershipRows('', '').reduce((total,row)=>total+row.amount,0),125);
  }
 });

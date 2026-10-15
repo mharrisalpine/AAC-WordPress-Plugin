@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.795
+ * Version: 1.0.796
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.795');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.796');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -2573,7 +2573,12 @@ final class AAC_Member_Portal_Plugin {
 			); ?>;
 			window.__aacUpgradePricing = <?php echo wp_json_encode($checkout_level->aac_upgrade_pricing ?? null); ?>;
 			window.__aacBuildUpgradeMembershipRows = function (code, label) {
-				const pricing = window.__aacUpgradePricing;
+				const isUpgrade = new URLSearchParams(window.location.search).get('aac_membership_action') === 'upgrade';
+                const pricing = window.__aacUpgradePricing || (isUpgrade ? {
+                    catalog: checkoutBasePrice,
+                    credit: 0,
+                    level_id: checkoutLevelId,
+                } : null);
 				if (!pricing) return null;
 				const normalizedCode = String(code || '').trim().toLowerCase();
 				const validated = [window.__aacValidatedDiscountCode, window.__aacValidatedMembershipDiscount]

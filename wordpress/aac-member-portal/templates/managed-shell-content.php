@@ -4389,6 +4389,13 @@ const defaultPublicationCardImages = {
 	};
 
 	const getPmproMembershipAmount = (fallbackAmount) => {
+            const code = String(getDiscountCodeState() || document.querySelector('input[name="aac_membership_discount"]:checked')?.dataset.aacMembershipDiscountCode || '').trim().toLowerCase();
+            const validated = [window.__aacValidatedDiscountCode, window.__aacValidatedMembershipDiscount].find(value =>
+                code && String(value?.code || '').trim().toLowerCase() === code
+                && Number(value?.level_id) === Number(getCurrentCheckoutLevelId())
+                && Number.isFinite(Number.parseFloat(value?.initial_payment ?? '')));
+            if (validated) return Math.max(0, Number(validated.initial_payment));
+
 		const codeLevel = window.pmpropbc?.code_level || null;
 		const nocodeLevel = window.pmpropbc?.nocode_level || null;
 		const nocodeInitialPayment = Number.parseFloat(nocodeLevel?.initial_payment ?? '');

@@ -5414,6 +5414,13 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		};
 
 		const getPmproMembershipAmount = (fallbackAmount) => {
+            const code = String(getDiscountCodeState() || document.querySelector('input[name="aac_membership_discount"]:checked')?.dataset.aacMembershipDiscountCode || '').trim().toLowerCase();
+            const validated = [window.__aacValidatedDiscountCode, window.__aacValidatedMembershipDiscount].find(value =>
+                code && String(value?.code || '').trim().toLowerCase() === code
+                && Number(value?.level_id) === Number(getCurrentCheckoutLevelId())
+                && Number.isFinite(Number.parseFloat(value?.initial_payment ?? '')));
+            if (validated) return Math.max(0, Number(validated.initial_payment));
+
 			const validatedDiscount = window.__aacValidatedDiscountCode || null;
 			const validatedCode = normalizeDiscountCode(validatedDiscount?.code);
 			const appliedCode = normalizeDiscountCode(getDiscountCodeState());
