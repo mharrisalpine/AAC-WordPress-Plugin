@@ -1974,7 +1974,7 @@ class AAC_Member_Portal_Member_Database {
 						<table class="widefat striped">
 							<thead>
 								<tr>
-									<th style="min-width:140px;">Open Member</th>
+									<th style="min-width:140px;">Member Actions</th>
 									<th style="min-width:180px;">Member</th>
 									<th style="min-width:220px;">Email</th>
 									<th style="min-width:160px;">Phone</th>
@@ -2001,6 +2001,9 @@ class AAC_Member_Portal_Member_Database {
 													<?php echo esc_html($is_selected_member_row ? 'Close Member' : 'Open Member'); ?>
 												</a>
 												<?php
+                                                if (current_user_can('edit_user', (int) $row['user_id'])) : ?>
+                                                    <a class="button button-primary" href="<?php echo esc_url($this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'edit', 's' => $search, 'paged' => $paged]) . '#aac-member-details'); ?>">Edit Member</a>
+                                                <?php endif;
 												$list_member_user = get_user_by('id', (int) $row['user_id']);
 												$list_member_return_url = $this->build_admin_url(['member_id' => $row['user_id'], 'tab' => 'profile', 's' => $search, 'paged' => $paged]);
 												if ($list_member_user instanceof WP_User && !user_can($list_member_user, 'manage_options')) :
@@ -2029,7 +2032,7 @@ class AAC_Member_Portal_Member_Database {
 									<?php if ($is_selected_member_row) : ?>
 										<tr>
 											<td colspan="15" style="padding:0;background:#fff;">
-												<div style="padding:20px;border-left:4px solid #2271b1;border-bottom:1px solid #dcdcde;">
+												<div id="aac-member-details" style="padding:20px;border-left:4px solid #2271b1;border-bottom:1px solid #dcdcde;scroll-margin-top:48px;">
 													<?php
 													$this->render_member_detail_panel(
 														$member_id,
