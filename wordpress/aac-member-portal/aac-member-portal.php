@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.799
+ * Version: 1.0.800
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.799');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.800');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -59,6 +59,7 @@ final class AAC_Member_Portal_Plugin {
 	private $is_rendering_managed_fullscreen = false;
 	private $add_dependent_checkout_context = null;
 	private $checkout_membership_change_context = null;
+	private $checkout_upgrade_receipt_pricing = null;
 	private $logged_checkout_error_signature = '';
 
 	public function __construct() {
@@ -4836,6 +4837,7 @@ final class AAC_Member_Portal_Plugin {
 		if (empty($order_breakdown['items'])) {
 			return;
 		}
+		$order_breakdown = $this->separate_upgrade_receipt_adjustments($order_breakdown, $this->checkout_upgrade_receipt_pricing);
 
 		foreach ($this->get_pmpro_order_breakdown_storage_keys($morder) as $storage_key) {
 			update_option($storage_key, $order_breakdown, false);
@@ -7409,6 +7411,40 @@ final class AAC_Member_Portal_Plugin {
 		return (float) floor(max(0, (float) $normalized));
 	}
 
+
+	private function separate_upgrade_receipt_adjustments($breakdown, $pricing) {
+		if (!is_array($pricing) || (int) ($pricing['level_id'] ?? 0) !== (int) ($breakdown['membership_id'] ?? 0)) {
+			return $breakdown;
+		}
+		$items = $breakdown['items'];
+		$discount_index = $this->find_receipt_discount_line_item_index($items);
+		if ($discount_index === null) {
+			return $breakdown;
+		}
+		$discount = round(max(0, (float) ($pricing['discount'] ?? 0)), 2);
+		$credit = round(max(0, (float) ($pricing['credit'] ?? 0)), 2);
+		// Only split when the captured components reconcile to the actual receipt.
+		if (abs($discount + $credit + (float) $items[$discount_index]['amount']) > 0.01) {
+			return $breakdown;
+		}
+		$adjustments = [];
+		if ($discount > 0) {
+			$adjustments[] = [
+				'kind' => 'membership_discount',
+				'label' => preg_replace('/\s*\([0-9.]+%\)/', '', $items[$discount_index]['label']),
+				'amount' => -$discount,
+			];
+		}
+		if ($credit > 0) {
+			$adjustments[] = ['kind' => 'proration_credit', 'label' => __('Prorated Amount', 'aac-member-portal'), 'amount' => -$credit];
+		}
+		array_splice($items, $discount_index, 1, $adjustments);
+		$breakdown['items'] = $items;
+		$breakdown['pricing_version'] = 2;
+		$breakdown['upgrade_pricing'] = $pricing;
+		return $breakdown;
+	}
+
 	private function get_pmpro_order_breakdown_storage_keys($morder) {
 		$keys = [];
 		$order_id = is_object($morder) && isset($morder->id) ? absint($morder->id) : 0;
@@ -7449,6 +7485,12 @@ final class AAC_Member_Portal_Plugin {
 		$order_code = is_object($morder) && !empty($morder->code) ? sanitize_text_field((string) $morder->code) : sanitize_text_field((string) ($order_breakdown['order_code'] ?? ''));
 		if ($order_code !== '') {
 			$order_breakdown['order_code'] = $order_code;
+		}
+
+		// These amounts and labels were captured from validated checkout pricing.
+		// Never relabel the proration line or recalculate historical discounts.
+		if (($order_breakdown['pricing_version'] ?? 0) >= 2) {
+			return $order_breakdown;
 		}
 
 		$pmpro_discount_code = $this->get_pmpro_order_discount_code($morder);
@@ -8672,6 +8714,13 @@ final class AAC_Member_Portal_Plugin {
 		$unused_parent_credit = round($current_total * $remaining_ratio, 2);
 		$prorated_total = round(max(0, $target_total - $unused_parent_credit), 2);
 
+		// Preserve the validated prices before checkout replaces the old membership.
+		$this->checkout_upgrade_receipt_pricing = [
+			'level_id' => $target_level_id,
+			'catalog' => $catalog_total,
+			'discount' => round(max(0, $catalog_total - $target_total), 2),
+			'credit' => round(min($target_total, $unused_parent_credit), 2),
+		];
 		$level->aac_upgrade_pricing = [
 			'catalog' => $catalog_total,
 			'credit' => $unused_parent_credit,
