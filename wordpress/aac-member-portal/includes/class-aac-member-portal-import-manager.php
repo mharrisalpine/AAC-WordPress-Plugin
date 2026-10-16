@@ -14,6 +14,10 @@ final class AAC_Member_Portal_Import_Manager {
 	const MAX_SYNC_LIMIT = 50;
 
 	public function __construct() {
+		require_once __DIR__ . '/class-aac-member-portal-import-background.php';
+		new AAC_Member_Portal_Import_Background($this);
+		require_once __DIR__ . '/class-aac-member-portal-import-rollback.php';
+		new AAC_Member_Portal_Import_Rollback();
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('init', [$this, 'maybe_install_schema']);
 		add_action('init', [$this, 'maybe_repair_imported_profile_metadata'], 20);
@@ -177,6 +181,7 @@ final class AAC_Member_Portal_Import_Manager {
 			</form>
 
 			<h2>2. Sync Staged Rows</h2>
+			<?php do_action('aac_import_background_controls'); ?>
 			<p>Dry run validates matching and PMPro level resolution without creating or updating members. Live sync writes the valid rows. Keep batches small to avoid gateway timeouts on WPE/WordPress.com hosting.</p>
 			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;margin-right:10px;">
 				<input type="hidden" name="action" value="aac_member_portal_import_sync" />
@@ -315,7 +320,11 @@ final class AAC_Member_Portal_Import_Manager {
 
 		$dry_run = !empty($_POST['dry_run']);
 		$limit = $this->get_requested_batch_limit();
-		$result = $this->sync_staged_rows($dry_run, $limit);
+		if (!add_option(AAC_Member_Portal_Import_Background::LOCK, time(), '', false)) { wp_die('Another import worker is active.'); }
+		$manual_finished = false;
+		register_shutdown_function(static function () use (&$manual_finished) { if (!$manual_finished) { delete_option(AAC_Member_Portal_Import_Background::LOCK); } });
+		try { $result = $this->sync_staged_rows($dry_run, $limit); }
+		finally { delete_option(AAC_Member_Portal_Import_Background::LOCK); $manual_finished = true; }
 		if (is_wp_error($result)) {
 			$this->redirect_with_notice('error', $result->get_error_message());
 		}
@@ -773,7 +782,6 @@ final class AAC_Member_Portal_Import_Manager {
 			'family_links' => 0,
 			'remaining' => 0,
 		];
-		$family_link_rows = [];
 
 		foreach ($rows as $stage_row) {
 			$raw_row = json_decode((string) $stage_row['raw_row'], true);
@@ -783,7 +791,7 @@ final class AAC_Member_Portal_Import_Manager {
 				continue;
 			}
 
-			$result = $this->sync_single_row($raw_row, $dry_run);
+			$result = $dry_run ? $this->sync_single_row($raw_row, true) : $this->sync_with_checkpoint($stage_row, $raw_row);
 			if (is_wp_error($result)) {
 				$this->mark_row_error((int) $stage_row['id'], $result->get_error_message());
 				$stats['errors']++;
@@ -811,22 +819,49 @@ final class AAC_Member_Portal_Import_Manager {
 				$stats['validated']++;
 			} else {
 				$stats['synced']++;
-				if ($this->is_family_child_row($raw_row)) {
-					$family_link_rows[] = $this->build_family_link_row($raw_row, $user_id);
-				}
-			}
-		}
-
-		if (!$dry_run && !empty($family_link_rows)) {
-			$link_stats = $this->import_family_links($family_link_rows);
-			$stats['family_links'] = (int) ($link_stats['children_linked'] ?? 0);
-			if (!empty($link_stats['rows_skipped'])) {
-				$stats['errors'] += (int) $link_stats['rows_skipped'];
+				$stats['family_links'] += (int) ($result['family_links'] ?? 0);
 			}
 		}
 
 		$stats['remaining'] = $this->count_remaining_rows($dry_run);
 		return $stats;
+	}
+
+	private function sync_with_checkpoint($stage, $row) {
+		$check = $this->sync_single_row($row, true);
+		if (is_wp_error($check)) { return $check; }
+		$user = $this->resolve_user($row);
+		$parent = $this->resolve_user([
+			'aac_member_id' => $this->row_value($row, ['parent_member_id', 'parent_aac_member_id', 'aac_linked_parent_member_id']),
+			'email' => $this->row_value($row, ['parent_email', 'parent_user_email', 'aac_linked_parent_email']),
+			'user_login' => $this->row_value($row, ['parent_user_login', 'parent_login', 'aac_linked_parent_user_login']),
+		]);
+		$ids = [];
+		foreach ([$user, $parent] as $account) {
+			if (!$account instanceof WP_User) { continue; }
+			$ids[] = (int) $account->ID;
+			$ids[] = (int) get_user_meta($account->ID, 'aac_linked_parent_user_id', true);
+			foreach ((array) get_user_meta($account->ID, 'aac_connected_accounts', true) as $slot) {
+				if (is_array($slot)) { $ids[] = (int) ($slot['child_user_id'] ?? 0); }
+			}
+		}
+		try {
+			$checkpoint = AAC_Member_Portal_Import_Rollback::begin($stage, $ids);
+			try {
+				$result = $this->sync_single_row($row, false);
+				if (!is_wp_error($result) && $this->is_family_child_row($row)) {
+					$links = $this->import_family_links([$this->build_family_link_row($row, $result['user_id'])]);
+					if (empty($links['children_linked'])) {
+						return new WP_Error('family_link_failed', 'Member saved but family linking failed. ' . implode(' ', (array) ($links['errors'] ?? ['Verify parent and Group Accounts configuration.'])));
+					}
+					$result['family_links'] = (int) $links['children_linked'];
+				}
+				return $result;
+			} finally {
+				$updated_user = $this->resolve_user($row);
+				AAC_Member_Portal_Import_Rollback::seal($checkpoint, $updated_user instanceof WP_User ? $updated_user->ID : 0);
+			}
+		} catch (Throwable $e) { return new WP_Error('rollback_checkpoint_failed', $e->getMessage()); }
 	}
 
 	public static function cleanup_imported_data($args = []) {
@@ -1805,6 +1840,9 @@ final class AAC_Member_Portal_Import_Manager {
 			wp_die(esc_html__('You do not have permission to perform this action.', 'aac-member-portal'));
 		}
 		check_admin_referer($nonce_action);
+		if ($nonce_action !== 'aac_member_portal_import_errors' && (AAC_Member_Portal_Import_Background::active() || AAC_Member_Portal_Import_Rollback::active())) {
+			wp_die('Pause the background import and wait for its current batch to finish before changing the queue or running another import.');
+		}
 	}
 
 	private static function table_name() {
