@@ -8,6 +8,7 @@ final class AAC_Member_Portal_Group_Accounts {
 	const MIGRATION_OPTION = 'aac_member_portal_group_accounts_migration';
 
 	public function __construct() {
+		add_action('wp_enqueue_scripts', [$this, 'enqueue_manage_group_styles'], 100);
 		add_action('plugins_loaded', [$this, 'disable_native_parent_checkout_hooks'], 100);
 		add_action('init', [$this, 'ensure_partner_group_settings'], 30);
 		add_action('pmpro_after_change_membership_level', [$this, 'sync_parent_after_membership_change'], 30, 2);
@@ -16,6 +17,17 @@ final class AAC_Member_Portal_Group_Accounts {
 		add_action('admin_post_aac_member_portal_import_family_group_links', [$this, 'handle_admin_family_group_links_import']);
 		add_action('show_user_profile', [$this, 'render_admin_parent_group_children'], 35);
 		add_action('edit_user_profile', [$this, 'render_admin_parent_group_children'], 35);
+	}
+
+	public function enqueue_manage_group_styles() {
+		global $pmpro_pages;
+		$page_id = (int) ($pmpro_pages['pmprogroupacct_manage_group'] ?? get_option('pmpro_pmprogroupacct_manage_group_page_id', 0));
+		$post = get_queried_object();
+		if (is_admin() || !is_page() || !($page_id && is_page($page_id)) && !($post instanceof WP_Post && has_shortcode($post->post_content, 'pmprogroupacct_manage_group'))) {
+			return;
+		}
+		wp_enqueue_style('aac-manage-group', plugins_url('../assets/manage-group.css', __FILE__), [], AAC_MEMBER_PORTAL_VERSION);
+		wp_enqueue_script('aac-manage-group', plugins_url('../assets/manage-group.js', __FILE__), [], AAC_MEMBER_PORTAL_VERSION, true);
 	}
 
 	public function disable_native_parent_checkout_hooks() {

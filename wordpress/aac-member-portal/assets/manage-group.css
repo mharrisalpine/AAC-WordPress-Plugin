@@ -1,0 +1,61 @@
+/* Loaded only on the PMPro group management page. */
+body:has(#pmprogroupacct_manage_group) #main {
+  box-sizing: border-box;
+  padding: calc(var(--aac-group-header-height, 160px) + 32px) clamp(20px, 5vw, 80px) 64px !important;
+  margin: 0 auto !important;
+  background: #fff;
+  color: #171717;
+}
+#pmprogroupacct_manage_group {
+  --pmpro--border--radius: 0;
+  --pmpro--color--accent: #b71c1c;
+  max-width: 1280px;
+  margin: 0 auto;
+  font-family: inherit;
+}
+#pmprogroupacct_manage_group .pmpro_card {
+  border: 1px solid #171717;
+  border-radius: 0;
+  box-shadow: none;
+  background: #fff;
+  margin-bottom: 24px;
+  overflow: visible;
+}
+#pmprogroupacct_manage_group :is(.pmpro_card_title, h2) {
+  color: #171717;
+  font-weight: 700;
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.25;
+}
+#pmprogroupacct_manage_group :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=submit]), select, textarea) {
+  border: 1px solid #a8a29e;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 44px;
+  background-color: #fff;
+  color: #171717;
+  font: inherit;
+  max-width: 100%;
+}
+#pmprogroupacct_manage_group :is(button, input[type=submit], .pmpro_btn) {
+  border: 1px solid #b71c1c;
+  border-radius: 0;
+  box-shadow: none;
+  background: #b71c1c;
+  color: #fff;
+  min-height: 44px;
+  padding: 10px 24px;
+  font-family: inherit;
+  font-weight: 700;
+}
+#pmprogroupacct_manage_group :is(button, input[type=submit], .pmpro_btn):hover { background: #8f1515; }
+#pmprogroupacct_manage_group :is(input, select, textarea, button, a):focus-visible { outline: 2px solid #171717; outline-offset: 3px; }
+#pmprogroupacct_manage_group input[type=checkbox] { accent-color: #b71c1c; }
+#pmprogroupacct_manage_group table { width: 100%; border-collapse: collapse; }
+#pmprogroupacct_manage_group :is(th, td) { padding: 14px 12px; border-bottom: 1px solid #e7e5e4; }
+#pmprogroupacct_manage_group a { color: #8f1515; text-decoration: underline; }
+@media (max-width: 640px) {
+  body:has(#pmprogroupacct_manage_group) #main { padding-left: 16px !important; padding-right: 16px !important; }
+  #pmprogroupacct_manage_group .pmpro_card { overflow-x: auto; }
+  #pmprogroupacct_manage_group :is(th, td) { padding: 10px 8px; overflow-wrap: anywhere; }
+}
