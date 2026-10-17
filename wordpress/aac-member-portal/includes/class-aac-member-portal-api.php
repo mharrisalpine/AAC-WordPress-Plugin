@@ -1461,6 +1461,7 @@ class AAC_Member_Portal_API {
 					'valid_through_date' => $valid_through_date,
 					'joined_date' => $primary['joined_date'] ?? '',
 					'member_since_year' => $member_since_year,
+			'member_since_date' => AAC_Member_Portal_PMPro::get_member_since_date($user_id),
 					'status' => $this->membership_status_pmpro($status_reference_date, $primary_status),
 				];
 			}
@@ -1474,6 +1475,7 @@ class AAC_Member_Portal_API {
 			'valid_through_date' => '',
 			'joined_date' => '',
 			'member_since_year' => $member_since_year,
+			'member_since_date' => AAC_Member_Portal_PMPro::get_member_since_date($user_id),
 			'status' => 'Inactive',
 		];
 	}

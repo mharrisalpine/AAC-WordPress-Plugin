@@ -1612,7 +1612,7 @@ class AAC_Member_Portal_Member_Database {
 			'membership_startdate' => (string) ($latest_membership['startdate'] ?? ''),
 			'membership_enddate' => (string) ($latest_membership['enddate'] ?? ''),
 			'membership_modified' => (string) ($latest_membership['modified'] ?? ''),
-			'member_since' => (string) ($profile_info['joined_date'] ?? ''),
+			'member_since' => (string) (($profile_info['member_since_date'] ?? '') ?: (($profile_info['member_since_year'] ?? '') ?: ($profile_info['joined_date'] ?? ''))),
 			'renewal_date' => $this->first_present_value([$profile_row['renewal_date'] ?? '', $profile_info['renewal_date'] ?? '']),
 			'expiration_date' => $this->first_present_value([$profile_row['expiration_date'] ?? '', $profile_info['expiration_date'] ?? '']),
 			'valid_through_date' => (string) ($profile_info['valid_through_date'] ?? ''),
@@ -2182,7 +2182,7 @@ class AAC_Member_Portal_Member_Database {
 				<tr><th style="width:240px;">Membership Level</th><td><?php echo esc_html($profile_row['membership_level']); ?></td></tr>
 				<tr><th>Membership Status</th><td><?php echo esc_html($profile_row['membership_status']); ?></td></tr>
 				<tr><th>Member ID</th><td><?php echo esc_html($profile_row['member_id']); ?></td></tr>
-				<tr><th>Member Since</th><td><?php echo esc_html($profile_info['joined_date'] ?? ''); ?></td></tr>
+				<tr><th>Member Since</th><td><?php echo esc_html(($profile_info['member_since_date'] ?? '') ?: (($profile_info['member_since_year'] ?? '') ?: ($profile_info['joined_date'] ?? ''))); ?></td></tr>
 				<tr><th>Renewal Date</th><td><?php echo esc_html($profile_row['renewal_date']); ?></td></tr>
 				<tr><th>Expiration Date</th><td><?php echo esc_html($profile_row['expiration_date']); ?></td></tr>
 				<tr><th>Account Role</th><td><?php echo esc_html($profile_row['account_role'] ?: 'Standard'); ?></td></tr>

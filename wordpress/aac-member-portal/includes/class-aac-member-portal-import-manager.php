@@ -1277,6 +1277,10 @@ final class AAC_Member_Portal_Import_Manager {
 			return new WP_Error('invalid_email', 'A valid user_email/email is required.');
 		}
 
+		$since = $this->row_value($row, ['member_since_date', 'aac_member_since_date', 'member_since']);
+		if ($since !== '' && !preg_match('/^[1-9][0-9]{3}$/', $since) && $this->normalize_import_birthdate($since) === '') {
+			return new WP_Error('invalid_member_since', 'Member Since must be MM/DD/YYYY or YYYY-MM-DD.');
+		}
 		$level_id = $this->resolve_membership_level_id($row);
 		if ($level_id <= 0) {
 			return new WP_Error('missing_level', 'Could not resolve membership_id or membership_level to a PMPro level.');
@@ -1408,6 +1412,13 @@ final class AAC_Member_Portal_Import_Manager {
 			update_user_meta($user_id, $meta_key, sanitize_text_field($value));
 		}
 
+		// A full historical date takes precedence over the legacy year-only value.
+		$since = $this->row_value($row, ['member_since_date', 'aac_member_since_date', 'member_since']);
+		$since_date = $this->normalize_import_birthdate($since);
+		if ($since_date !== '') {
+			update_user_meta($user_id, 'aac_member_since_date', $since_date);
+			update_user_meta($user_id, 'aac_member_since_year', substr($since_date, 0, 4));
+		}
 		$this->update_account_info_from_row($user_id, $row);
 
 		if ($record_import_metadata) {
