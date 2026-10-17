@@ -1376,8 +1376,8 @@ final class AAC_Member_Portal_Import_Manager {
 			'aac_publication_guidebook' => ['aac_publication_guidebook', 'guidebook_preference', 'guidebook_preferences'],
 			'aac_publication_acj' => ['aac_publication_acj', 'acj_preference', 'american_climbing_journal_preference'],
 				'pmpro_sphone' => ['pmpro_sphone', 'sphone', 'bphone', 'phone', 'phone_number'],
-				'pmpro_saddress1' => ['pmpro_saddress1', 'saddress1', 'baddress1', 'address1', 'address'],
-				'pmpro_saddress2' => ['pmpro_saddress2', 'saddress2', 'baddress2', 'address2'],
+				'pmpro_saddress1' => ['pmpro_saddress1', 'saddress1', 'baddress1', 'address1', 'address_1', 'street_1', 'address'],
+				'pmpro_saddress2' => ['pmpro_saddress2', 'saddress2', 'baddress2', 'address2', 'address_2', 'street_2'],
 				'pmpro_scity' => ['pmpro_scity', 'scity', 'bcity', 'city'],
 				'pmpro_sstate' => ['pmpro_sstate', 'sstate', 'bstate', 'state'],
 				'pmpro_szipcode' => ['pmpro_szipcode', 'szipcode', 'bzipcode', 'zip', 'zipcode', 'postal_code'],
@@ -1401,6 +1401,10 @@ final class AAC_Member_Portal_Import_Manager {
 			if ($value === '') {
 				continue;
 			}
+			if ($meta_key === 'birthdate') {
+				$value = $this->normalize_import_birthdate($value);
+				if ($value === '') { continue; }
+			}
 			update_user_meta($user_id, $meta_key, sanitize_text_field($value));
 		}
 
@@ -1411,6 +1415,18 @@ final class AAC_Member_Portal_Import_Manager {
 			update_user_meta($user_id, 'aac_imported_member_row', wp_json_encode($row));
 			update_user_meta($user_id, 'aac_imported_at', current_time('mysql'));
 		}
+	}
+
+	private function normalize_import_birthdate($value) {
+		$value = trim((string) $value);
+		foreach (['!Y-m-d', '!n/j/Y'] as $format) {
+			$date = DateTimeImmutable::createFromFormat($format, $value);
+			$errors = DateTimeImmutable::getLastErrors();
+			if ($date && (!$errors || (!$errors['warning_count'] && !$errors['error_count']))) {
+				return $date->format('Y-m-d');
+			}
+		}
+		return '';
 	}
 
 	private function update_account_info_from_row($user_id, $row) {
@@ -1434,8 +1450,8 @@ final class AAC_Member_Portal_Import_Manager {
 			'email' => ['user_email', 'email'],
 			'phone' => ['phone', 'phone_number', 'pmpro_sphone'],
 			'birthdate' => ['birthdate', 'birthday', 'date_of_birth'],
-			'street' => ['address1', 'address', 'pmpro_saddress1'],
-			'address2' => ['address2', 'pmpro_saddress2'],
+			'street' => ['address1', 'address_1', 'street_1', 'address', 'pmpro_saddress1'],
+			'address2' => ['address2', 'address_2', 'street_2', 'pmpro_saddress2'],
 			'city' => ['city', 'pmpro_scity'],
 			'state' => ['state', 'pmpro_sstate'],
 			'zip' => ['zip', 'zipcode', 'postal_code', 'pmpro_szipcode'],
@@ -1459,6 +1475,10 @@ final class AAC_Member_Portal_Import_Manager {
 		foreach ($field_map as $account_key => $keys) {
 			$value = $this->row_value($row, $keys);
 			if ($value !== '') {
+				if ($account_key === 'birthdate') {
+					$value = $this->normalize_import_birthdate($value);
+					if ($value === '') { continue; }
+				}
 				$account_info[$account_key] = sanitize_text_field($value);
 			}
 		}
