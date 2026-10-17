@@ -14,6 +14,22 @@ if (!defined('ABSPATH')) {
 
 class AAC_Member_Portal_PMPro {
 
+	public static function get_member_since_year($user_id) {
+		$year = trim((string) get_user_meta((int) $user_id, 'aac_member_since_year', true));
+		return preg_match('/^[1-9][0-9]{3}$/', $year) ? $year : '';
+	}
+
+	public static function initialize_member_since_year($user_id) {
+		$user_id = (int) $user_id;
+		if ($user_id <= 0 || self::get_member_since_year($user_id) !== '') {
+			return;
+		}
+		// Preserve historical membership dates when an existing member checks out again.
+		$date = self::get_first_membership_start_date($user_id, false);
+		$year = preg_match('/^([1-9][0-9]{3})-/', $date, $matches) ? $matches[1] : wp_date('Y');
+		update_user_meta($user_id, 'aac_member_since_year', $year);
+	}
+
 	public static function is_available() {
 		return function_exists('pmpro_getMembershipLevelForUser') && function_exists('pmpro_url');
 	}
@@ -583,7 +599,7 @@ class AAC_Member_Portal_PMPro {
 		return is_object($order) ? $order : null;
 	}
 
-	private static function get_first_membership_start_date($user_id) {
+	private static function get_first_membership_start_date($user_id, $include_registration = true) {
 		global $wpdb;
 
 		$user_id = (int) $user_id;
@@ -626,7 +642,7 @@ class AAC_Member_Portal_PMPro {
 			}
 		}
 
-		$user = get_userdata($user_id);
+		$user = $include_registration ? get_userdata($user_id) : null;
 		if ($user instanceof WP_User) {
 			return self::normalize_subscription_date_value($user->user_registered ?? '');
 		}

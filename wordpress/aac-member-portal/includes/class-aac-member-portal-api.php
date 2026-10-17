@@ -186,6 +186,7 @@ class AAC_Member_Portal_API {
 	}
 
 	public function flush_profile_cache_after_checkout($user_id, $order = null) {
+		AAC_Member_Portal_PMPro::initialize_member_since_year($user_id);
 		$this->flush_profile_cache_for_user($user_id);
 	}
 
@@ -1421,6 +1422,7 @@ class AAC_Member_Portal_API {
 
 	private function build_profile_info($user_id, $membership_owner_user_id = null) {
 		$member_id = $this->get_normalized_member_id_for_user($user_id);
+		$member_since_year = AAC_Member_Portal_PMPro::get_member_since_year($user_id);
 		$membership_owner_user_id = $membership_owner_user_id ? (int) $membership_owner_user_id : (int) $user_id;
 		$is_linked_child_account = $membership_owner_user_id > 0 && $membership_owner_user_id !== (int) $user_id;
 		$family_membership_access_until = $is_linked_child_account
@@ -1458,6 +1460,7 @@ class AAC_Member_Portal_API {
 					'expiration_date' => $family_membership_pending_removal ? $family_membership_active_until : $primary['expiration_date'],
 					'valid_through_date' => $valid_through_date,
 					'joined_date' => $primary['joined_date'] ?? '',
+					'member_since_year' => $member_since_year,
 					'status' => $this->membership_status_pmpro($status_reference_date, $primary_status),
 				];
 			}
@@ -1470,6 +1473,7 @@ class AAC_Member_Portal_API {
 			'expiration_date' => '',
 			'valid_through_date' => '',
 			'joined_date' => '',
+			'member_since_year' => $member_since_year,
 			'status' => 'Inactive',
 		];
 	}

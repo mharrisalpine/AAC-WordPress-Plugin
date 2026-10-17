@@ -140,7 +140,7 @@ const MembershipCard = ({ profile }) => {
     profile?.linked_parent_account ||
     connectedAccounts.length > 0,
   );
-  const memberSinceLabel = formatMemberCardYear(profileInfo?.joined_date);
+  const memberSinceLabel = formatMemberCardYear(profileInfo?.member_since_year || profileInfo?.joined_date);
   const validThruLabel = formatValidThru(profileInfo);
   const hasAutoRenewal = Boolean(accountInfo.auto_renew || profile?.membership_actions?.current_subscription_id);
   const memberNumber = formatMemberNumber(profileInfo?.member_id);
