@@ -5,6 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class AAC_Member_Portal_Import_Manager {
+	private $profile_only = false;
 	const PAGE_SLUG = 'aac-member-portal-import-manager';
 	const SCHEMA_VERSION = '1.0.0';
 	const SCHEMA_OPTION = 'aac_member_portal_import_manager_schema_version';
@@ -601,7 +602,7 @@ final class AAC_Member_Portal_Import_Manager {
 			return new WP_Error('unreadable_csv', 'The CSV file could not be read.');
 		}
 
-		$raw_headers = fgetcsv($handle);
+		$raw_headers = fgetcsv($handle, 0, ',', '"', '\\');
 		if (!is_array($raw_headers) || empty($raw_headers)) {
 			fclose($handle);
 			return new WP_Error('missing_headers', 'The CSV file does not include a header row.');
@@ -612,7 +613,7 @@ final class AAC_Member_Portal_Import_Manager {
 		$imported = 0;
 		$skipped = 0;
 
-		while (($values = fgetcsv($handle)) !== false) {
+		while (($values = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
 			if (!is_array($values) || count(array_filter($values, static function ($value) {
 				return trim((string) $value) !== '';
 			})) === 0) {
@@ -679,13 +680,13 @@ final class AAC_Member_Portal_Import_Manager {
 	public function stage_csv($file_path) {
 		global $wpdb;
 
-		self::install_schema();
+		$this->maybe_install_schema();
 		$handle = fopen($file_path, 'r');
 		if (!$handle) {
 			return new WP_Error('unreadable_csv', 'The CSV file could not be read.');
 		}
 
-		$raw_headers = fgetcsv($handle);
+		$raw_headers = fgetcsv($handle, 0, ',', '"', '\\');
 		if (!is_array($raw_headers) || empty($raw_headers)) {
 			fclose($handle);
 			return new WP_Error('missing_headers', 'The CSV file does not include a header row.');
@@ -696,8 +697,9 @@ final class AAC_Member_Portal_Import_Manager {
 		$source_row = 1;
 		$staged = 0;
 		$errors = 0;
+		$pending = [];
 
-		while (($values = fgetcsv($handle)) !== false) {
+		while (($values = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
 			$source_row++;
 			if (!is_array($values) || count(array_filter($values, static function ($value) {
 				return trim((string) $value) !== '';
@@ -719,9 +721,7 @@ final class AAC_Member_Portal_Import_Manager {
 			}
 
 			$now = current_time('mysql');
-			$wpdb->insert(
-				self::table_name(),
-				[
+			$pending[] = [
 					'batch_id' => $batch_id,
 					'source_row' => $source_row,
 					'row_type' => $prepared['row_type'],
@@ -738,13 +738,16 @@ final class AAC_Member_Portal_Import_Manager {
 					'raw_row' => wp_json_encode($row),
 					'created_at' => $now,
 					'updated_at' => $now,
-				],
-				['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
-			);
-			$staged++;
+			];
+			if (count($pending) >= 100) {
+				if (!$this->insert_staging_chunk($pending)) { fclose($handle); return new WP_Error('stage_write_failed', 'CSV staging stopped after ' . $staged . ' rows. Review the staged queue before retrying.'); }
+				$staged += count($pending); $pending = [];
+			}
 		}
 
 		fclose($handle);
+		if ($pending && !$this->insert_staging_chunk($pending)) { return new WP_Error('stage_write_failed', 'CSV staging stopped after ' . $staged . ' rows. Review the staged queue before retrying.'); }
+		$staged += count($pending);
 		return [
 			'batch_id' => $batch_id,
 			'staged' => $staged,
@@ -752,10 +755,21 @@ final class AAC_Member_Portal_Import_Manager {
 		];
 	}
 
-	public function sync_staged_rows($dry_run = false, $limit = null) {
+	private function insert_staging_chunk($rows) {
+		global $wpdb;
+		$columns = array_keys($rows[0]); // Fixed keys built by stage_csv, never CSV headers.
+		$placeholders = '(' . implode(',', array_fill(0, count($columns), '%s')) . ')';
+		$values = [];
+		foreach ($rows as $row) { foreach ($columns as $column) { $values[] = $row[$column]; } }
+		$sql = 'INSERT INTO ' . self::table_name() . ' (`' . implode('`,`', $columns) . '`) VALUES ' . implode(',', array_fill(0, count($rows), $placeholders));
+		return $wpdb->query($wpdb->prepare($sql, $values)) !== false;
+	}
+
+	public function sync_staged_rows($dry_run = false, $limit = null, $mode = 'full', $deadline = 0) {
 		global $wpdb;
 
-		self::install_schema();
+		$this->maybe_install_schema();
+		$this->profile_only = $mode === 'profile';
 		$limit = $this->normalize_batch_limit($limit);
 		$table = self::table_name();
 		$status_clause = $dry_run ? "status = 'staged'" : "status IN ('staged', 'dry_run')";
@@ -763,6 +777,7 @@ final class AAC_Member_Portal_Import_Manager {
 			$wpdb->prepare("SELECT * FROM {$table} WHERE {$status_clause} ORDER BY id ASC LIMIT %d", $limit),
 			ARRAY_A
 		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table and fixed status clause.
+		if ($wpdb->last_error) { throw new RuntimeException('Could not read the import queue.'); }
 		if (empty($rows)) {
 			return [
 				'limit' => $limit,
@@ -784,23 +799,24 @@ final class AAC_Member_Portal_Import_Manager {
 		];
 
 		foreach ($rows as $stage_row) {
+			if ($deadline && (microtime(true) >= $deadline || AAC_Member_Portal_Import_Background::pause_requested())) { break; }
 			$raw_row = json_decode((string) $stage_row['raw_row'], true);
 			if (!is_array($raw_row)) {
 				$this->mark_row_error((int) $stage_row['id'], 'The staged raw row is not valid JSON.');
 				$stats['errors']++;
-				continue;
+				break;
 			}
 
 			$result = $dry_run ? $this->sync_single_row($raw_row, true) : $this->sync_with_checkpoint($stage_row, $raw_row);
 			if (is_wp_error($result)) {
 				$this->mark_row_error((int) $stage_row['id'], $result->get_error_message());
 				$stats['errors']++;
-				continue;
+				break;
 			}
 
 			$user_id = (int) ($result['user_id'] ?? 0);
 			$status = $dry_run ? 'dry_run' : 'synced';
-			$wpdb->update(
+			$saved = $wpdb->update(
 				self::table_name(),
 				[
 					'status' => $status,
@@ -814,6 +830,8 @@ final class AAC_Member_Portal_Import_Manager {
 				['%s', '%d', '%s', '%s', '%s', '%s'],
 				['%d']
 			);
+
+			if ($saved === false) { throw new RuntimeException('Member saved but queue progress could not be saved. Review the rollback checkpoint before resuming.'); }
 
 			if ($dry_run) {
 				$stats['validated']++;
@@ -830,7 +848,7 @@ final class AAC_Member_Portal_Import_Manager {
 	private function sync_with_checkpoint($stage, $row) {
 		$check = $this->sync_single_row($row, true);
 		if (is_wp_error($check)) { return $check; }
-		$user = $this->resolve_user($row);
+		$user = !empty($check['user_id']) ? get_user_by('id', (int) $check['user_id']) : null;
 		$parent = $this->resolve_user([
 			'aac_member_id' => $this->row_value($row, ['parent_member_id', 'parent_aac_member_id', 'aac_linked_parent_member_id']),
 			'email' => $this->row_value($row, ['parent_email', 'parent_user_email', 'aac_linked_parent_email']),
@@ -848,8 +866,8 @@ final class AAC_Member_Portal_Import_Manager {
 		try {
 			$checkpoint = AAC_Member_Portal_Import_Rollback::begin($stage, $ids);
 			try {
-				$result = $this->sync_single_row($row, false);
-				if (!is_wp_error($result) && $this->is_family_child_row($row)) {
+				$result = $this->sync_single_row($row, false, $user);
+				if (!is_wp_error($result) && !$this->profile_only && $this->is_family_child_row($row)) {
 					$links = $this->import_family_links([$this->build_family_link_row($row, $result['user_id'])]);
 					if (empty($links['children_linked'])) {
 						return new WP_Error('family_link_failed', 'Member saved but family linking failed. ' . implode(' ', (array) ($links['errors'] ?? ['Verify parent and Group Accounts configuration.'])));
@@ -858,8 +876,10 @@ final class AAC_Member_Portal_Import_Manager {
 				}
 				return $result;
 			} finally {
-				$updated_user = $this->resolve_user($row);
-				AAC_Member_Portal_Import_Rollback::seal($checkpoint, $updated_user instanceof WP_User ? $updated_user->ID : 0);
+				if (class_exists('AAC_Member_Portal_Member_Database')) { AAC_Member_Portal_Member_Database::get_instance()->flush_queued_member_syncs(); }
+				$saved_id = !is_wp_error($result ?? null) ? (int) ($result['user_id'] ?? 0) : 0;
+				if (!$saved_id) { $updated_user = $this->resolve_user($row); $saved_id = $updated_user instanceof WP_User ? $updated_user->ID : 0; }
+				AAC_Member_Portal_Import_Rollback::seal($checkpoint, $saved_id);
 			}
 		} catch (Throwable $e) { return new WP_Error('rollback_checkpoint_failed', $e->getMessage()); }
 	}
@@ -1271,7 +1291,7 @@ final class AAC_Member_Portal_Import_Manager {
 		return is_array($columns) ? array_map('sanitize_key', $columns) : [];
 	}
 
-	private function sync_single_row($row, $dry_run) {
+	private function sync_single_row($row, $dry_run, $known_user = false) {
 		$email = sanitize_email($this->row_value($row, ['user_email', 'email']));
 		if (!$email || !is_email($email)) {
 			return new WP_Error('invalid_email', 'A valid user_email/email is required.');
@@ -1282,12 +1302,13 @@ final class AAC_Member_Portal_Import_Manager {
 			return new WP_Error('invalid_member_since', 'Member Since must be MM/DD/YYYY or YYYY-MM-DD.');
 		}
 		$level_id = $this->resolve_membership_level_id($row);
-		if ($level_id <= 0) {
+		if (!$this->profile_only && $level_id <= 0) {
 			return new WP_Error('missing_level', 'Could not resolve membership_id or membership_level to a PMPro level.');
 		}
 
-		$user = $this->resolve_user($row);
-		$action = $user instanceof WP_User ? 'updated' : 'created';
+		$user = $known_user === false ? $this->resolve_user($row) : $known_user;
+		if ($this->profile_only && !$user instanceof WP_User) { return new WP_Error('profile_user_missing', 'Profile-only updates require an existing matched member. No account created.'); }
+		$action = $this->profile_only ? 'profile_updated' : ($user instanceof WP_User ? 'updated' : 'created');
 		$user_login = $user instanceof WP_User ? $user->user_login : $this->make_unique_login($row, $email);
 
 		if ($dry_run) {
@@ -1303,14 +1324,15 @@ final class AAC_Member_Portal_Import_Manager {
 		}
 
 		$this->update_user_meta_from_row((int) $user_id, $row);
-		$membership_result = $this->apply_pmpro_membership((int) $user_id, $row, $level_id);
+		$membership_result = $this->profile_only ? true : $this->apply_pmpro_membership((int) $user_id, $row, $level_id);
 		if (is_wp_error($membership_result)) {
 			return $membership_result;
 		}
 
 		if (class_exists('AAC_Member_Portal_Member_Database')) {
-			$member_database = new AAC_Member_Portal_Member_Database();
-			$member_database->sync_member((int) $user_id);
+			$member_database = AAC_Member_Portal_Member_Database::get_instance();
+			$member_database->queue_member_sync((int) $user_id);
+			$member_database->flush_queued_member_syncs();
 		}
 
 		return [
@@ -1340,6 +1362,12 @@ final class AAC_Member_Portal_Import_Manager {
 		];
 
 		if ($user instanceof WP_User) {
+			if ($this->profile_only) {
+				unset($user_data['role']);
+				if ($first_name === '') { unset($user_data['first_name']); }
+				if ($last_name === '') { unset($user_data['last_name']); }
+				if ($this->row_value($row, ['display_name', 'name']) === '') { unset($user_data['display_name']); }
+			}
 			$user_data['ID'] = (int) $user->ID;
 			return wp_update_user($user_data);
 		}
@@ -1400,6 +1428,9 @@ final class AAC_Member_Portal_Import_Manager {
 			'aac_linked_parent_user_login' => ['aac_linked_parent_user_login', 'parent_user_login', 'parent_login'],
 		];
 
+		if ($this->profile_only) {
+			foreach (['pmpro_stripe_customerid', 'aac_imported_stripe_subscription_id', 'aac_imported_payment_transaction_id', 'aac_family_account_role', 'aac_linked_parent_member_id', 'aac_linked_parent_email', 'aac_linked_parent_user_login', 'aac_membership_discount_type', 'aac_discount_type'] as $key) { unset($meta_map[$key]); }
+		}
 		foreach ($meta_map as $meta_key => $keys) {
 			$value = $this->row_value($row, $keys);
 			if ($value === '') {
@@ -1483,6 +1514,7 @@ final class AAC_Member_Portal_Import_Manager {
 			'service_component' => ['service_component', 'aac_service_component'],
 		];
 
+		if ($this->profile_only) { unset($field_map['membership_discount_type']); }
 		foreach ($field_map as $account_key => $keys) {
 			$value = $this->row_value($row, $keys);
 			if ($value !== '') {
@@ -1495,7 +1527,7 @@ final class AAC_Member_Portal_Import_Manager {
 		}
 
 		$auto_renew = $this->row_value($row, ['auto_renew']);
-		if ($auto_renew !== '') {
+		if (!$this->profile_only && $auto_renew !== '') {
 			$account_info['auto_renew'] = in_array(strtolower((string) $auto_renew), ['1', 'true', 'yes', 'on'], true);
 		}
 
@@ -1617,10 +1649,10 @@ final class AAC_Member_Portal_Import_Manager {
 		if (!$email || !is_email($email)) {
 			$errors[] = 'Missing or invalid user_email/email.';
 		}
-		if ($membership_id <= 0) {
+		if ($membership_id <= 0 && $this->row_value($row, ['membership_id', 'level_id', 'membership_level', 'level_name']) !== '') {
 			$errors[] = 'Missing or unrecognized membership_id/membership_level.';
 		}
-		if ($this->is_family_child_row($row) && !$this->has_parent_identifier($row)) {
+		if ($this->is_family_child_row($row) && !$this->has_parent_identifier($row) && $membership_id > 0) {
 			$errors[] = 'Family child row is missing parent_member_id, parent_email, or parent_user_login.';
 		}
 
@@ -1694,7 +1726,10 @@ final class AAC_Member_Portal_Import_Manager {
 		}
 
 		$table = $wpdb->prefix . 'pmpro_membership_levels';
-		$level_id = (int) $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE name = %s LIMIT 1", $name)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- PMPro table name.
+		static $levels = [];
+		$key = $table . ':' . $name;
+		if (isset($levels[$key])) { return $levels[$key]; }
+		$level_id = $levels[$key] = (int) $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE name = %s LIMIT 1", $name)); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- PMPro table name.
 		return $level_id > 0 ? $level_id : 0;
 	}
 
@@ -1796,7 +1831,9 @@ final class AAC_Member_Portal_Import_Manager {
 
 		$table = self::table_name();
 		$status_clause = $dry_run ? "status = 'staged'" : "status IN ('staged', 'dry_run')";
-		return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE {$status_clause}"); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table and fixed status clause.
+		$count = $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE {$status_clause}");
+		if ($wpdb->last_error) { throw new RuntimeException('Could not count remaining import rows.'); }
+		return (int) $count; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table and fixed status clause.
 	}
 
 	private function mark_row_error($id, $message) {

@@ -10,10 +10,15 @@ class AAC_Member_Portal_Member_Database {
 	const SCHEMA_VERSION = '1.7.0';
 	const SCHEMA_OPTION = 'aac_member_portal_member_db_schema_version';
 	const EXPORT_FIELDS_OPTION = 'aac_member_portal_member_database_export_fields';
+	private static $instance;
+	public static function get_instance() {
+		return self::$instance ?: new self();
+	}
 	private $pending_member_syncs = [];
 	private $is_flushing_member_syncs = false;
 
 	public function __construct() {
+		self::$instance = $this;
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('admin_post_aac_member_portal_edit_member', [$this, 'handle_edit_member']);
 		add_action('init', [$this, 'maybe_install_schema']);

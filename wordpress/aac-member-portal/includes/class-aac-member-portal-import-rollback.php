@@ -3,6 +3,8 @@ if (!defined('ABSPATH')) { exit; }
 
 /** Private database journal. No files containing passwords or member data are exported. */
 final class AAC_Member_Portal_Import_Rollback {
+	private static $table_cache = null;
+	private static $schema_cache = [];
 	const STATE = 'aac_import_rollback_state';
 	const HOOK = 'aac_import_rollback_tick';
 	public function __construct() {
@@ -21,7 +23,7 @@ final class AAC_Member_Portal_Import_Rollback {
 	private static function install() {
 		global $wpdb;
 		if (is_multisite()) { throw new RuntimeException('Import rollback currently supports single-site WordPress only.'); }
-		if (get_option('aac_import_rollback_schema') === '1') { return; }
+		if (get_option('aac_import_rollback_schema') === '2') { return; }
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		$t = self::table();
 		dbDelta("CREATE TABLE $t (
@@ -32,13 +34,15 @@ final class AAC_Member_Portal_Import_Rollback {
 		 payload longtext NOT NULL,
 		 created_at datetime NOT NULL,
 		 PRIMARY KEY  (id),
-		 KEY batch_id (batch_id)
+		 KEY batch_id (batch_id),
+		 KEY stage_id (stage_id)
 		) ENGINE=InnoDB " . $wpdb->get_charset_collate() . ';');
 		if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($t))) !== $t) { throw new RuntimeException('Could not create rollback journal. Import stopped before writing members.'); }
-		update_option('aac_import_rollback_schema', '1', false);
+		update_option('aac_import_rollback_schema', '2', false);
 	}
 	private static function tables() {
 		global $wpdb;
+		if (self::$table_cache !== null) { return self::$table_cache; }
 		$tables = [$wpdb->users, $wpdb->usermeta];
 		foreach (['pmpro_', 'pmprogroupacct_', 'aac_member_db_'] as $prefix) {
 			$found = $wpdb->get_col($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($wpdb->prefix . $prefix) . '%'));
@@ -52,7 +56,7 @@ final class AAC_Member_Portal_Import_Rollback {
 			$table = $wpdb->prefix . $suffix;
 			if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) === $table) { $tables[] = $table; }
 		}
-		return array_values(array_unique($tables));
+		return self::$table_cache = array_values(array_unique($tables));
 	}
 	private static function snapshot($ids, $tables) {
 		global $wpdb;
@@ -61,11 +65,15 @@ final class AAC_Member_Portal_Import_Rollback {
 		$out = [];
 		foreach ($tables as $table) {
 			if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) { throw new RuntimeException('Unsupported table name.'); }
+			if (!isset(self::$schema_cache[$table])) {
 			$columns = $wpdb->get_results("SHOW COLUMNS FROM `$table`", ARRAY_A);
 			$primary = array_values(array_filter($columns, static function ($c) { return $c['Key'] === 'PRI'; }));
 			if (count($primary) !== 1) { throw new RuntimeException('Rollback requires a single-column primary key: ' . $table); }
 			$engine = $wpdb->get_row($wpdb->prepare('SHOW TABLE STATUS WHERE Name = %s', $table), ARRAY_A);
 			if (strcasecmp($engine['Engine'] ?? '', 'InnoDB') !== 0) { throw new RuntimeException('Rollback requires InnoDB: ' . $table); }
+			self::$schema_cache[$table] = [$columns, $primary];
+			}
+			[$columns, $primary] = self::$schema_cache[$table];
 			$conditions = [];
 			foreach ($columns as $column) {
 				if (in_array($column['Field'], $table === $wpdb->users ? ['ID'] : ['user_id', 'group_parent_user_id', 'group_child_user_id'], true)) { $conditions[] = '`' . $column['Field'] . "` IN ($in)"; }
@@ -89,6 +97,8 @@ final class AAC_Member_Portal_Import_Rollback {
 	public static function begin($stage, $ids) {
 		global $wpdb;
 		self::install();
+		$existing = $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . self::table() . " WHERE stage_id = %d AND status <> 'rolled_back' LIMIT 1", $stage['id']));
+		if ($wpdb->last_error || $existing) { throw new RuntimeException('This staged row has an earlier checkpoint or its checkpoint could not be checked. Review before retrying; no member writes performed.'); }
 		$tables = self::tables();
 		$payload = ['ids' => array_values(array_unique(array_filter(array_map('absint', $ids)))), 'tables' => $tables, 'before' => self::snapshot($ids, $tables)];
 		if (!$wpdb->insert(self::table(), ['stage_id' => $stage['id'], 'batch_id' => $stage['batch_id'], 'status' => 'pending', 'payload' => wp_json_encode($payload), 'created_at' => current_time('mysql')])) { throw new RuntimeException('Could not save rollback checkpoint.'); }
@@ -178,7 +188,7 @@ final class AAC_Member_Portal_Import_Rollback {
 		$s = get_option(self::STATE, []);
 		echo '<h3>Rollback latest member import</h3><p>Restores the latest imported CSV batch in reverse order, including local member and family records. Only imports made after rollback was added are covered. Stops if records changed afterward. Does not reverse Stripe activity, email, Salesforce, or other external integrations. Keep a full site backup.</p>';
 		echo '<p>' . esc_html(($s['status'] ?? 'Not started') . ': ' . ($s['message'] ?? '')) . ' Restored rows: ' . (int) ($s['restored'] ?? 0) . '</p>';
-		$last = get_option('aac_import_rollback_schema') === '1' ? $wpdb->get_row('SELECT batch_id, status, created_at FROM ' . self::table() . " WHERE status <> 'rolled_back' ORDER BY id DESC LIMIT 1", ARRAY_A) : null;
+		$last = in_array(get_option('aac_import_rollback_schema'), ['1', '2'], true) ? $wpdb->get_row('SELECT batch_id, status, created_at FROM ' . self::table() . " WHERE status <> 'rolled_back' ORDER BY id DESC LIMIT 1", ARRAY_A) : null;
 		echo '<p>Latest checkpoint: ' . esc_html($last ? $last['batch_id'] . ' (' . $last['created_at'] . ', ' . $last['status'] . ')' : 'None. Existing imports cannot be rolled back with this tool.') . '</p>';
 		if ($last && $last['status'] === 'ready' && !self::active() && !AAC_Member_Portal_Import_Background::active()) {
 			echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="aac_import_rollback">';
