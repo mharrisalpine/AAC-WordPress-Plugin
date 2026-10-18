@@ -6,6 +6,7 @@ if (!defined('ABSPATH')) {
 
 final class AAC_Member_Portal_Import_Manager {
 	private $profile_only = false;
+	private $number_repair = false;
 	const PAGE_SLUG = 'aac-member-portal-import-manager';
 	const SCHEMA_VERSION = '1.0.0';
 	const SCHEMA_OPTION = 'aac_member_portal_import_manager_schema_version';
@@ -165,6 +166,7 @@ final class AAC_Member_Portal_Import_Manager {
 						<td>
 							<select id="aac_import_kind" name="aac_import_kind">
 								<option value="current_members">Current members / WordPress users</option>
+								<option value="member_numbers">Repair member numbers (email + aac_member_id only)</option>
 								<option value="family_links">Family group links</option>
 								<option value="membership_history">PMPro membership history</option>
 								<option value="subscriptions">PMPro subscriptions</option>
@@ -292,14 +294,14 @@ final class AAC_Member_Portal_Import_Manager {
 		} elseif ($kind === 'orders') {
 			$result = $this->import_pmpro_orders_csv($file_path);
 		} else {
-			$result = $this->stage_csv($file_path);
+			$result = $this->stage_csv($file_path, $kind === 'member_numbers');
 		}
 
 		if (is_wp_error($result)) {
 			$this->redirect_with_notice('error', $result->get_error_message());
 		}
 
-		if ($kind !== 'current_members') {
+		if (!in_array($kind, ['current_members', 'member_numbers'], true)) {
 			$this->redirect_with_notice('success', sprintf(
 				'%s import complete. Imported/updated: %d. Skipped: %d.',
 				ucwords(str_replace('_', ' ', $kind)),
@@ -677,7 +679,7 @@ final class AAC_Member_Portal_Import_Manager {
 		return false !== $wpdb->insert($table, $data);
 	}
 
-	public function stage_csv($file_path) {
+	public function stage_csv($file_path, $number_repair = false) {
 		global $wpdb;
 
 		$this->maybe_install_schema();
@@ -715,7 +717,12 @@ final class AAC_Member_Portal_Import_Manager {
 				$row[$header] = isset($values[$index]) ? trim((string) $values[$index]) : '';
 			}
 
+			if ($number_repair) { $row = ['email' => $this->row_value($row, ['email', 'user_email']), 'aac_member_id' => $this->row_value($row, ['aac_member_id'])]; }
 			$prepared = $this->prepare_row_summary($row);
+			if ($number_repair) {
+				$prepared['row_type'] = 'member_number_repair';
+				if (!preg_match('/^[0-9]+$/D', $row['aac_member_id']) || !preg_match('/[1-9]/', $row['aac_member_id'])) { $prepared['status'] = 'error'; $prepared['error_message'] = 'Repair requires aac_member_id containing the original nonzero numeric member number.'; }
+			}
 			if ($prepared['status'] === 'error') {
 				$errors++;
 			}
@@ -770,9 +777,11 @@ final class AAC_Member_Portal_Import_Manager {
 
 		$this->maybe_install_schema();
 		$this->profile_only = $mode === 'profile';
+		$this->number_repair = $mode === 'member_number';
 		$limit = $this->normalize_batch_limit($limit);
 		$table = self::table_name();
 		$status_clause = $dry_run ? "status = 'staged'" : "status IN ('staged', 'dry_run')";
+		$status_clause .= $this->number_repair ? " AND row_type = 'member_number_repair'" : " AND row_type <> 'member_number_repair'";
 		$rows = $wpdb->get_results(
 			$wpdb->prepare("SELECT * FROM {$table} WHERE {$status_clause} ORDER BY id ASC LIMIT %d", $limit),
 			ARRAY_A
@@ -867,7 +876,7 @@ final class AAC_Member_Portal_Import_Manager {
 			$checkpoint = AAC_Member_Portal_Import_Rollback::begin($stage, $ids);
 			try {
 				$result = $this->sync_single_row($row, false, $user);
-				if (!is_wp_error($result) && !$this->profile_only && $this->is_family_child_row($row)) {
+				if (!is_wp_error($result) && !$this->profile_only && !$this->number_repair && $this->is_family_child_row($row)) {
 					$links = $this->import_family_links([$this->build_family_link_row($row, $result['user_id'])]);
 					if (empty($links['children_linked'])) {
 						return new WP_Error('family_link_failed', 'Member saved but family linking failed. ' . implode(' ', (array) ($links['errors'] ?? ['Verify parent and Group Accounts configuration.'])));
@@ -876,8 +885,9 @@ final class AAC_Member_Portal_Import_Manager {
 				}
 				return $result;
 			} finally {
-				if (class_exists('AAC_Member_Portal_Member_Database')) { AAC_Member_Portal_Member_Database::get_instance()->flush_queued_member_syncs(); }
+				if (!$this->number_repair && class_exists('AAC_Member_Portal_Member_Database')) { AAC_Member_Portal_Member_Database::get_instance()->flush_queued_member_syncs(); }
 				$saved_id = !is_wp_error($result ?? null) ? (int) ($result['user_id'] ?? 0) : 0;
+				if (!$saved_id && $this->number_repair) { $saved_id = (int) $check['user_id']; }
 				if (!$saved_id) { $updated_user = $this->resolve_user($row); $saved_id = $updated_user instanceof WP_User ? $updated_user->ID : 0; }
 				AAC_Member_Portal_Import_Rollback::seal($checkpoint, $saved_id);
 			}
@@ -1297,6 +1307,8 @@ final class AAC_Member_Portal_Import_Manager {
 			return new WP_Error('invalid_email', 'A valid user_email/email is required.');
 		}
 
+		if ($this->number_repair) { return $this->repair_member_number($row, $dry_run); }
+		if ($this->row_value($row, ['user_id', 'aac_member_number']) !== '' && $this->row_value($row, ['aac_member_id', 'member_id', 'membership_number']) === '') { return new WP_Error('ambiguous_member_number', 'Use aac_member_id for the original member number. user_id and aac_member_number are not member-number headers.'); }
 		$since = $this->row_value($row, ['member_since_date', 'aac_member_since_date', 'member_since']);
 		if ($since !== '' && !preg_match('/^[1-9][0-9]{3}$/', $since) && $this->normalize_import_birthdate($since) === '') {
 			return new WP_Error('invalid_member_since', 'Member Since must be MM/DD/YYYY or YYYY-MM-DD.');
@@ -1307,6 +1319,8 @@ final class AAC_Member_Portal_Import_Manager {
 		}
 
 		$user = $known_user === false ? $this->resolve_user($row) : $known_user;
+		$email_user = get_user_by('email', $email);
+		if ($user instanceof WP_User && $email_user instanceof WP_User && (int) $user->ID !== (int) $email_user->ID) { return new WP_Error('identity_conflict', 'Email and member number identify different accounts. No changes made.'); }
 		if ($this->profile_only && !$user instanceof WP_User) { return new WP_Error('profile_user_missing', 'Profile-only updates require an existing matched member. No account created.'); }
 		$action = $this->profile_only ? 'profile_updated' : ($user instanceof WP_User ? 'updated' : 'created');
 		$user_login = $user instanceof WP_User ? $user->user_login : $this->make_unique_login($row, $email);
@@ -1324,6 +1338,8 @@ final class AAC_Member_Portal_Import_Manager {
 		}
 
 		$this->update_user_meta_from_row((int) $user_id, $row);
+		$imported_number = $this->row_value($row, ['aac_member_id', 'member_id', 'membership_number']);
+		if ($imported_number !== '') { delete_user_meta((int) $user_id, 'aac_member_number_pending'); }
 		$membership_result = $this->profile_only ? true : $this->apply_pmpro_membership((int) $user_id, $row, $level_id);
 		if (is_wp_error($membership_result)) {
 			return $membership_result;
@@ -1335,10 +1351,58 @@ final class AAC_Member_Portal_Import_Manager {
 			$member_database->flush_queued_member_syncs();
 		}
 
+		if ($imported_number !== '' && (string) get_user_meta((int) $user_id, 'aac_member_id', true) !== $imported_number) { return new WP_Error('member_number_changed', 'The imported member number changed during processing. Stopped for review; rollback checkpoint retained.'); }
 		return [
 			'user_id' => (int) $user_id,
 			'action' => $action,
 		];
+	}
+
+	/** Email is the only account matcher for repairs. Never apply membership or profile hydration. */
+	private function repair_member_number($row, $dry_run) {
+		global $wpdb;
+		$email = sanitize_email($this->row_value($row, ['email', 'user_email']));
+		$number = $this->row_value($row, ['aac_member_id']);
+		if (!preg_match('/^[0-9]+$/D', $number) || !preg_match('/[1-9]/', $number)) { return new WP_Error('invalid_member_number', 'Repair requires a nonzero numeric aac_member_id and email.'); }
+		$ids = $wpdb->get_col($wpdb->prepare("SELECT ID FROM {$wpdb->users} WHERE user_email = %s", $email));
+		if ($wpdb->last_error || count($ids) !== 1) { return new WP_Error('repair_email_match', 'Email must match exactly one existing WordPress account.'); }
+		$id = (int) $ids[0];
+		$locked = false;
+		try {
+			if (!$dry_run) {
+				$locked = (int) $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 10)', 'aac_member_number_allocator')) === 1;
+				if (!$locked) { return new WP_Error('number_lock', 'Member-number allocator is busy; no number changed.'); }
+			}
+			$owners = get_users(['meta_key' => 'aac_member_id', 'meta_value' => $number, 'fields' => 'ids', 'number' => -1]);
+			foreach ($owners as $owner) { if ((int) $owner !== $id) { return new WP_Error('member_number_conflict', 'Requested member number already belongs to another account. No changes made.'); } }
+			$table = self::table_name();
+			$conflict = $wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE row_type = 'member_number_repair' AND status IN ('staged','dry_run') AND ((aac_member_id = %s AND email <> %s) OR (email = %s AND aac_member_id <> %s)) LIMIT 1", $number, $email, $email, $number));
+			if ($wpdb->last_error || $conflict) { return new WP_Error('repair_queue_conflict', 'The staged queue contains conflicting email/member-number assignments or could not be checked. Review before proceeding.'); }
+			$old = (string) get_user_meta($id, 'aac_member_id', true);
+			if ($dry_run) { return ['user_id' => $id, 'action' => 'number:' . $old . '->' . $number]; }
+			update_user_meta($id, 'aac_member_id', $number);
+			$profile = get_user_meta($id, 'aac_profile_info', true);
+			$profile = is_array($profile) ? $profile : [];
+			$profile['member_id'] = $number;
+			update_user_meta($id, 'aac_profile_info', $profile);
+			delete_user_meta($id, 'aac_member_number_pending');
+			if ((string) get_user_meta($id, 'aac_member_id', true) !== $number || (get_user_meta($id, 'aac_profile_info', true)['member_id'] ?? '') !== $number) { throw new RuntimeException('Member number did not persist exactly. Review checkpoint.'); }
+			// Patch only identity in the existing mirror, avoiding family expiration and financial sync.
+			$mirror = $wpdb->prefix . 'aac_member_db_profiles';
+			$raw = $wpdb->get_var($wpdb->prepare("SELECT raw_profile FROM $mirror WHERE user_id = %d", $id));
+			if ($wpdb->last_error) { throw new RuntimeException('Could not read member mirror.'); }
+			if ($raw !== null) {
+				$data = json_decode($raw, true);
+				if (!is_array($data)) { throw new RuntimeException('Invalid member mirror JSON. Review checkpoint.'); }
+				$data['profile_info']['member_id'] = $number;
+				if ($wpdb->update($mirror, ['member_id' => $number, 'raw_profile' => wp_json_encode($data)], ['user_id' => $id]) === false) { throw new RuntimeException('Could not update member-number mirror.'); }
+			}
+			if (class_exists('AAC_Member_Portal_Member_Database')) { AAC_Member_Portal_Member_Database::get_instance()->discard_queued_member_sync($id); }
+			if (class_exists('AAC_Member_Portal_API')) { AAC_Member_Portal_API::get_instance()->flush_profile_cache_for_user($id); }
+			return ['user_id' => $id, 'action' => 'number_repaired'];
+		} finally {
+			if ($locked) { $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', 'aac_member_number_allocator')); }
+		}
 	}
 
 	private function create_or_update_user($row, $user, $user_login, $email) {
@@ -1645,6 +1709,7 @@ final class AAC_Member_Portal_Import_Manager {
 		$membership_id = $this->resolve_membership_level_id($row);
 		$row_type = sanitize_key($this->row_value($row, ['row_type', 'family_role', 'aac_family_account_role']));
 		$errors = [];
+		if ($this->row_value($row, ['user_id', 'aac_member_number']) !== '' && $this->row_value($row, ['aac_member_id', 'member_id', 'membership_number']) === '') { $errors[] = 'Use aac_member_id for the original member number; user_id and aac_member_number are not supported member-number headers.'; }
 
 		if (!$email || !is_email($email)) {
 			$errors[] = 'Missing or invalid user_email/email.';
@@ -1831,6 +1896,7 @@ final class AAC_Member_Portal_Import_Manager {
 
 		$table = self::table_name();
 		$status_clause = $dry_run ? "status = 'staged'" : "status IN ('staged', 'dry_run')";
+		$status_clause .= $this->number_repair ? " AND row_type = 'member_number_repair'" : " AND row_type <> 'member_number_repair'";
 		$count = $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE {$status_clause}");
 		if ($wpdb->last_error) { throw new RuntimeException('Could not count remaining import rows.'); }
 		return (int) $count; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- plugin-owned table and fixed status clause.

@@ -73,7 +73,7 @@ final class AAC_Member_Portal_Import_Background {
 			if (!get_option(self::LOCK)) { $s['status'] = 'paused'; $this->log($s, 'Paused.'); $this->save($s); }
 		} elseif ($command === 'start' && !self::active() && !AAC_Member_Portal_Import_Rollback::active()) {
 			delete_option(self::PAUSE);
-			$s = ['status' => 'running', 'dry_run' => !empty($_POST['dry_run']), 'processed' => 0, 'errors' => 0, 'remaining' => null, 'log' => [], 'token' => wp_generate_password(48, false, false), 'mode' => ($_POST['mode'] ?? '') === 'profile' ? 'profile' : 'full', 'started' => time(), 'work_seconds' => 0];
+			$s = ['status' => 'running', 'dry_run' => !empty($_POST['dry_run']), 'processed' => 0, 'errors' => 0, 'remaining' => null, 'log' => [], 'token' => wp_generate_password(48, false, false), 'mode' => in_array($_POST['mode'] ?? '', ['profile', 'member_number'], true) ? $_POST['mode'] : 'full', 'started' => time(), 'work_seconds' => 0];
 			$this->log($s, 'Started processing remaining staged rows. WordPress email suppressed during worker requests.');
 			$this->save($s);
 			try { $this->schedule(); $this->dispatch($s); } catch (Throwable $e) { $s['status'] = 'failed'; $this->log($s, $e->getMessage()); $this->save($s); }
@@ -172,7 +172,7 @@ final class AAC_Member_Portal_Import_Background {
 		echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="aac_import_background">';
 		wp_nonce_field('aac_import_background');
 		if (self::active()) { echo '<button class="button" name="command" value="pause">Pause after current batch</button>'; }
-		else { echo '<p><label>Import mode <select name="mode"><option value="full">Full member import (accounts, membership and family links)</option><option value="profile">Profile only (existing accounts; preserve memberships and family links)</option></select></label></p><p>Profile only updates nonblank supplied profile fields. It requires an existing account and does not create memberships or change billing.</p><label><input type="checkbox" name="dry_run" value="1" checked> Validate only (dry run)</label> <button class="button button-primary" name="command" value="start">Process remaining rows automatically</button>'; }
+		else { echo '<p><label>Import mode <select name="mode"><option value="full">Full member import (accounts, membership and family links)</option><option value="member_number">Repair member numbers (match existing accounts by email)</option><option value="profile">Profile only (existing accounts; preserve memberships and family links)</option></select></label></p><p>Member-number repair requires only aac_member_id and email. Dry run shows old and new numbers in the Action column; conflicts stop processing. Profile only updates nonblank supplied profile fields. It requires an existing account and does not create memberships or change billing.</p><label><input type="checkbox" name="dry_run" value="1" checked> Validate only (dry run)</label> <button class="button button-primary" name="command" value="start">Process remaining rows automatically</button>'; }
 		echo '</form><p>Completion and failure notifications appear in WordPress admin. No notification emails are sent. Download Error CSV below for individual row errors.</p><details><summary>Processing log (latest 200 entries)</summary><pre style="white-space:pre-wrap">' . esc_html(implode("\n", $s['log'] ?? [])) . '</pre></details>';
 	}
 }

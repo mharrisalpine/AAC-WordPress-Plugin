@@ -73,6 +73,8 @@ class AAC_Member_Portal_Member_Database {
 		}
 	}
 
+	public function discard_queued_member_sync($user_id) { unset($this->pending_member_syncs[(int) $user_id]); }
+
 	public function queue_member_sync($user_id) {
 		$user_id = absint($user_id);
 		if ($user_id > 0) {
