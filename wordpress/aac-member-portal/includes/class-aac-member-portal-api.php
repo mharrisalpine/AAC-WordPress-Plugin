@@ -918,7 +918,7 @@ class AAC_Member_Portal_API {
 		return $this->save_profile_for_user(get_current_user_id(), $request);
 	}
 
-	public function admin_update_member($user_id, $changes) {
+	public function admin_update_member($user_id, $changes, $allow_incomplete = false) {
 		$user_id = absint($user_id);
 		if (!current_user_can('manage_options') || !current_user_can('edit_user', $user_id)) {
 			return new WP_Error('forbidden', 'You cannot edit this member.', ['status' => 403]);
@@ -945,10 +945,10 @@ class AAC_Member_Portal_API {
 		}
 		$request = new WP_REST_Request('PATCH');
 		$request->set_param('account_info', $account);
-		return $this->save_profile_for_user($user_id, $request);
+		return $this->save_profile_for_user($user_id, $request, $allow_incomplete);
 	}
 
-	private function save_profile_for_user($user_id, WP_REST_Request $request) {
+	private function save_profile_for_user($user_id, WP_REST_Request $request, $allow_incomplete = false) {
 		$account_info = $request->get_param('account_info');
 		$profile_info = $request->get_param('profile_info');
 		$benefits_info = $request->get_param('benefits_info');
@@ -972,7 +972,10 @@ class AAC_Member_Portal_API {
 			$stored_account_info = get_user_meta($user_id, 'aac_account_info', true);
 			$stored_account_info = is_array($stored_account_info) ? $stored_account_info : [];
 			$sanitized_account_info = $this->sanitize_account_info($account_info, $stored_account_info);
-			$required_account_info_error = $this->validate_required_account_info($sanitized_account_info);
+			// Admins can repair incomplete imported profiles without inventing missing addresses.
+			$required_account_info_error = $allow_incomplete
+				? (is_email($sanitized_account_info['email'] ?? '') ? true : new WP_Error('invalid_email', 'A valid email address is required.'))
+				: $this->validate_required_account_info($sanitized_account_info);
 			if (is_wp_error($required_account_info_error)) {
 				return $required_account_info_error;
 			}

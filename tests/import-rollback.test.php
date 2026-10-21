@@ -67,3 +67,34 @@ expect_rollback($db->data['wp_users'][0]['user_email'] === 'new@example.invalid'
 [$db, $worker] = fixture(); $db->entry['status'] = 'pending'; $worker->tick(); expect_rollback($db->writes === 0, 'incomplete checkpoint blocked');
 [$db, $worker] = fixture(); add_option(AAC_Member_Portal_Import_Background::LOCK, time()); $worker->tick(); expect_rollback($db->writes === 0, 'overlapping worker blocked');
 echo "PASS: existing/new accounts, local memberships, completion, conflict, content protection, transaction recovery, incomplete checkpoints, worker lock.\n";
+
+// Clearing staging may reuse an ID; journal ownership includes the batch.
+function is_multisite() { return false; }
+function wp_json_encode($v) { return json_encode($v); }
+function current_time($format) { return '2026-10-18 12:00:00'; }
+class BatchRollbackDB extends RollbackDB {
+ public $insert_id = 2, $stage_where;
+ function get_var($sql) {
+  if (strpos($sql, 'SELECT id FROM wp_aac_import_rollback') === 0) {
+   return strpos($sql, "stage_id = 7") !== false && strpos($sql, "batch_id = 'batch-a'") !== false ? 1 : null;
+  }
+  return parent::get_var($sql);
+ }
+ function update($table, $values, $where) {
+  if ($table === 'wp_aac_member_portal_import_rows') { $this->stage_where = $where; }
+  return parent::update($table, $values, $where);
+ }
+}
+[$old, $worker] = fixture();
+$db = new BatchRollbackDB(); $db->data = $old->data; $db->entry = $old->entry; $GLOBALS['wpdb'] = $db;
+update_option('aac_import_rollback_schema', '2');
+$tables = new ReflectionProperty(AAC_Member_Portal_Import_Rollback::class, 'table_cache');
+$tables->setValue(null, ['wp_users']);
+$caught = false;
+try { AAC_Member_Portal_Import_Rollback::begin(['id'=>7, 'batch_id'=>'batch-a'], [10]); } catch (RuntimeException $e) { $caught = true; }
+expect_rollback($caught && $db->writes === 0, 'same batch and row still blocked');
+$checkpoint = AAC_Member_Portal_Import_Rollback::begin(['id'=>7, 'batch_id'=>'batch-b'], [10]);
+expect_rollback($checkpoint['id'] === 2, 'reused row ID in new batch allowed');
+$worker->tick();
+expect_rollback($db->stage_where === ['id'=>7, 'batch_id'=>'batch-a'], 'rollback cannot mark reused row from another batch');
+echo "PASS: batch-scoped duplicate checkpoints and rollback staging updates.\n";

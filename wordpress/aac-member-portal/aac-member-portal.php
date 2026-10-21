@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AAC Member Portal
  * Description: Embeds the AAC React member portal inside WordPress and exposes REST endpoints for member profile data (Paid Memberships Pro integration).
- * Version: 1.0.810
+ * Version: 1.0.835
  * Author: AAC
  */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('AAC_MEMBER_PORTAL_VERSION', '1.0.810');
+define('AAC_MEMBER_PORTAL_VERSION', '1.0.835');
 define('AAC_MEMBER_PORTAL_FILE', __FILE__);
 define('AAC_MEMBER_PORTAL_DIR', plugin_dir_path(__FILE__));
 define('AAC_MEMBER_PORTAL_URL', plugin_dir_url(__FILE__));
@@ -26,10 +26,13 @@ require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-settings-
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-admin.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-runtime-config.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-database.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-pmpro-member-editor.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-member-number.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-daily-member-export.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-koha-sync.php';
 require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-import-manager.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-subscription-cleanup.php';
+require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-order-cleanup.php';
 if (defined('WP_CLI') && WP_CLI) {
 	require_once AAC_MEMBER_PORTAL_DIR . 'includes/class-aac-member-portal-wp-cli-importer.php';
 }
@@ -78,6 +81,8 @@ final class AAC_Member_Portal_Plugin {
 		new AAC_Member_Portal_Daily_Member_Export();
 		new AAC_Member_Portal_Koha_Sync();
 		new AAC_Member_Portal_Import_Manager();
+		new AAC_Member_Portal_Subscription_Cleanup();
+		new AAC_Member_Portal_Order_Cleanup();
 		AAC_Member_Portal_Error_Log::init();
 
 		add_shortcode(self::SHORTCODE, [$this, 'render_shortcode']);
@@ -145,6 +150,8 @@ final class AAC_Member_Portal_Plugin {
 		add_filter('pmpro_show_discount_code', [$this, 'show_discount_code_on_checkout']);
 			add_filter('pmpro_required_billing_fields', [$this, 'filter_pmpro_required_billing_fields']);
 			add_filter('pmpro_registration_checks', [$this, 'validate_pmpro_required_profile_fields'], 20);
+		add_filter('pmpro_registration_checks', [$this, 'validate_signup_password_policy'], 9);
+		add_filter('pmprosp_minimum_password_score', [$this, 'signup_password_score_threshold']);
 			add_filter('pmpro_registration_checks', [$this, 'validate_pmpro_student_university_field'], 21);
 			add_filter('pmpro_registration_checks', [$this, 'log_pmpro_registration_failure'], 999);
 		add_filter('pmpro_checkout_new_user_array', [$this, 'filter_pmpro_checkout_new_user_array']);
@@ -163,6 +170,7 @@ final class AAC_Member_Portal_Plugin {
 		add_action('pmpro_after_checkout', [$this, 'ensure_immediate_upgrade_checkout_level'], 15, 2);
 		add_action('pmpro_after_checkout', [$this, 'capture_pmpro_checkout_order_breakdown'], 20, 2);
 		add_action('pmpro_after_checkout', [$this, 'clear_scheduled_downgrade_after_checkout'], 30, 2);
+		add_action('pmpro_after_checkout', [$this, 'save_checkout_preferences'], 35, 2);
 		add_action('pmpro_after_checkout', [$this, 'log_pmpro_checkout_success'], 99, 2);
 		add_action('pmpro_after_change_membership_level', [$this, 'normalize_membership_enddate_after_change'], 12, 2);
 		add_action('pmpro_after_change_membership_level', [$this, 'maybe_restore_cancelled_membership_through_term'], 13, 2);
@@ -1991,7 +1999,7 @@ final class AAC_Member_Portal_Plugin {
 		foreach ($required_fields as $field_name => $field_value) {
 			$normalized_field_name = strtolower((string) $field_name);
 			$is_always_optional_checkout_field = preg_match(
-				'/(birthdate|t[_-]?shirt|publication|preference|guidebook|bphone|^phone$)/',
+				'/(birthdate|t[_-]?shirt|publication|preference|guidebook|bphone|^phone$|marketing_opt_in|university|school)/',
 				$normalized_field_name
 			);
 			$is_inactive_student_field = $selected_discount !== 'student'
@@ -2416,6 +2424,18 @@ final class AAC_Member_Portal_Plugin {
 		<?php
 	}
 
+	public function signup_password_score_threshold($score) {
+		return !is_user_logged_in() && isset($_GET['aac_signup']) && $this->is_pmpro_checkout_request() ? -1 : $score;
+	}
+
+	public function validate_signup_password_policy($valid) {
+		if (!$valid || is_user_logged_in() || !isset($_GET['aac_signup']) || !$this->is_pmpro_checkout_request()) return $valid;
+		$password = isset($_POST['password']) && is_string($_POST['password']) ? wp_unslash($_POST['password']) : '';
+		if (strlen($password) >= 8 && preg_match('/[a-zA-Z]/', $password) && preg_match('/[0-9]/', $password) && preg_match('/[^a-zA-Z0-9\s]/', $password)) return $valid;
+		pmpro_setMessage('Use at least 8 characters, including one letter, one number, and one special character (such as !, @, or #).', 'pmpro_error');
+		return false;
+	}
+
 	public function render_checkout_donation_ui_script() {
 		if (!$this->is_pmpro_checkout_request()) {
 			return;
@@ -2749,19 +2769,30 @@ final class AAC_Member_Portal_Plugin {
 
 			function positionSignupPasswordUI() {
 				if (!new URLSearchParams(window.location.search).has('aac_signup')) return;
-				const passwordField = document.querySelector('.pmpro_form_field-password');
+				const passwordField = document.querySelector('input[name="password"]')?.closest('.pmpro_form_field-password');
 				const passwordWrap = passwordField?.querySelector('.aac-password-input-wrap');
 				const strengthContainer = document.getElementById('pmprosp-container');
 				if (!passwordField || !passwordWrap) return;
-				passwordField.querySelector('.aac-password-requirements')?.remove();
+
 				document.getElementById('pmprosp-password-notice')?.remove();
 				if (strengthContainer && (strengthContainer.parentNode !== passwordField || strengthContainer.previousElementSibling !== passwordWrap)) {
 					passwordWrap.insertAdjacentElement('afterend', strengthContainer);
 				}
+                let requirements = passwordField.querySelector('.aac-signup-password-help');
+                if (!requirements) {
+                    requirements = document.createElement('p');
+                    requirements.className = 'aac-signup-password-help';
+                    requirements.id = 'aac-signup-password-help';
+                    requirements.textContent = 'Use at least 8 characters, including one letter, one number, and one special character (such as !, @, or #).';
+                    (strengthContainer || passwordWrap).insertAdjacentElement('afterend', requirements);
+                    const input = passwordWrap.querySelector('input');
+                    if (input) input.setAttribute('aria-describedby', [input.getAttribute('aria-describedby'), requirements.id].filter(Boolean).join(' '));
+                }
 				passwordField.querySelectorAll('.pmprosp-tooltip__password').forEach(function (tooltip) {
 					tooltip.tabIndex = 0;
 					tooltip.setAttribute('role', 'button');
 					tooltip.setAttribute('aria-label', 'Password requirements');
+                    tooltip.setAttribute('data-tooltip', 'Use at least 8 characters, including one letter, one number, and one special character.');
 				});
 				if (!passwordField.querySelector('.aac-password-validation-message')) {
 					const message = document.createElement('p');
@@ -2937,26 +2968,12 @@ final class AAC_Member_Portal_Plugin {
 						if (message) { message.textContent = ''; message.hidden = true; }
 						return true;
 					}
-					let score = null;
-					try {
-						const passwordStrength = window.wp?.passwordStrength;
-						if (typeof passwordStrength?.meter === 'function') {
-							const disallowed = typeof passwordStrength.userInputDisallowedList === 'function'
-								? passwordStrength.userInputDisallowedList()
-								: (typeof passwordStrength.userInputBlacklist === 'function' ? passwordStrength.userInputBlacklist() : []);
-							score = Number(passwordStrength.meter(password, disallowed, password));
-						}
-					} catch (error) {
-						score = null;
-					}
-					const valid = Number.isFinite(score) && score > minimumPasswordScore;
+					const valid = password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password) && /[^a-zA-Z0-9\s]/.test(password);
 					if (valid) {
 						if (message) { message.textContent = ''; message.hidden = true; }
 						return true;
 					}
-					const errorMessage = score === null
-						? 'Please wait while password strength is checked.'
-						: 'Your password is too weak. Please choose a stronger password.';
+					const errorMessage = 'Use at least 8 characters, including one letter, one number, and one special character (such as !, @, or #).';
 					currentPasswordInput.setCustomValidity(errorMessage);
 					if (message && reportError) { message.textContent = errorMessage; message.hidden = false; }
 					if (reportError) {
@@ -3838,7 +3855,7 @@ final class AAC_Member_Portal_Plugin {
 								<span class="aac-partner-family__card-inner">
 									<span class="aac-partner-family__card-copy">
 										<strong><?php esc_html_e('Additional adult', 'aac-member-portal'); ?></strong>
-										<span><?php esc_html_e('Select one additional adult for $80 per year.', 'aac-member-portal'); ?></span>
+										<span><?php esc_html_e('Click here to add an additional adult', 'aac-member-portal'); ?></span>
 									</span>
 									<span class="aac-partner-family__card-price">
 										<?php echo esc_html($this->format_price($pricing['additional_adult_price'])); ?>
@@ -4511,6 +4528,46 @@ final class AAC_Member_Portal_Plugin {
 		}
 	}
 
+	private function get_submitted_checkout_tshirt($fallback = '') {
+		// Prefer the actual configured select over the legacy JS-generated hidden input.
+		foreach (['t_shirt_sizet_shirt', 't_shirt', 'tshirt_size', 't_shirt_size', 'shirt_size'] as $key) {
+			if (isset($_POST[$key]) && is_scalar($_POST[$key])) {
+				return $this->normalize_tshirt_size_value(wp_unslash($_POST[$key]));
+			}
+		}
+		return $this->normalize_tshirt_size_value($fallback);
+	}
+
+	public function save_checkout_preferences($user_id, $order = null) {
+		if (!$user_id || strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !$this->is_pmpro_checkout_request()) {
+			return;
+		}
+		// Run after PMPro saves custom fields and before the Member Database mirror.
+		$account = get_user_meta($user_id, 'aac_account_info', true);
+		$account = is_array($account) ? $account : [];
+		$size = $this->get_submitted_checkout_tshirt($account['size'] ?? get_user_meta($user_id, 't_shirt', true));
+		$country = $this->get_checkout_request_value(['pmpro_scountry', 'scountry', 'bcountry']);
+		if ($country !== '' && $this->is_international_country($country)) { $size = 'No T-shirt'; }
+		foreach (['t_shirt_sizet_shirt', 't_shirt', 'tshirt_size', 't_shirt_size', 'shirt_size'] as $key) {
+			if (isset($_POST[$key]) && is_scalar($_POST[$key])) {
+				update_user_meta($user_id, 't_shirt', $size);
+				update_user_meta($user_id, 't_shirt_sizet_shirt', $size);
+				$account['size'] = $size;
+				break;
+			}
+		}
+		foreach (['aac_email_marketing_opt_in', 'aac_sms_marketing_opt_in'] as $key) {
+			// Missing controls must preserve existing consent. A rendered, unchecked
+			// control explicitly saves false, rather than retaining an earlier opt-in.
+			if (isset($_POST[$key]) || !empty($_POST[$key . '_present'])) {
+				$value = isset($_POST[$key]) && is_scalar($_POST[$key]) && filter_var(wp_unslash($_POST[$key]), FILTER_VALIDATE_BOOLEAN);
+				update_user_meta($user_id, $key, $value ? '1' : '0');
+				$account[$key] = (bool) $value;
+			}
+		}
+		update_user_meta($user_id, 'aac_account_info', $account);
+	}
+
 	public function sync_pmpro_checkout_profile_fields($level_id, $user_id) {
 		$request_method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) wp_unslash($_SERVER['REQUEST_METHOD'])) : '';
 		if ($request_method !== 'POST' || !$this->is_pmpro_checkout_request() || !$user_id) {
@@ -4526,9 +4583,7 @@ final class AAC_Member_Portal_Plugin {
 		$request_account_info = $this->get_checkout_account_info_from_request($user);
 		$next_account_info = array_merge($stored_account_info, $request_account_info, [
 			'email' => $user->user_email,
-			'size' => isset($_REQUEST['t_shirt'])
-				? $this->normalize_tshirt_size_value(wp_unslash($_REQUEST['t_shirt']))
-				: $this->normalize_tshirt_size_value($stored_account_info['size'] ?? ''),
+			'size' => $this->get_submitted_checkout_tshirt($stored_account_info['size'] ?? ''),
 			'photo_url' => $stored_account_info['photo_url'] ?? get_avatar_url($user_id),
 			'auto_renew' => isset($_REQUEST['autorenew_present'])
 				? !empty($_REQUEST['autorenew'])
@@ -5038,9 +5093,7 @@ final class AAC_Member_Portal_Plugin {
 			$this->get_checkout_publication_preferences($account_info, 'Print')
 		);
 
-		if (isset($_REQUEST['t_shirt'])) {
-			$account_info['size'] = $this->normalize_tshirt_size_value(wp_unslash($_REQUEST['t_shirt']));
-		}
+		$account_info['size'] = $this->get_submitted_checkout_tshirt($account_info['size'] ?? '');
 
 		return [
 			'first_name' => $account_info['first_name'],
@@ -10629,8 +10682,11 @@ CSS;
 		padding-top: 0 !important;
 		background: #ffffff !important;
 		overflow-x: clip !important;
-		overflow-y: auto !important;
-		height: 100vh !important;
+		/* Keep the footer after the full app and let the document own scrolling. */
+		overflow-y: visible !important;
+		height: auto !important;
+		min-height: 100vh;
+		max-height: none !important;
 	}
 
 	body.admin-bar #aac-member-portal-root.aac-member-portal-shell--profile {

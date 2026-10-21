@@ -18,6 +18,7 @@ import { useMembershipActions } from '@/hooks/useMembershipActions';
 import { getMemberTransactions } from '@/lib/memberApi';
 import { normalizeAccountInfo } from '@/lib/memberProfile';
 import { getAutoRenewalControl } from '@/lib/autoRenewalControl';
+import { isCurrentMembershipLevel } from '@/lib/membershipLevelIdentity';
 import { bindBillingProfileRefresh } from '@/lib/billingProfileRefresh';
 import {
   MEMBERSHIP_PLAN_ORDER,
@@ -370,6 +371,9 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
     }
 
     if (targetIndex === currentIndex) {
+      if (!isCurrentMembershipLevel(actions, tier, rawTier) && actions?.levels?.[tier]?.checkout_url) {
+        return { label: `Upgrade to ${tier}`, type: 'upgrade' };
+      }
       return {
         label: 'Active Membership',
         disabled: true,
@@ -390,7 +394,7 @@ const MembershipManagementPage = ({ standaloneUpgrade = false }) => {
   };
 
   const getUpgradeTierAction = (tier) => {
-    if (standaloneUpgrade && tier === currentTier) {
+    if (standaloneUpgrade && isCurrentMembershipLevel(actions, tier, rawTier)) {
       return hasAutoRenewal
         ? { label: 'Auto-Renewal Active', disabled: true }
         : { label: 'Renew Current Level', disabled: false, type: 'renew' };

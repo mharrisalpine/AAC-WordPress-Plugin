@@ -71,9 +71,9 @@ final class AAC_Member_Portal_Import_Background {
 			update_option(self::PAUSE, true, false);
 			// Do not overwrite counters while the worker owns the state. It reads PAUSE between rows.
 			if (!get_option(self::LOCK)) { $s['status'] = 'paused'; $this->log($s, 'Paused.'); $this->save($s); }
-		} elseif ($command === 'start' && !self::active() && !AAC_Member_Portal_Import_Rollback::active()) {
+		} elseif ($command === 'start' && !self::active() && !AAC_Member_Portal_Import_Rollback::active() && (!class_exists('AAC_Member_Portal_Individual_Rollback') || !AAC_Member_Portal_Individual_Rollback::busy())) {
 			delete_option(self::PAUSE);
-			$s = ['status' => 'running', 'dry_run' => !empty($_POST['dry_run']), 'processed' => 0, 'errors' => 0, 'remaining' => null, 'log' => [], 'token' => wp_generate_password(48, false, false), 'mode' => in_array($_POST['mode'] ?? '', ['profile', 'member_number'], true) ? $_POST['mode'] : 'full', 'started' => time(), 'work_seconds' => 0];
+			$s = ['status' => 'running', 'dry_run' => !empty($_POST['dry_run']), 'processed' => 0, 'errors' => 0, 'remaining' => null, 'log' => [], 'token' => wp_generate_password(48, false, false), 'mode' => in_array($_POST['mode'] ?? '', ['profile', 'member_number', 'profile_upsert'], true) ? $_POST['mode'] : 'full', 'started' => time(), 'work_seconds' => 0];
 			$this->log($s, 'Started processing remaining staged rows. WordPress email suppressed during worker requests.');
 			$this->save($s);
 			try { $this->schedule(); $this->dispatch($s); } catch (Throwable $e) { $s['status'] = 'failed'; $this->log($s, $e->getMessage()); $this->save($s); }
@@ -126,10 +126,13 @@ final class AAC_Member_Portal_Import_Background {
 				$s['errors'] += $result['errors'];
 				$s['remaining'] = $result['remaining'];
 				$pause = self::pause_requested();
-				if ($result['errors']) {
+				if (!empty($result['stopped_on_error'])) {
 					$s['status'] = 'failed';
 					$this->log($s, 'Stopped on row error. Download Error CSV before continuing.');
-				} elseif (!$result['remaining']) { $s['status'] = 'completed'; }
+				} elseif (!$result['remaining']) {
+					$s['status'] = 'completed';
+					if ($s['errors']) $this->log($s, 'Completed with skipped rows. Download Error CSV to review failed records.');
+				}
 				elseif ($pause) { $s['status'] = 'paused'; }
 				$this->save($s);
 				// Bound memory as well as time; no concurrent member writes.
@@ -157,7 +160,7 @@ final class AAC_Member_Portal_Import_Background {
 		if (!current_user_can('manage_options')) { return; }
 		$s = get_option(self::STATE, []);
 		if (!in_array($s['status'] ?? '', ['completed', 'failed'], true)) { return; }
-		echo '<div class="notice notice-' . ($s['status'] === 'failed' ? 'error' : 'success') . '"><p>Member import ' . esc_html($s['status']) . '. <a href="' . esc_url(admin_url('admin.php?page=' . AAC_Member_Portal_Import_Manager::PAGE_SLUG)) . '">Review import results and error log</a>.</p></div>';
+		echo '<div class="notice notice-' . ($s['status'] === 'failed' ? 'error' : (!empty($s['errors']) ? 'warning' : 'success')) . '"><p>Member import ' . esc_html($s['status']) . '. <a href="' . esc_url(admin_url('admin.php?page=' . AAC_Member_Portal_Import_Manager::PAGE_SLUG)) . '">Review import results and error log</a>.</p></div>';
 	}
 	public function render() {
 		$s = get_option(self::STATE, []);
@@ -172,7 +175,7 @@ final class AAC_Member_Portal_Import_Background {
 		echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="aac_import_background">';
 		wp_nonce_field('aac_import_background');
 		if (self::active()) { echo '<button class="button" name="command" value="pause">Pause after current batch</button>'; }
-		else { echo '<p><label>Import mode <select name="mode"><option value="full">Full member import (accounts, membership and family links)</option><option value="member_number">Repair member numbers (match existing accounts by email)</option><option value="profile">Profile only (existing accounts; preserve memberships and family links)</option></select></label></p><p>Member-number repair requires only aac_member_id and email. Dry run shows old and new numbers in the Action column; conflicts stop processing. Profile only updates nonblank supplied profile fields. It requires an existing account and does not create memberships or change billing.</p><label><input type="checkbox" name="dry_run" value="1" checked> Validate only (dry run)</label> <button class="button button-primary" name="command" value="start">Process remaining rows automatically</button>'; }
+		else { echo '<p><label>Import mode <select name="mode"><option value="full">Full member import (accounts, membership and family links)</option><option value="profile_upsert">Update existing profiles + add missing members (preserve existing memberships and family links)</option><option value="member_number">Repair member numbers (match existing accounts by email)</option><option value="profile">Profile only (existing accounts; preserve memberships and family links)</option></select></label></p><p>Update existing profiles + add missing members matches by AAC member number or email. Existing accounts receive profile updates only; their memberships, billing and family links are preserved. New accounts require a valid email and are created as WordPress Subscribers without a PMPro membership. Membership level, status, dates, billing and family-link fields are ignored for all rows in this mode; import memberships and family links separately later. Dry run shows dry_run_profile_updated or dry_run_created. Member-number repair requires only aac_member_id and email. Dry run shows old and new numbers in the Action column. Unmatched, invalid, or conflicting repair rows are logged and skipped so valid rows can finish. Database and write failures still stop processing. Profile only matches exclusively by aac_member_id (email optional) and updates nonblank supplied profile fields. It requires an existing account and does not create memberships or change billing. Invalid or unmatched profile rows are logged and skipped so other rows can finish.</p><label><input type="checkbox" name="dry_run" value="1" checked> Validate only (dry run)</label> <button class="button button-primary" name="command" value="start">Process remaining rows automatically</button>'; }
 		echo '</form><p>Completion and failure notifications appear in WordPress admin. No notification emails are sent. Download Error CSV below for individual row errors.</p><details><summary>Processing log (latest 200 entries)</summary><pre style="white-space:pre-wrap">' . esc_html(implode("\n", $s['log'] ?? [])) . '</pre></details>';
 	}
 }

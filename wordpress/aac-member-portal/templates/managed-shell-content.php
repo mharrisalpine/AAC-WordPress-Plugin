@@ -3762,6 +3762,85 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 		.aac-confirmation-page .aac-pmpro-confirmation-fallback__actions a { display: block !important; text-align: center !important; }
 	}
 </style>
+<style id="aac-discount-tiles-v755">
+	/* Keep the discount redesign independent of PMPro's wrapper structure. */
+	.aac-membership-discounts .aac-membership-discounts__card {
+		display: flex !important;
+		position: relative !important;
+		flex-direction: column !important;
+		align-items: center !important;
+		justify-content: center !important;
+		gap: 0.8rem !important;
+		min-height: 10.5rem !important;
+		padding: 1.25rem !important;
+		border: 2px solid transparent !important;
+		background: transparent !important;
+		box-shadow: none !important;
+		color: #000 !important;
+		text-align: center !important;
+		transform: none !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__card::before,
+	.aac-membership-discounts .aac-membership-discounts__card::after {
+		display: none !important;
+		content: none !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__title {
+		font-size: 1rem !important;
+		font-weight: 800 !important;
+		letter-spacing: 0.08em !important;
+		line-height: 1.2 !important;
+		text-align: center !important;
+		text-transform: uppercase !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__icon,
+	.aac-membership-discounts .aac-membership-discounts__icon * {
+		color: #000 !important;
+		-webkit-text-fill-color: #000 !important;
+		stroke: #000 !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__icon svg {
+		width: 3.4rem !important;
+		height: 3.4rem !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__price {
+		display: block !important;
+		width: 100% !important;
+		font-size: 1.25rem !important;
+		font-weight: 800 !important;
+		line-height: 1.2 !important;
+		text-align: center !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__label:hover .aac-membership-discounts__card {
+		border-color: transparent !important;
+		background: transparent !important;
+		box-shadow: none !important;
+	}
+	.aac-membership-discounts .aac-membership-discounts__input:checked + .aac-membership-discounts__card,
+	.aac-membership-discounts .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__card,
+	.aac-membership-discounts .aac-membership-discounts__label.is-selected .aac-membership-discounts__card,
+	.aac-membership-discounts .aac-membership-discounts__card.is-selected {
+		border-color: #000 !important;
+		background: #f8c235 !important;
+		box-shadow: none !important;
+	}
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__card,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label.is-selected .aac-membership-discounts__card,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card.is-selected {
+		border-color: #000 !important;
+		background: #f8c235 !important;
+		box-shadow: none !important;
+	}
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon *,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__icon,
+	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__icon * {
+		color: #000 !important;
+		-webkit-text-fill-color: #000 !important;
+		stroke: #000 !important;
+	}
+</style>
 
 <?php if (!$is_embed_request) : ?>
 <script id="aac-managed-shell-header-clearance">
@@ -3925,85 +4004,7 @@ $managed_logout_url = wp_logout_url(untrailingslashit($portal_url) . '/#/login')
 		</main>
 	</div>
 </div>
-<style id="aac-discount-tiles-v755">
-	/* Keep the discount redesign independent of PMPro's wrapper structure. */
-	.aac-membership-discounts .aac-membership-discounts__card {
-		display: flex !important;
-		position: relative !important;
-		flex-direction: column !important;
-		align-items: center !important;
-		justify-content: center !important;
-		gap: 0.8rem !important;
-		min-height: 10.5rem !important;
-		padding: 1.25rem !important;
-		border: 2px solid transparent !important;
-		background: transparent !important;
-		box-shadow: none !important;
-		color: #000 !important;
-		text-align: center !important;
-		transform: none !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__card::before,
-	.aac-membership-discounts .aac-membership-discounts__card::after {
-		display: none !important;
-		content: none !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__title {
-		font-size: 1rem !important;
-		font-weight: 800 !important;
-		letter-spacing: 0.08em !important;
-		line-height: 1.2 !important;
-		text-align: center !important;
-		text-transform: uppercase !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__icon,
-	.aac-membership-discounts .aac-membership-discounts__icon * {
-		color: #000 !important;
-		-webkit-text-fill-color: #000 !important;
-		stroke: #000 !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__icon svg {
-		width: 3.4rem !important;
-		height: 3.4rem !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__price {
-		display: block !important;
-		width: 100% !important;
-		font-size: 1.25rem !important;
-		font-weight: 800 !important;
-		line-height: 1.2 !important;
-		text-align: center !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__label:hover .aac-membership-discounts__card {
-		border-color: transparent !important;
-		background: transparent !important;
-		box-shadow: none !important;
-	}
-	.aac-membership-discounts .aac-membership-discounts__input:checked + .aac-membership-discounts__card,
-	.aac-membership-discounts .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__card,
-	.aac-membership-discounts .aac-membership-discounts__label.is-selected .aac-membership-discounts__card,
-	.aac-membership-discounts .aac-membership-discounts__card.is-selected {
-		border-color: #000 !important;
-		background: #f8c235 !important;
-		box-shadow: none !important;
-	}
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card,
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__card,
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label.is-selected .aac-membership-discounts__card,
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__card.is-selected {
-		border-color: #000 !important;
-		background: #f8c235 !important;
-		box-shadow: none !important;
-	}
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon,
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__input:checked + .aac-membership-discounts__card .aac-membership-discounts__icon *,
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__icon,
-	body.pmpro-checkout .aac-managed-card .aac-membership-discounts__label:has(.aac-membership-discounts__input:checked) .aac-membership-discounts__icon * {
-		color: #000 !important;
-		-webkit-text-fill-color: #000 !important;
-		stroke: #000 !important;
-	}
-</style>
+
 <script>
 	(function () {
 		const buildPreferredLoggedInName = () => {
@@ -4078,6 +4079,7 @@ const formatUsd = (value) => new Intl.NumberFormat('en-US', {
 }).format(Number.isFinite(value) ? value : 0);
 const checkoutProfileDefaults = <?php echo wp_json_encode($checkout_profile_defaults); ?>;
 <?php require __DIR__ . '/checkout-profile-prefill.php'; ?>
+<?php require __DIR__ . '/checkout-preferences.php'; ?>
 const configuredTshirtSizeOptions = <?php echo wp_json_encode($checkout_tshirt_size_options); ?>;
 const fallbackTshirtSizeOptions = [
 	{ value: 'No T-shirt', label: 'No T-shirt' },
@@ -6520,7 +6522,8 @@ const defaultPublicationCardImages = {
 			}
 			if (showStudentUniversity) {
 				studentUniversityField?.querySelectorAll('input[name^="university_or_school"], input[name="student_university"]').forEach((input) => {
-					input.required = true;
+					input.required = false;
+                        input.removeAttribute('aria-required');
 				});
 			}
 
@@ -7111,6 +7114,7 @@ const defaultPublicationCardImages = {
 				});
 				countryField.dataset.aacStateDropdownBound = 'true';
 			}
+            fillUpgradeProfileDefaults();
 		};
 
 		const getPmproDonationFieldset = () => {
@@ -8616,6 +8620,9 @@ const defaultPublicationCardImages = {
 				bindManagedAutoRenewToggle();
 				removePmproMemberLinksSection();
 				bindPmproMessageDedupe();
+				bindCheckoutPreferences();
+				bindCheckoutRequiredMarkers();
+				window.requestAnimationFrame(fillUpgradeProfileDefaults);
 			});
 		} else {
 			bindSignupAccountCopy();
@@ -8641,6 +8648,9 @@ const defaultPublicationCardImages = {
 			bindManagedAutoRenewToggle();
 			removePmproMemberLinksSection();
 			bindPmproMessageDedupe();
+			bindCheckoutPreferences();
+			bindCheckoutRequiredMarkers();
+			window.requestAnimationFrame(fillUpgradeProfileDefaults);
 		}
 
 		window.addEventListener('load', preparePmproUsernameField);

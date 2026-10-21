@@ -22,13 +22,13 @@ class WP_Error { function get_error_message() { return 'test error'; } }
 function is_wp_error($v) { return $v instanceof WP_Error; }
 require __DIR__ . '/../wordpress/aac-member-portal/includes/class-aac-member-portal-import-background.php';
 class TestManager {
- public $remaining = 106, $calls = 0, $fail = false, $pause = false, $mode;
+ public $remaining = 106, $calls = 0, $fail = false, $pause = false, $mode, $rowErrors = 0, $fatal = false;
  function sync_staged_rows($dry, $limit, $mode, $deadline) {
   $this->calls++; $this->mode = $mode;
   if ($this->fail) { return new WP_Error(); }
   $n = min($limit, $this->remaining); $this->remaining -= $n;
   if ($this->pause) { update_option(AAC_Member_Portal_Import_Background::PAUSE, true); }
-  return ['synced' => $dry ? 0 : $n, 'validated' => $dry ? $n : 0, 'errors' => 0, 'family_links' => 0, 'remaining' => $this->remaining];
+  return ['synced' => $dry ? 0 : $n, 'validated' => $dry ? $n : 0, 'errors' => $this->rowErrors, 'stopped_on_error' => $this->fatal, 'family_links' => 0, 'remaining' => $this->remaining];
  }
 }
 function fixture_worker() {
@@ -49,3 +49,9 @@ $w->tick(); check(get_option($w::STATE)['status']==='completed' && count($dispat
 [$m,$w]=fixture_worker(); $GLOBALS['remote_error']=new WP_Error(); $w->tick(); check(wp_next_scheduled($w::TICK) && get_option($w::STATE)['status']==='running', 'blocked loopback retains fallback');
 [$m,$w]=fixture_worker(); $_POST=['token'=>'wrong']; try { $w->endpoint(); } catch (RuntimeException $e) { check($e->getMessage()==='Forbidden','invalid token denied'); } check($m->calls===0,'unauthorized endpoint performs no work');
 echo "PASS: bounded throughput, continuation, completion, pause, failure, lock, mail suppression, cron fallback, endpoint authorization.\n";
+
+[$m,$w]=fixture_worker(); $m->remaining=20; $m->rowErrors=1; $w->tick(); $s=get_option($w::STATE);
+check($s['status']==='completed' && $s['errors']===2 && $m->calls===2, 'logged row errors do not stop background completion');
+[$m,$w]=fixture_worker(); $m->rowErrors=1; $m->fatal=true; $w->tick();
+check(get_option($w::STATE)['status']==='failed' && $m->calls===1, 'fatal row errors stop background worker');
+echo "PASS: background completes with logged row errors and stops on fatal errors.\n";

@@ -8,6 +8,8 @@ final class AAC_Member_Portal_Import_Rollback {
 	const STATE = 'aac_import_rollback_state';
 	const HOOK = 'aac_import_rollback_tick';
 	public function __construct() {
+		require_once __DIR__ . '/class-aac-member-portal-individual-rollback.php';
+		new AAC_Member_Portal_Individual_Rollback();
 		add_action('admin_post_aac_import_rollback', [$this, 'start']);
 		add_action(self::HOOK, [$this, 'tick']);
 		add_action('aac_import_background_controls', [$this, 'render']);
@@ -97,7 +99,7 @@ final class AAC_Member_Portal_Import_Rollback {
 	public static function begin($stage, $ids) {
 		global $wpdb;
 		self::install();
-		$existing = $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . self::table() . " WHERE stage_id = %d AND status <> 'rolled_back' LIMIT 1", $stage['id']));
+		$existing = $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . self::table() . " WHERE stage_id = %d AND batch_id = %s AND status <> 'rolled_back' LIMIT 1", $stage['id'], $stage['batch_id']));
 		if ($wpdb->last_error || $existing) { throw new RuntimeException('This staged row has an earlier checkpoint or its checkpoint could not be checked. Review before retrying; no member writes performed.'); }
 		$tables = self::tables();
 		$payload = ['ids' => array_values(array_unique(array_filter(array_map('absint', $ids)))), 'tables' => $tables, 'before' => self::snapshot($ids, $tables)];
@@ -118,7 +120,7 @@ final class AAC_Member_Portal_Import_Rollback {
 		global $wpdb;
 		if (!current_user_can('manage_options')) { wp_die('Administrator access required.'); }
 		check_admin_referer('aac_import_rollback');
-		if (AAC_Member_Portal_Import_Background::active() || self::active()) { wp_die('Pause the import and wait for its worker to finish first.'); }
+		if (AAC_Member_Portal_Import_Background::active() || self::active() || AAC_Member_Portal_Individual_Rollback::busy()) { wp_die('Pause the import and wait for its worker to finish first.'); }
 		self::install();
 		$last = $wpdb->get_row('SELECT * FROM ' . self::table() . " WHERE status <> 'rolled_back' ORDER BY id DESC LIMIT 1", ARRAY_A);
 		if (!$last || $last['status'] !== 'ready') { wp_die('No complete rollback checkpoint is available. An interrupted row requires manual review.'); }
@@ -147,29 +149,7 @@ final class AAC_Member_Portal_Import_Rollback {
 			if (!$entry || $entry['batch_id'] !== $s['batch_id']) { $s['status'] = 'completed'; $s['message'] = 'Rollback completed.'; }
 			else {
 				if ($entry['status'] !== 'ready') { throw new RuntimeException('Incomplete checkpoint requires manual review.'); }
-				$p = json_decode($entry['payload'], true);
-				if (!is_array($p) || empty($p['after'])) { throw new RuntimeException('Invalid checkpoint.'); }
-				self::query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
-				self::query('START TRANSACTION');
-				$current = self::snapshot($p['ids'], $p['tables']);
-				if (!self::matches($p['after'], $current)) { throw new RuntimeException('Member or family records changed after import. Rollback stopped to preserve newer data. Stage row ' . (int) $entry['stage_id']); }
-				$before_users = array_column($p['before'][$wpdb->users]['rows'], 'ID');
-				$new_users = array_diff(array_column($p['after'][$wpdb->users]['rows'], 'ID'), $before_users);
-				foreach ($new_users as $id) {
-					if ($wpdb->get_var($wpdb->prepare("SELECT ID FROM $wpdb->posts WHERE post_author = %d LIMIT 1", $id)) || $wpdb->get_var($wpdb->prepare("SELECT comment_ID FROM $wpdb->comments WHERE user_id = %d LIMIT 1", $id))) { throw new RuntimeException('New account owns content. Reassign content before rollback.'); }
-				}
-				// Direct local restoration deliberately bypasses cancellation and mail hooks.
-				foreach (array_reverse($p['tables']) as $table) {
-					$pk = $p['after'][$table]['pk'];
-					foreach ($p['after'][$table]['rows'] as $row) { if ($wpdb->delete($table, [$pk => $row[$pk]]) === false) { throw new RuntimeException('Could not remove imported row.'); } }
-				}
-				foreach ($p['tables'] as $table) {
-					foreach ($p['before'][$table]['rows'] as $row) { if ($wpdb->insert($table, $row) === false) { throw new RuntimeException('Could not restore original row.'); } }
-				}
-				if ($wpdb->update(self::table(), ['status' => 'rolled_back'], ['id' => $entry['id']]) === false) { throw new RuntimeException('Could not mark checkpoint restored.'); }
-				if ($wpdb->update($wpdb->prefix . 'aac_member_portal_import_rows', ['status' => 'rolled_back', 'error_message' => 'Rolled back by administrator.'], ['id' => $entry['stage_id']]) === false) { throw new RuntimeException('Could not update staging record.'); }
-				self::query('COMMIT');
-				foreach ($p['ids'] as $id) { clean_user_cache($id); wp_cache_delete($id, 'user_meta'); wp_cache_delete($id, 'pmpro_memberships_users'); }
+				self::restore_entry($entry);
 				$s['restored']++; $s['message'] = 'Restored stage row ' . (int) $entry['stage_id'];
 			}
 		} catch (Throwable $e) { $wpdb->query('ROLLBACK'); $s['status'] = 'failed'; $s['message'] = $e->getMessage(); }
@@ -178,6 +158,41 @@ final class AAC_Member_Portal_Import_Rollback {
 			if ($s['status'] === 'running' && !wp_schedule_single_event(time() + 5, self::HOOK)) { $s['status'] = 'failed'; $s['message'] = 'Could not schedule next rollback row.'; update_option(self::STATE, $s, false); }
 		}
 	}
+	public static function inspect_payload($payload) {
+		return self::snapshot($payload['ids'], $payload['tables']);
+	}
+
+	/** Restore one journal entry transactionally; both rollback modes use identical guards. */
+	public static function restore_entry($entry) {
+		global $wpdb;
+		if (($entry['status'] ?? '') !== 'ready') throw new RuntimeException('Checkpoint is not ready to restore.');
+		try {
+			$p = json_decode($entry['payload'], true);
+			if (!is_array($p) || empty($p['after'])) { throw new RuntimeException('Invalid checkpoint.'); }
+			self::query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+			self::query('START TRANSACTION');
+			$current = self::snapshot($p['ids'], $p['tables']);
+			if (!self::matches($p['after'], $current)) { throw new RuntimeException('Member or family records changed after import. Rollback stopped to preserve newer data. Stage row ' . (int) $entry['stage_id']); }
+			$before_users = array_column($p['before'][$wpdb->users]['rows'], 'ID');
+			$new_users = array_diff(array_column($p['after'][$wpdb->users]['rows'], 'ID'), $before_users);
+			foreach ($new_users as $id) {
+				if ($wpdb->get_var($wpdb->prepare("SELECT ID FROM $wpdb->posts WHERE post_author = %d LIMIT 1", $id)) || $wpdb->get_var($wpdb->prepare("SELECT comment_ID FROM $wpdb->comments WHERE user_id = %d LIMIT 1", $id))) { throw new RuntimeException('New account owns content. Reassign content before rollback.'); }
+			}
+			// Direct local restoration deliberately bypasses cancellation and mail hooks.
+			foreach (array_reverse($p['tables']) as $table) {
+				$pk = $p['after'][$table]['pk'];
+				foreach ($p['after'][$table]['rows'] as $row) { if ($wpdb->delete($table, [$pk => $row[$pk]]) === false) { throw new RuntimeException('Could not remove imported row.'); } }
+			}
+			foreach ($p['tables'] as $table) {
+				foreach ($p['before'][$table]['rows'] as $row) { if ($wpdb->insert($table, $row) === false) { throw new RuntimeException('Could not restore original row.'); } }
+			}
+			if ($wpdb->update(self::table(), ['status' => 'rolled_back'], ['id' => $entry['id']]) === false) { throw new RuntimeException('Could not mark checkpoint restored.'); }
+			if ($wpdb->update($wpdb->prefix . 'aac_member_portal_import_rows', ['status' => 'rolled_back', 'error_message' => 'Rolled back by administrator.'], ['id' => $entry['stage_id'], 'batch_id' => $entry['batch_id']]) === false) { throw new RuntimeException('Could not update staging record.'); }
+			self::query('COMMIT');
+			foreach ($p['ids'] as $id) { clean_user_cache($id); wp_cache_delete($id, 'user_meta'); wp_cache_delete($id, 'pmpro_memberships_users'); }
+		} catch (Throwable $error) { $wpdb->query('ROLLBACK'); throw $error; }
+	}
+
 	public function notice() {
 		if (!current_user_can('manage_options')) { return; }
 		$s = get_option(self::STATE, []);

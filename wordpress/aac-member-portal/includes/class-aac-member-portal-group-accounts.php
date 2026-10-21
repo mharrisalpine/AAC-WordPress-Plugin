@@ -17,6 +17,60 @@ final class AAC_Member_Portal_Group_Accounts {
 		add_action('admin_post_aac_member_portal_import_family_group_links', [$this, 'handle_admin_family_group_links_import']);
 		add_action('show_user_profile', [$this, 'render_admin_parent_group_children'], 35);
 		add_action('edit_user_profile', [$this, 'render_admin_parent_group_children'], 35);
+		add_action('admin_menu', function () {
+			add_submenu_page(null, 'Restore Empty Family Slots', 'Restore Empty Family Slots', 'manage_options', 'aac-restore-family-slots', [$this, 'render_empty_slot_repair']);
+		});
+		add_action('admin_post_aac_restore_empty_family_slots', [$this, 'handle_empty_slot_repair']);
+	}
+
+	/** Explicit administrator repair only: never change group capacity, children, or billing. */
+	public static function restore_empty_dependent_slots($user_id, $count) {
+		$user_id = absint($user_id); $count = (int) $count;
+		if (!$user_id || $count < 1 || $count > 3 || !get_user_by('id', $user_id)) throw new RuntimeException('Select an existing parent and between one and three dependent seats.');
+		if (get_user_meta($user_id, 'aac_linked_parent_user_id', true)) throw new RuntimeException('This account is a linked child, not a family parent.');
+		$group = self::get_group_summary_for_parent($user_id);
+		if (!$group || (int) $group['active_members'] !== 0 || (int) $group['total_seats'] !== $count) throw new RuntimeException('Repair requires an empty existing group with exactly the requested number of seats. No capacity is added.');
+		$stored = get_user_meta($user_id, 'aac_connected_accounts', true);
+		if (!empty($stored)) throw new RuntimeException('Family slots already exist. No existing slot or child was changed.');
+		$config = get_user_meta($user_id, 'aac_partner_family_config', true);
+		if (is_array($config) && (!empty($config['additional_adult']) || (!empty($config['dependent_count']) && (int) $config['dependent_count'] !== $count))) throw new RuntimeException('Saved family entitlement conflicts with dependent-only repair. Review manually.');
+		$level_id = self::get_level_id_by_name('Partner Dependent');
+		$level = $level_id && function_exists('pmpro_getLevel') ? pmpro_getLevel($level_id) : null;
+		if (!$level) throw new RuntimeException('Partner Dependent level is unavailable.');
+		$slots = [];
+		for ($i = 1; $i <= $count; $i++) {
+			$slots[] = ['id' => wp_generate_uuid4(), 'type' => 'dependent', 'label' => 'Dependent ' . $i, 'status' => 'pending', 'invite_code' => strtoupper(wp_generate_password(16, false, false)), 'child_user_id' => 0, 'child_name' => '', 'child_email' => '', 'price' => (float) ($level->billing_amount ?? $level->initial_payment ?? 0), 'scheduled_removal_date' => ''];
+		}
+		// Unique insertion makes repeat submissions harmless and prevents overwriting existing links.
+		if ($stored === '' && !add_user_meta($user_id, 'aac_connected_accounts', $slots, true)) throw new RuntimeException('Family slots could not be inserted. Reload before retrying.');
+		if ($stored !== '' && !update_user_meta($user_id, 'aac_connected_accounts', $slots, $stored)) throw new RuntimeException('Family slots changed during repair. Reload before retrying.');
+		update_user_meta($user_id, 'aac_partner_family_config', ['mode' => 'family', 'additional_adult' => false, 'dependent_count' => $count]);
+		if (class_exists('AAC_Member_Portal_API')) AAC_Member_Portal_API::get_instance()->flush_profile_cache_for_user($user_id);
+		return $count;
+	}
+	public function handle_empty_slot_repair() {
+		if (!current_user_can('manage_options')) wp_die('Administrator access required.');
+		$user_id = absint($_POST['member_user_id'] ?? 0);
+		check_admin_referer('aac_restore_empty_family_slots_' . $user_id);
+		try { $count = self::restore_empty_dependent_slots($user_id, (int) ($_POST['dependent_count'] ?? 0)); }
+		catch (Throwable $error) { wp_die(esc_html($error->getMessage())); }
+		wp_safe_redirect(add_query_arg(['page' => 'aac-restore-family-slots', 'member_user_id' => $user_id, 'restored' => $count], admin_url('admin.php'))); exit;
+	}
+	public function render_empty_slot_repair() {
+		if (!current_user_can('manage_options')) return;
+		$user_id = absint($_GET['member_user_id'] ?? 0); $user = get_user_by('id', $user_id);
+		if (!$user) { echo '<div class="wrap"><h1>Restore Empty Family Slots</h1><p>Supply an existing member_user_id.</p></div>'; return; }
+		$group = self::get_group_summary_for_parent($user_id);
+		$slots = get_user_meta($user_id, 'aac_connected_accounts', true);
+		echo '<div class="wrap"><h1>Restore Empty Family Slots: ' . esc_html($user->display_name) . '</h1>';
+		echo '<p>WordPress user ID: ' . $user_id . '. Existing group seats: ' . (int) ($group['total_seats'] ?? 0) . '. Active children: ' . (int) ($group['active_members'] ?? 0) . '. App slots: ' . (is_array($slots) ? count($slots) : 0) . '.</p>';
+		if (!empty($_GET['restored'])) echo '<div class="notice notice-success"><p>Dependent slots restored. Membership, group capacity, billing and existing child accounts were not changed. No emails were sent.</p></div>';
+		if (empty($slots) && $group && (int) $group['active_members'] === 0 && (int) $group['total_seats'] >= 1 && (int) $group['total_seats'] <= 3) {
+			echo '<p>Create empty dependent forms for these existing seats. This does not create child accounts or send invitations.</p><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="aac_restore_empty_family_slots"><input type="hidden" name="member_user_id" value="' . $user_id . '"><input type="hidden" name="dependent_count" value="' . (int) $group['total_seats'] . '">';
+			wp_nonce_field('aac_restore_empty_family_slots_' . $user_id);
+			echo '<button class="button button-primary">Restore empty dependent slots</button></form>';
+		}
+		echo '</div>';
 	}
 
 	public function enqueue_manage_group_styles() {

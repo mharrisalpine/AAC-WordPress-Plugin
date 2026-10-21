@@ -14,11 +14,14 @@ class AAC_Member_Portal_Member_Database {
 	public static function get_instance() {
 		return self::$instance ?: new self();
 	}
+	private $member_export;
 	private $pending_member_syncs = [];
 	private $is_flushing_member_syncs = false;
 
 	public function __construct() {
 		self::$instance = $this;
+		require_once __DIR__ . '/class-aac-member-portal-member-export.php';
+		$this->member_export = new AAC_Member_Portal_Member_Export($this);
 		add_action('admin_menu', [$this, 'register_admin_page']);
 		add_action('admin_post_aac_member_portal_edit_member', [$this, 'handle_edit_member']);
 		add_action('init', [$this, 'maybe_install_schema']);
@@ -948,28 +951,9 @@ class AAC_Member_Portal_Member_Database {
 
 		check_admin_referer('aac_member_portal_export_member_database');
 
-		$user_ids = $this->get_member_export_user_ids();
-
-		$filename = 'aac-member-database-export-' . gmdate('Y-m-d-His') . '.csv';
-		nocache_headers();
-		header('Content-Type: text/csv; charset=utf-8');
-		header('Content-Disposition: attachment; filename="' . $filename . '"');
-
-		$output = fopen('php://output', 'w');
-		if (!$output) {
-			exit;
-		}
-
-		$headers = $this->get_selected_member_export_headers();
-		fputcsv($output, $headers);
-		foreach ($user_ids as $user_id) {
-			$row = $this->build_member_export_row((int) $user_id);
-			fputcsv($output, array_map(function ($header) use ($row) {
-				return $row[$header] ?? '';
-			}, $headers));
-		}
-
-		fclose($output);
+		$job = $this->member_export->start(get_current_user_id(), $this->get_member_export_user_ids(), $this->get_selected_member_export_headers());
+		if (is_wp_error($job)) wp_die(esc_html($job->get_error_message()));
+		wp_safe_redirect($this->build_admin_url(['page' => self::EXPORT_PAGE_SLUG]));
 		exit;
 	}
 
@@ -993,7 +977,10 @@ class AAC_Member_Portal_Member_Database {
 			$redirect_status = 'saved';
 		}
 
-		wp_safe_redirect(add_query_arg('aac_export_fields_saved', $redirect_status, $this->build_export_admin_url()));
+		wp_safe_redirect($this->build_admin_url([
+			'page' => self::EXPORT_PAGE_SLUG,
+			'aac_export_fields_saved' => $redirect_status,
+		]));
 		exit;
 	}
 
@@ -1036,7 +1023,7 @@ class AAC_Member_Portal_Member_Database {
 				<p>
 					The next export will include <strong><?php echo esc_html((string) $selected_count); ?></strong> of
 					<strong><?php echo esc_html((string) $total_count); ?></strong> available fields. The export reads the existing
-					change-driven mirror without rebuilding every member, then streams the CSV directly to your browser. It includes
+					change-driven mirror in short batches, with saved progress and a download when the file is ready. It includes
 					PII, so store and share the file carefully.
 				</p>
 				<p style="margin-top:18px;">
@@ -1048,6 +1035,8 @@ class AAC_Member_Portal_Member_Database {
 					</a>
 				</p>
 			</div>
+
+			<?php $this->member_export->render(); ?>
 
 			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:1180px;margin-top:18px;">
 				<?php wp_nonce_field('aac_member_portal_save_member_export_fields'); ?>
@@ -1520,165 +1509,164 @@ class AAC_Member_Portal_Member_Database {
 		return $user_ids;
 	}
 
-	private function build_member_export_row($user_id) {
+	public function build_member_export_row($user_id, $selected_headers = null) {
 		$user = get_user_by('id', $user_id);
-		if (!$user instanceof WP_User) {
-			return [];
-		}
-
-		$profile_row = $this->get_profile_row($user_id);
-		$profile = is_array($profile_row) ? $this->decode_profile_row($profile_row) : [
-			'account_info' => [],
-			'profile_info' => [],
-			'benefits_info' => [],
-			'family_membership' => [],
-			'connected_accounts' => [],
-			'linked_parent_account' => [],
-			'raw' => [],
+		if (!$user instanceof WP_User) return [];
+		$needs = static function ($fields) use ($selected_headers) { return $selected_headers === null || (bool) array_intersect($selected_headers, $fields); };
+		// Sources are lazy and cached once per member. Creating a field resolver performs no queries.
+		$cache = [];
+		$loaders = [];
+		$get = static function ($source) use (&$cache, &$loaders) {
+			if (!array_key_exists($source, $cache)) $cache[$source] = $loaders[$source]();
+			return $cache[$source];
+		};
+		$loaders = [
+			'profile_row' => fn() => $this->get_profile_row($user_id),
+			'profile' => fn() => is_array($get('profile_row')) ? $this->decode_profile_row($get('profile_row')) : ['account_info' => [], 'profile_info' => [], 'benefits_info' => [], 'family_membership' => [], 'connected_accounts' => [], 'linked_parent_account' => [], 'raw' => []],
+			'account_info' => fn() => $get('profile')['account_info'],
+			'profile_info' => fn() => $get('profile')['profile_info'],
+			'family_membership' => fn() => $get('profile')['family_membership'],
+			'connected_accounts' => fn() => $get('profile')['connected_accounts'],
+			'linked_parent_account' => fn() => $get('profile')['linked_parent_account'],
+			'latest_membership' => fn() => $this->get_latest_pmpro_row($user_id, 'pmpro_memberships_users'),
+			'latest_subscription' => fn() => $this->get_latest_pmpro_row($user_id, 'pmpro_subscriptions'),
+			'latest_order' => fn() => $this->get_latest_pmpro_row($user_id, 'pmpro_membership_orders'),
+			'user_meta' => fn() => $this->get_user_meta_export_values($user_id),
+			'group_summary' => fn() => AAC_Member_Portal_Group_Accounts::is_available() ? AAC_Member_Portal_Group_Accounts::get_group_summary_for_parent($user_id) : null,
+			'group_account' => fn() => AAC_Member_Portal_Group_Accounts::is_available() ? AAC_Member_Portal_Group_Accounts::get_group_summary_for_user($user_id) : null,
+			'pmpro_group_rows' => fn() => $this->get_pmpro_group_account_rows($user_id),
+			'parent_user_id' => fn() => absint($get('user_meta')['aac_linked_parent_user_id'] ?? ($get('profile_row')['parent_user_id'] ?? 0)),
+			'parent_user' => fn() => $get('parent_user_id') > 0 ? get_user_by('id', $get('parent_user_id')) : null,
+			'membership_level_id' => fn() => (int) ($get('latest_membership')['membership_id'] ?? ($get('profile_info')['level_id'] ?? 0)),
+			'latest_order_discount_code' => fn() => $this->get_discount_code_for_order($get('latest_order')),
+			'preference_timestamps' => fn() => AAC_Member_Portal_Publication_Preferences::get_timestamps($user_id),
 		];
-		$account_info = $profile['account_info'];
-		$profile_info = $profile['profile_info'];
-		$family_membership = $profile['family_membership'];
-		$connected_accounts = $profile['connected_accounts'];
-		$linked_parent_account = $profile['linked_parent_account'];
-		$latest_membership = $this->get_latest_pmpro_row($user_id, 'pmpro_memberships_users');
-		$latest_subscription = $this->get_latest_pmpro_row($user_id, 'pmpro_subscriptions');
-		$latest_order = $this->get_latest_pmpro_row($user_id, 'pmpro_membership_orders');
-		$user_meta = $this->get_user_meta_export_values($user_id);
-		$group_summary = AAC_Member_Portal_Group_Accounts::is_available()
-			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_parent($user_id)
-			: null;
-		$group_account = AAC_Member_Portal_Group_Accounts::is_available()
-			? AAC_Member_Portal_Group_Accounts::get_group_summary_for_user($user_id)
-			: null;
-		$pmpro_group_rows = $this->get_pmpro_group_account_rows($user_id);
-		$parent_user_id = absint($user_meta['aac_linked_parent_user_id'] ?? ($profile_row['parent_user_id'] ?? 0));
-		$parent_user = $parent_user_id > 0 ? get_user_by('id', $parent_user_id) : null;
-		$membership_level_id = (int) ($latest_membership['membership_id'] ?? ($profile_info['level_id'] ?? 0));
-		$latest_order_discount_code = $this->get_discount_code_for_order($latest_order);
-		$preference_timestamps = AAC_Member_Portal_Publication_Preferences::get_timestamps($user_id);
-
-		return [
-			'wp_user_id' => (string) $user_id,
-			'user_login' => $user->user_login,
-			'user_email' => $user->user_email,
-			'user_registered' => $user->user_registered,
-			'display_name' => $user->display_name,
-			'roles' => implode('|', (array) $user->roles),
-			'last_login_date' => $this->get_member_last_login_date($user_id),
-			'login_count' => (string) $this->get_member_login_count($user_id),
-			'aac_member_id' => $this->first_present_value([
-				$user_meta['aac_member_id'] ?? '',
-				$profile_info['member_id'] ?? '',
-				$profile_row['member_id'] ?? '',
+		$fields = [
+			'wp_user_id' => fn() => (string) $user_id,
+			'user_login' => fn() => $user->user_login,
+			'user_email' => fn() => $user->user_email,
+			'user_registered' => fn() => $user->user_registered,
+			'display_name' => fn() => $user->display_name,
+			'roles' => fn() => implode('|', (array) $user->roles),
+			'last_login_date' => fn() => $needs(['last_login_date']) ? $this->get_member_last_login_date($user_id) : '',
+			'login_count' => fn() => $needs(['login_count']) ? (string) $this->get_member_login_count($user_id) : '',
+			'aac_member_id' => fn() => $this->first_present_value([
+				$get('user_meta')['aac_member_id'] ?? '',
+				$get('profile_info')['member_id'] ?? '',
+				$get('profile_row')['member_id'] ?? '',
 			]),
-			'first_name' => $this->first_present_value([$account_info['first_name'] ?? '', $user_meta['first_name'] ?? '']),
-			'last_name' => $this->first_present_value([$account_info['last_name'] ?? '', $user_meta['last_name'] ?? '']),
-				'phone' => $this->first_present_value([$account_info['phone'] ?? '', $user_meta['pmpro_sphone'] ?? '', $user_meta['bphone'] ?? '']),
-				'birthdate' => $this->first_present_value([$account_info['birthdate'] ?? '', $user_meta['birthdate'] ?? '']),
-				'billing_address_1' => $this->first_present_value([$account_info['street'] ?? '', $user_meta['pmpro_saddress1'] ?? '', $user_meta['baddress1'] ?? '']),
-				'billing_address_2' => $this->first_present_value([$account_info['address2'] ?? '', $user_meta['pmpro_saddress2'] ?? '', $user_meta['baddress2'] ?? '']),
-				'billing_city' => $this->first_present_value([$account_info['city'] ?? '', $user_meta['pmpro_scity'] ?? '', $user_meta['bcity'] ?? '']),
-				'billing_state' => $this->first_present_value([$account_info['state'] ?? '', $user_meta['pmpro_sstate'] ?? '', $user_meta['bstate'] ?? '']),
-				'billing_zip' => $this->first_present_value([$account_info['zip'] ?? '', $user_meta['pmpro_szipcode'] ?? '', $user_meta['bzipcode'] ?? '']),
-				'billing_country' => $this->first_present_value([$account_info['country'] ?? '', $user_meta['pmpro_scountry'] ?? '', $user_meta['bcountry'] ?? '']),
-			'shipping_address_different' => !empty($account_info['shipping_address_different']) ? 'true' : 'false',
-			'shipping_address_1' => $account_info['shipping_address_1'] ?? '',
-			'shipping_address_2' => $account_info['shipping_address_2'] ?? '',
-			'shipping_city' => $account_info['shipping_city'] ?? '',
-			'shipping_state' => $account_info['shipping_state'] ?? '',
-			'shipping_postal_code' => $account_info['shipping_postal_code'] ?? '',
-			'shipping_country' => $account_info['shipping_country'] ?? '',
-			't_shirt_size' => $this->first_present_value([$account_info['size'] ?? '', $user_meta['t_shirt'] ?? '']),
-			'aaj_preference' => $this->first_present_value([$account_info['aaj_pref'] ?? '', $user_meta['aaj_preference'] ?? '']),
-			'aaj_preference_created_at' => (string) ($preference_timestamps['aaj_preference_created_at'] ?? ''),
-			'aaj_preference_updated_at' => (string) ($preference_timestamps['aaj_preference_updated_at'] ?? ''),
-			'accidents_preference' => $this->first_present_value([$account_info['anac_pref'] ?? '', $user_meta['anac_preference'] ?? '']),
-			'anac_preference_created_at' => (string) ($preference_timestamps['anac_preference_created_at'] ?? ''),
-			'anac_preference_updated_at' => (string) ($preference_timestamps['anac_preference_updated_at'] ?? ''),
-			'acj_preference' => $this->first_present_value([$account_info['acj_pref'] ?? '', $user_meta['american_climbing_journal_preference'] ?? '']),
-			'american_climbing_journal_preference_created_at' => (string) ($preference_timestamps['american_climbing_journal_preference_created_at'] ?? ''),
-			'american_climbing_journal_preference_updated_at' => (string) ($preference_timestamps['american_climbing_journal_preference_updated_at'] ?? ''),
-			'guidebook_preference' => $this->first_present_value([$account_info['guidebook_pref'] ?? '', $user_meta['guidebook_preferences'] ?? '']),
-			'guidebook_preferences_created_at' => (string) ($preference_timestamps['guidebook_preferences_created_at'] ?? ''),
-			'guidebook_preferences_updated_at' => (string) ($preference_timestamps['guidebook_preferences_updated_at'] ?? ''),
-			'email_opt_in' => !empty($profile_row['email_opt_in']) ? 'true' : 'false',
-			'sms_opt_in' => !empty($profile_row['sms_opt_in']) ? 'true' : 'false',
-			'membership_discount_type' => $this->first_present_value([$account_info['membership_discount_type'] ?? '', $user_meta['aac_membership_discount_type'] ?? '']),
-			'student_university' => $this->first_present_value([$user_meta['university_school'] ?? '', $user_meta['student_university'] ?? '', $user_meta['aac_student_university'] ?? '']),
-			'student_graduation_date' => $this->first_present_value([$user_meta['graduation_date'] ?? '', $user_meta['student_graduation_date'] ?? '', $user_meta['aac_graduation_date'] ?? '']),
-			'military_service_component' => $this->first_present_value([$user_meta['service_component'] ?? '', $user_meta['military_service_component'] ?? '', $user_meta['aac_service_component'] ?? '']),
-			'emergency_contact_first_name' => $account_info['emergency_contact_first_name'] ?? '',
-			'emergency_contact_last_name' => $account_info['emergency_contact_last_name'] ?? '',
-			'emergency_contact_phone' => $account_info['emergency_contact_phone'] ?? '',
-			'emergency_contact_email' => $account_info['emergency_contact_email'] ?? '',
-			'emergency_contact_relationship' => $account_info['emergency_contact_relationship'] ?? '',
-			'current_membership_id' => (string) $membership_level_id,
-			'current_membership_level' => $this->first_present_value([$profile_row['membership_level'] ?? '', $profile_info['tier'] ?? '', $this->get_pmpro_level_name($membership_level_id)]),
-			'current_membership_status' => $this->first_present_value([$profile_row['membership_status'] ?? '', $profile_info['status'] ?? '', $latest_membership['status'] ?? '']),
-			'membership_startdate' => (string) ($latest_membership['startdate'] ?? ''),
-			'membership_enddate' => (string) ($latest_membership['enddate'] ?? ''),
-			'membership_modified' => (string) ($latest_membership['modified'] ?? ''),
-			'member_since' => (string) (($profile_info['member_since_date'] ?? '') ?: (($profile_info['member_since_year'] ?? '') ?: ($profile_info['joined_date'] ?? ''))),
-			'renewal_date' => $this->first_present_value([$profile_row['renewal_date'] ?? '', $profile_info['renewal_date'] ?? '']),
-			'expiration_date' => $this->first_present_value([$profile_row['expiration_date'] ?? '', $profile_info['expiration_date'] ?? '']),
-			'valid_through_date' => (string) ($profile_info['valid_through_date'] ?? ''),
-			'auto_renew' => !empty($account_info['auto_renew']) ? 'true' : 'false',
-			'current_subscription_id' => (string) ($latest_subscription['id'] ?? ''),
-			'current_subscription_gateway' => (string) ($latest_subscription['gateway'] ?? ''),
-			'current_subscription_environment' => (string) ($latest_subscription['gateway_environment'] ?? ''),
-			'current_subscription_transaction_id' => (string) ($latest_subscription['subscription_transaction_id'] ?? ''),
-			'current_subscription_status' => (string) ($latest_subscription['status'] ?? ''),
-			'current_subscription_startdate' => (string) ($latest_subscription['startdate'] ?? ''),
-			'current_subscription_enddate' => (string) ($latest_subscription['enddate'] ?? ''),
-			'current_subscription_next_payment_date' => (string) ($latest_subscription['next_payment_date'] ?? ''),
-			'current_subscription_billing_amount' => (string) ($latest_subscription['billing_amount'] ?? ''),
-			'current_subscription_cycle_number' => (string) ($latest_subscription['cycle_number'] ?? ''),
-			'current_subscription_cycle_period' => (string) ($latest_subscription['cycle_period'] ?? ''),
-			'latest_order_id' => (string) ($latest_order['id'] ?? ''),
-			'latest_order_code' => (string) ($latest_order['code'] ?? ''),
-			'latest_order_membership_id' => (string) ($latest_order['membership_id'] ?? ''),
-			'latest_order_status' => (string) ($latest_order['status'] ?? ''),
-			'latest_order_gateway' => (string) ($latest_order['gateway'] ?? ''),
-			'latest_order_environment' => (string) ($latest_order['gateway_environment'] ?? ''),
-			'latest_order_payment_transaction_id' => (string) ($latest_order['payment_transaction_id'] ?? ''),
-			'latest_order_subscription_transaction_id' => (string) ($latest_order['subscription_transaction_id'] ?? ''),
-			'latest_order_subtotal' => (string) ($latest_order['subtotal'] ?? ''),
-			'latest_order_tax' => (string) ($latest_order['tax'] ?? ''),
-			'latest_order_total' => (string) ($latest_order['total'] ?? ''),
-			'latest_order_timestamp' => (string) ($latest_order['timestamp'] ?? ''),
-			'latest_order_discount_code' => $latest_order_discount_code,
-			'stripe_customer_id' => $this->first_present_value([$user_meta['pmpro_stripe_customerid'] ?? '', $user_meta['stripe_customer_id'] ?? '']),
-			'account_role' => $this->first_present_value([$profile_row['account_role'] ?? '', $user_meta['aac_family_account_role'] ?? '']),
-			'parent_user_id' => $parent_user_id > 0 ? (string) $parent_user_id : '',
-			'parent_member_id' => $parent_user_id > 0 ? (string) get_user_meta($parent_user_id, 'aac_member_id', true) : '',
-			'parent_email' => $parent_user instanceof WP_User ? $parent_user->user_email : '',
-			'linked_account_slot_id' => (string) ($user_meta['aac_linked_account_slot_id'] ?? ''),
-			'family_membership_mode' => (string) ($family_membership['mode'] ?? ''),
-			'family_additional_adult' => !empty($family_membership['additional_adult']) ? 'true' : 'false',
-			'family_dependent_count' => isset($family_membership['dependent_count']) ? (string) $family_membership['dependent_count'] : '',
-			'group_account_id' => $group_account ? (string) ($group_account['id'] ?? '') : '',
-			'group_account_code' => $group_account ? (string) ($group_account['checkout_code'] ?? '') : '',
-			'group_account_seat_count' => $group_account ? (string) ($group_account['total_seats'] ?? '') : '',
-			'aac_group_account_group_id' => (string) ($user_meta['aac_group_account_group_id'] ?? ''),
-			'aac_group_account_checkout_code' => (string) ($user_meta['aac_group_account_checkout_code'] ?? ''),
-			'aac_group_account_child_level_id' => (string) ($user_meta['aac_group_account_child_level_id'] ?? ''),
-			'aac_group_account_synced_at' => (string) ($user_meta['aac_group_account_synced_at'] ?? ''),
-			'pmpro_group_account_id' => $group_summary ? (string) ($group_summary['id'] ?? '') : '',
-			'pmpro_group_account_checkout_code' => $group_summary ? (string) ($group_summary['checkout_code'] ?? '') : '',
-			'pmpro_group_account_total_seats' => $group_summary ? (string) ($group_summary['total_seats'] ?? '') : '',
-			'pmpro_group_account_active_members' => $group_summary ? (string) ($group_summary['active_members'] ?? '') : '',
-			'connected_accounts_json' => $this->encode_export_json($connected_accounts),
-			'linked_parent_account_json' => $this->encode_export_json($linked_parent_account),
-			'family_membership_json' => $this->encode_export_json($family_membership),
-			'pmpro_membership_history_json' => $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_memberships_users')),
-			'pmpro_subscriptions_json' => $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_subscriptions')),
-			'pmpro_orders_json' => $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_membership_orders')),
-			'pmpro_group_accounts_json' => $this->encode_export_json($pmpro_group_rows),
-			'all_user_meta_json' => $this->encode_export_json($user_meta),
-			'portal_profile_json' => $this->encode_export_json($profile['raw']),
-			'mirrored_at' => (string) ($profile_row['mirrored_at'] ?? ''),
+			'first_name' => fn() => $this->first_present_value([$get('account_info')['first_name'] ?? '', $get('user_meta')['first_name'] ?? '']),
+			'last_name' => fn() => $this->first_present_value([$get('account_info')['last_name'] ?? '', $get('user_meta')['last_name'] ?? '']),
+			'phone' => fn() => $this->first_present_value([$get('account_info')['phone'] ?? '', $get('user_meta')['pmpro_sphone'] ?? '', $get('user_meta')['bphone'] ?? '']),
+			'birthdate' => fn() => $this->first_present_value([$get('account_info')['birthdate'] ?? '', $get('user_meta')['birthdate'] ?? '']),
+			'billing_address_1' => fn() => $this->first_present_value([$get('account_info')['street'] ?? '', $get('user_meta')['pmpro_saddress1'] ?? '', $get('user_meta')['baddress1'] ?? '']),
+			'billing_address_2' => fn() => $this->first_present_value([$get('account_info')['address2'] ?? '', $get('user_meta')['pmpro_saddress2'] ?? '', $get('user_meta')['baddress2'] ?? '']),
+			'billing_city' => fn() => $this->first_present_value([$get('account_info')['city'] ?? '', $get('user_meta')['pmpro_scity'] ?? '', $get('user_meta')['bcity'] ?? '']),
+			'billing_state' => fn() => $this->first_present_value([$get('account_info')['state'] ?? '', $get('user_meta')['pmpro_sstate'] ?? '', $get('user_meta')['bstate'] ?? '']),
+			'billing_zip' => fn() => $this->first_present_value([$get('account_info')['zip'] ?? '', $get('user_meta')['pmpro_szipcode'] ?? '', $get('user_meta')['bzipcode'] ?? '']),
+			'billing_country' => fn() => $this->first_present_value([$get('account_info')['country'] ?? '', $get('user_meta')['pmpro_scountry'] ?? '', $get('user_meta')['bcountry'] ?? '']),
+			'shipping_address_different' => fn() => !empty($get('account_info')['shipping_address_different']) ? 'true' : 'false',
+			'shipping_address_1' => fn() => $get('account_info')['shipping_address_1'] ?? '',
+			'shipping_address_2' => fn() => $get('account_info')['shipping_address_2'] ?? '',
+			'shipping_city' => fn() => $get('account_info')['shipping_city'] ?? '',
+			'shipping_state' => fn() => $get('account_info')['shipping_state'] ?? '',
+			'shipping_postal_code' => fn() => $get('account_info')['shipping_postal_code'] ?? '',
+			'shipping_country' => fn() => $get('account_info')['shipping_country'] ?? '',
+			't_shirt_size' => fn() => $this->first_present_value([$get('account_info')['size'] ?? '', $get('user_meta')['t_shirt'] ?? '']),
+			'aaj_preference' => fn() => $this->first_present_value([$get('account_info')['aaj_pref'] ?? '', $get('user_meta')['aaj_preference'] ?? '']),
+			'aaj_preference_created_at' => fn() => (string) ($get('preference_timestamps')['aaj_preference_created_at'] ?? ''),
+			'aaj_preference_updated_at' => fn() => (string) ($get('preference_timestamps')['aaj_preference_updated_at'] ?? ''),
+			'accidents_preference' => fn() => $this->first_present_value([$get('account_info')['anac_pref'] ?? '', $get('user_meta')['anac_preference'] ?? '']),
+			'anac_preference_created_at' => fn() => (string) ($get('preference_timestamps')['anac_preference_created_at'] ?? ''),
+			'anac_preference_updated_at' => fn() => (string) ($get('preference_timestamps')['anac_preference_updated_at'] ?? ''),
+			'acj_preference' => fn() => $this->first_present_value([$get('account_info')['acj_pref'] ?? '', $get('user_meta')['american_climbing_journal_preference'] ?? '']),
+			'american_climbing_journal_preference_created_at' => fn() => (string) ($get('preference_timestamps')['american_climbing_journal_preference_created_at'] ?? ''),
+			'american_climbing_journal_preference_updated_at' => fn() => (string) ($get('preference_timestamps')['american_climbing_journal_preference_updated_at'] ?? ''),
+			'guidebook_preference' => fn() => $this->first_present_value([$get('account_info')['guidebook_pref'] ?? '', $get('user_meta')['guidebook_preferences'] ?? '']),
+			'guidebook_preferences_created_at' => fn() => (string) ($get('preference_timestamps')['guidebook_preferences_created_at'] ?? ''),
+			'guidebook_preferences_updated_at' => fn() => (string) ($get('preference_timestamps')['guidebook_preferences_updated_at'] ?? ''),
+			'email_opt_in' => fn() => !empty($get('profile_row')['email_opt_in']) ? 'true' : 'false',
+			'sms_opt_in' => fn() => !empty($get('profile_row')['sms_opt_in']) ? 'true' : 'false',
+			'membership_discount_type' => fn() => $this->first_present_value([$get('account_info')['membership_discount_type'] ?? '', $get('user_meta')['aac_membership_discount_type'] ?? '']),
+			'student_university' => fn() => $this->first_present_value([$get('user_meta')['university_school'] ?? '', $get('user_meta')['student_university'] ?? '', $get('user_meta')['aac_student_university'] ?? '']),
+			'student_graduation_date' => fn() => $this->first_present_value([$get('user_meta')['graduation_date'] ?? '', $get('user_meta')['student_graduation_date'] ?? '', $get('user_meta')['aac_graduation_date'] ?? '']),
+			'military_service_component' => fn() => $this->first_present_value([$get('user_meta')['service_component'] ?? '', $get('user_meta')['military_service_component'] ?? '', $get('user_meta')['aac_service_component'] ?? '']),
+			'emergency_contact_first_name' => fn() => $get('account_info')['emergency_contact_first_name'] ?? '',
+			'emergency_contact_last_name' => fn() => $get('account_info')['emergency_contact_last_name'] ?? '',
+			'emergency_contact_phone' => fn() => $get('account_info')['emergency_contact_phone'] ?? '',
+			'emergency_contact_email' => fn() => $get('account_info')['emergency_contact_email'] ?? '',
+			'emergency_contact_relationship' => fn() => $get('account_info')['emergency_contact_relationship'] ?? '',
+			'current_membership_id' => fn() => (string) $get('membership_level_id'),
+			'current_membership_level' => fn() => $this->first_present_value([$get('profile_row')['membership_level'] ?? '', $get('profile_info')['tier'] ?? '', $needs(['current_membership_level']) ? $this->get_pmpro_level_name($get('membership_level_id')) : '']),
+			'current_membership_status' => fn() => $this->first_present_value([$get('profile_row')['membership_status'] ?? '', $get('profile_info')['status'] ?? '', $get('latest_membership')['status'] ?? '']),
+			'membership_startdate' => fn() => (string) ($get('latest_membership')['startdate'] ?? ''),
+			'membership_enddate' => fn() => (string) ($get('latest_membership')['enddate'] ?? ''),
+			'membership_modified' => fn() => (string) ($get('latest_membership')['modified'] ?? ''),
+			'member_since' => fn() => (string) (($get('profile_info')['member_since_date'] ?? '') ?: (($get('profile_info')['member_since_year'] ?? '') ?: ($get('profile_info')['joined_date'] ?? ''))),
+			'renewal_date' => fn() => $this->first_present_value([$get('profile_row')['renewal_date'] ?? '', $get('profile_info')['renewal_date'] ?? '']),
+			'expiration_date' => fn() => $this->first_present_value([$get('profile_row')['expiration_date'] ?? '', $get('profile_info')['expiration_date'] ?? '']),
+			'valid_through_date' => fn() => (string) ($get('profile_info')['valid_through_date'] ?? ''),
+			'auto_renew' => fn() => !empty($get('account_info')['auto_renew']) ? 'true' : 'false',
+			'current_subscription_id' => fn() => (string) ($get('latest_subscription')['id'] ?? ''),
+			'current_subscription_gateway' => fn() => (string) ($get('latest_subscription')['gateway'] ?? ''),
+			'current_subscription_environment' => fn() => (string) ($get('latest_subscription')['gateway_environment'] ?? ''),
+			'current_subscription_transaction_id' => fn() => (string) ($get('latest_subscription')['subscription_transaction_id'] ?? ''),
+			'current_subscription_status' => fn() => (string) ($get('latest_subscription')['status'] ?? ''),
+			'current_subscription_startdate' => fn() => (string) ($get('latest_subscription')['startdate'] ?? ''),
+			'current_subscription_enddate' => fn() => (string) ($get('latest_subscription')['enddate'] ?? ''),
+			'current_subscription_next_payment_date' => fn() => (string) ($get('latest_subscription')['next_payment_date'] ?? ''),
+			'current_subscription_billing_amount' => fn() => (string) ($get('latest_subscription')['billing_amount'] ?? ''),
+			'current_subscription_cycle_number' => fn() => (string) ($get('latest_subscription')['cycle_number'] ?? ''),
+			'current_subscription_cycle_period' => fn() => (string) ($get('latest_subscription')['cycle_period'] ?? ''),
+			'latest_order_id' => fn() => (string) ($get('latest_order')['id'] ?? ''),
+			'latest_order_code' => fn() => (string) ($get('latest_order')['code'] ?? ''),
+			'latest_order_membership_id' => fn() => (string) ($get('latest_order')['membership_id'] ?? ''),
+			'latest_order_status' => fn() => (string) ($get('latest_order')['status'] ?? ''),
+			'latest_order_gateway' => fn() => (string) ($get('latest_order')['gateway'] ?? ''),
+			'latest_order_environment' => fn() => (string) ($get('latest_order')['gateway_environment'] ?? ''),
+			'latest_order_payment_transaction_id' => fn() => (string) ($get('latest_order')['payment_transaction_id'] ?? ''),
+			'latest_order_subscription_transaction_id' => fn() => (string) ($get('latest_order')['subscription_transaction_id'] ?? ''),
+			'latest_order_subtotal' => fn() => (string) ($get('latest_order')['subtotal'] ?? ''),
+			'latest_order_tax' => fn() => (string) ($get('latest_order')['tax'] ?? ''),
+			'latest_order_total' => fn() => (string) ($get('latest_order')['total'] ?? ''),
+			'latest_order_timestamp' => fn() => (string) ($get('latest_order')['timestamp'] ?? ''),
+			'latest_order_discount_code' => fn() => $get('latest_order_discount_code'),
+			'stripe_customer_id' => fn() => $this->first_present_value([$get('user_meta')['pmpro_stripe_customerid'] ?? '', $get('user_meta')['stripe_customer_id'] ?? '']),
+			'account_role' => fn() => $this->first_present_value([$get('profile_row')['account_role'] ?? '', $get('user_meta')['aac_family_account_role'] ?? '']),
+			'parent_user_id' => fn() => $get('parent_user_id') > 0 ? (string) $get('parent_user_id') : '',
+			'parent_member_id' => fn() => $needs(['parent_member_id']) && $get('parent_user_id') > 0 ? (string) get_user_meta($get('parent_user_id'), 'aac_member_id', true) : '',
+			'parent_email' => fn() => $get('parent_user') instanceof WP_User ? $get('parent_user')->user_email : '',
+			'linked_account_slot_id' => fn() => (string) ($get('user_meta')['aac_linked_account_slot_id'] ?? ''),
+			'family_membership_mode' => fn() => (string) ($get('family_membership')['mode'] ?? ''),
+			'family_additional_adult' => fn() => !empty($get('family_membership')['additional_adult']) ? 'true' : 'false',
+			'family_dependent_count' => fn() => isset($get('family_membership')['dependent_count']) ? (string) $get('family_membership')['dependent_count'] : '',
+			'group_account_id' => fn() => $get('group_account') ? (string) ($get('group_account')['id'] ?? '') : '',
+			'group_account_code' => fn() => $get('group_account') ? (string) ($get('group_account')['checkout_code'] ?? '') : '',
+			'group_account_seat_count' => fn() => $get('group_account') ? (string) ($get('group_account')['total_seats'] ?? '') : '',
+			'aac_group_account_group_id' => fn() => (string) ($get('user_meta')['aac_group_account_group_id'] ?? ''),
+			'aac_group_account_checkout_code' => fn() => (string) ($get('user_meta')['aac_group_account_checkout_code'] ?? ''),
+			'aac_group_account_child_level_id' => fn() => (string) ($get('user_meta')['aac_group_account_child_level_id'] ?? ''),
+			'aac_group_account_synced_at' => fn() => (string) ($get('user_meta')['aac_group_account_synced_at'] ?? ''),
+			'pmpro_group_account_id' => fn() => $get('group_summary') ? (string) ($get('group_summary')['id'] ?? '') : '',
+			'pmpro_group_account_checkout_code' => fn() => $get('group_summary') ? (string) ($get('group_summary')['checkout_code'] ?? '') : '',
+			'pmpro_group_account_total_seats' => fn() => $get('group_summary') ? (string) ($get('group_summary')['total_seats'] ?? '') : '',
+			'pmpro_group_account_active_members' => fn() => $get('group_summary') ? (string) ($get('group_summary')['active_members'] ?? '') : '',
+			'connected_accounts_json' => fn() => $needs(['connected_accounts_json']) ? $this->encode_export_json($get('connected_accounts')) : '',
+			'linked_parent_account_json' => fn() => $needs(['linked_parent_account_json']) ? $this->encode_export_json($get('linked_parent_account')) : '',
+			'family_membership_json' => fn() => $needs(['family_membership_json']) ? $this->encode_export_json($get('family_membership')) : '',
+			'pmpro_membership_history_json' => fn() => $needs(['pmpro_membership_history_json']) ? $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_memberships_users')) : '',
+			'pmpro_subscriptions_json' => fn() => $needs(['pmpro_subscriptions_json']) ? $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_subscriptions')) : '',
+			'pmpro_orders_json' => fn() => $needs(['pmpro_orders_json']) ? $this->encode_export_json($this->get_all_pmpro_rows($user_id, 'pmpro_membership_orders')) : '',
+			'pmpro_group_accounts_json' => fn() => $needs(['pmpro_group_accounts_json']) ? $this->encode_export_json($get('pmpro_group_rows')) : '',
+			'all_user_meta_json' => fn() => $needs(['all_user_meta_json']) ? $this->encode_export_json($get('user_meta')) : '',
+			'portal_profile_json' => fn() => $needs(['portal_profile_json']) ? $this->encode_export_json($get('profile')['raw']) : '',
+			'mirrored_at' => fn() => (string) ($get('profile_row')['mirrored_at'] ?? ''),
 		];
+		$row = [];
+		foreach ($selected_headers ?? array_keys($fields) as $header) {
+			if (isset($fields[$header])) $row[$header] = $fields[$header]();
+		}
+		return $row;
 	}
 
 	private function get_user_meta_export_values($user_id) {
@@ -1828,6 +1816,8 @@ class AAC_Member_Portal_Member_Database {
 			'service_component' => 'Service component', 'size' => 'T-shirt size',
 			'aaj_pref' => 'AAJ preference', 'anac_pref' => 'Accidents preference',
 			'acj_pref' => 'ACJ preference', 'guidebook_pref' => 'Guidebook preference',
+			'aac_email_marketing_opt_in' => 'Email communication opt-in',
+			'aac_sms_marketing_opt_in' => 'SMS communication opt-in',
 		];
 	}
 
@@ -1849,7 +1839,7 @@ class AAC_Member_Portal_Member_Database {
 		exit;
 	}
 
-	private function render_edit_member_form($member_id) {
+	public function render_edit_member_form($member_id, $embedded = false) {
 		if (!current_user_can('edit_user', $member_id)) {
 			echo '<p>You cannot edit this member.</p>';
 			return;
@@ -1857,14 +1847,16 @@ class AAC_Member_Portal_Member_Database {
 		$api = AAC_Member_Portal_API::get_instance();
 		$profile = $api ? $api->get_profile_for_user($member_id) : [];
 		$account = $profile['account_info'] ?? [];
-		$required = ['first_name', 'last_name', 'email', 'street', 'city', 'state', 'zip', 'country'];
+		$required = $embedded ? ['email'] : ['first_name', 'last_name', 'email', 'street', 'city', 'state', 'zip', 'country'];
 		?>
+		<?php if (!$embedded) : ?>
 		<h3>Edit Member</h3>
 		<p>Update this member's profile and publication preferences. Fields marked * are required.</p>
 		<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
 			<input type="hidden" name="action" value="aac_member_portal_edit_member" />
 			<input type="hidden" name="member_id" value="<?php echo esc_attr($member_id); ?>" />
 			<?php wp_nonce_field('aac_edit_member_' . $member_id); ?>
+		<?php endif; ?>
 			<table class="form-table"><tbody>
 			<?php foreach (self::editable_member_fields() as $key => $label) :
 				$value = $account[$key] ?? '';
@@ -1876,7 +1868,7 @@ class AAC_Member_Portal_Member_Database {
 				if ($key === 'emergency_contact_relationship') { $options = $account['emergency_contact_relationship_options'] ?? null; }
 				?>
 				<tr><th><label for="aac-edit-<?php echo esc_attr($key); ?>"><?php echo esc_html($label . ($is_required ? ' *' : '')); ?></label></th><td>
-				<?php if ($key === 'shipping_address_different') : ?>
+				<?php if (in_array($key, ['shipping_address_different', 'aac_email_marketing_opt_in', 'aac_sms_marketing_opt_in'], true)) : ?>
 					<input type="hidden" name="member[<?php echo esc_attr($key); ?>]" value="0" />
 					<input id="aac-edit-<?php echo esc_attr($key); ?>" type="checkbox" name="member[<?php echo esc_attr($key); ?>]" value="1" <?php checked(!empty($value)); ?> />
 				<?php elseif (is_array($options) && !empty($options) && is_string(reset($options))) :
@@ -1891,9 +1883,11 @@ class AAC_Member_Portal_Member_Database {
 				</td></tr>
 			<?php endforeach; ?>
 			</tbody></table>
+		<?php if (!$embedded) : ?>
 			<?php submit_button('Save Member Changes'); ?>
 			<a class="button" href="<?php echo esc_url($this->build_admin_url(['member_id' => $member_id])); ?>">Cancel</a>
 		</form>
+		<?php endif; ?>
 		<?php
 	}
 

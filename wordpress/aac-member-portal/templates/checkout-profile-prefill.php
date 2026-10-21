@@ -4,6 +4,25 @@ if (!defined('ABSPATH')) { exit; }
 ?>
 const fillUpgradeProfileDefaults = () => {
     if (!<?php echo wp_json_encode(is_user_logged_in() && strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && sanitize_key(wp_unslash($_GET['aac_membership_action'] ?? '')) === 'upgrade'); ?>) return;
+    const form = document.getElementById('pmpro_form');
+    if (form && !form.dataset.aacStatePrefillObserved) {
+        form.dataset.aacStatePrefillObserved = 'true';
+        // PMPro can replace the state input or populate its options after initial setup.
+        let queued = false;
+        new MutationObserver(() => {
+            if (queued) return;
+            queued = true;
+            window.requestAnimationFrame(() => {
+                queued = false;
+                fillUpgradeProfileDefaults();
+            });
+        }).observe(form, { childList: true, subtree: true });
+        form.addEventListener('change', (event) => {
+            if (event.isTrusted && ['pmpro_sstate', 'sstate', 'bstate', 'pmpro_scountry', 'scountry', 'bcountry'].includes(event.target.name)) {
+                form.dataset.aacStateProfileEdited = 'true';
+            }
+        });
+    }
     const fields = [
         ['country', ['pmpro_scountry', 'scountry', 'bcountry']],
         ['first_name', ['pmpro_sfirstname', 'sfirstname', 'first_name', 'bfirstname']],
@@ -19,11 +38,12 @@ const fillUpgradeProfileDefaults = () => {
     ];
     // An explicit allowlist intentionally excludes discount eligibility and payment fields.
     fields.forEach(([key, names]) => {
+        if (key === 'state' && form?.dataset.aacStateProfileEdited === 'true') return;
         const saved = String(checkoutProfileDefaults[key] || '').trim();
         names.forEach((name) => {
             const input = document.querySelector(`[name="${name}"]`) || document.getElementById(name);
-            if (!input || input.dataset.aacProfilePrefilled === 'true') return;
-            input.dataset.aacProfilePrefilled = 'true';
+            if (!input || input.dataset.aacProfileEdited === 'true') return;
+            if (input.dataset.aacProfilePrefilled === 'true' && !(key === 'state' && !String(input.value || '').trim())) return;
             // Country selects have a default US value even when no member value was loaded.
             if (!saved || (key !== 'country' && String(input.value || '').trim())) return;
             let value = saved;
@@ -34,6 +54,13 @@ const fillUpgradeProfileDefaults = () => {
                 value = option.value;
             }
             input.value = value;
+            input.dataset.aacProfilePrefilled = 'true';
+            if (!input.dataset.aacProfileEditBound) {
+                input.addEventListener('change', (event) => {
+                    if (event.isTrusted) input.dataset.aacProfileEdited = 'true';
+                });
+                input.dataset.aacProfileEditBound = 'true';
+            }
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
         });

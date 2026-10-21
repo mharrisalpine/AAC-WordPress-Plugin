@@ -1,6 +1,6 @@
 <?php
 require __DIR__.'/import-profile-mode.test.php';
-define('ARRAY_A','ARRAY_A');
+if (!defined('ARRAY_A')) define('ARRAY_A','ARRAY_A');
 function get_option($k,$default=false) { return AAC_Member_Portal_Import_Manager::SCHEMA_VERSION; }
 class AAC_Member_Portal_Import_Background { public static $pause=false; static function pause_requested(){return self::$pause;} }
 class QueueDB {
@@ -11,7 +11,7 @@ class QueueDB {
  function update(...$a){if($this->fail){return false;} $this->writes++;return 1;}
 }
 $wpdb=new QueueDB();
-$wpdb->rows=[['id'=>1,'raw_row'=>json_encode(['email'=>'member@example.invalid'])],['id'=>2,'raw_row'=>json_encode(['email'=>'member@example.invalid'])]];
+$wpdb->rows=[['id'=>1,'raw_row'=>json_encode(['aac_member_id'=>'123','email'=>'member@example.invalid'])],['id'=>2,'raw_row'=>json_encode(['aac_member_id'=>'123','email'=>'member@example.invalid'])]];
 $result=$m->sync_staged_rows(true,10,'profile',microtime(true)-1);
 check_profile($wpdb->writes===0 && $result['remaining']===2,'expired deadline starts no row');
 AAC_Member_Portal_Import_Background::$pause=true;

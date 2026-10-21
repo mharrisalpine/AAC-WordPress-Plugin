@@ -4453,37 +4453,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			}
 		}
 	</style>
-<?php wp_head(); ?>
-</head>
-<body <?php body_class(($is_embedded_pmpro_page ? 'aac-member-portal-embed' : (($is_portal_page && !$is_managed_pmpro_page) ? 'aac-member-portal-fullscreen' : ($is_public_shell_page ? 'aac-member-portal-fullscreen aac-member-portal-public-shell aac-public-page--' . sanitize_html_class($post->post_name) : 'aac-member-portal-fullscreen aac-member-portal-managed-shell'))) . ($skip_publication_preferences ? ' aac-skip-publication-preferences' : '') . ($is_logged_in_member_checkout ? ' aac-member-checkout' : '')); ?>>
-<?php wp_body_open(); ?>
-<?php if ($is_portal_page && !$is_managed_pmpro_page) : ?>
-	<?php
-	while (have_posts()) :
-		the_post();
-		echo do_shortcode('[' . AAC_Member_Portal_Plugin::SHORTCODE . ']');
-	endwhile;
-	?>
-<?php elseif ($is_embedded_pmpro_page) : ?>
-	<section class="aac-managed-card aac-managed-card--embed">
-		<?php
-		while (have_posts()) :
-			the_post();
-			ob_start();
-			the_content();
-			$fullscreen_content = ob_get_clean();
-			// Some PMPro/page-builder combinations leave the checkout shortcode
-			// untouched when this minimal template bypasses the theme template.
-			// Run the shortcode pass explicitly inside the isolated embed.
-			$fullscreen_content = do_shortcode($fullscreen_content);
-			if (isset($portal_plugin) && $portal_plugin instanceof AAC_Member_Portal_Plugin) {
-				$fullscreen_content = $portal_plugin->normalize_pmpro_checkout_publication_markup($fullscreen_content);
-			}
-			echo $fullscreen_content; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-		endwhile;
-		?>
-	</section>
-	<style id="aac-discount-tiles-v755">
+<style id="aac-discount-tiles-v755">
 		/* Keep the discount redesign independent of PMPro's wrapper structure. */
 		.aac-membership-discounts .aac-membership-discounts__card {
 			display: flex !important;
@@ -4562,6 +4532,37 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			stroke: #000 !important;
 		}
 	</style>
+<?php wp_head(); ?>
+</head>
+<body <?php body_class(($is_embedded_pmpro_page ? 'aac-member-portal-embed' : (($is_portal_page && !$is_managed_pmpro_page) ? 'aac-member-portal-fullscreen' : ($is_public_shell_page ? 'aac-member-portal-fullscreen aac-member-portal-public-shell aac-public-page--' . sanitize_html_class($post->post_name) : 'aac-member-portal-fullscreen aac-member-portal-managed-shell'))) . ($skip_publication_preferences ? ' aac-skip-publication-preferences' : '') . ($is_logged_in_member_checkout ? ' aac-member-checkout' : '')); ?>>
+<?php wp_body_open(); ?>
+<?php if ($is_portal_page && !$is_managed_pmpro_page) : ?>
+	<?php
+	while (have_posts()) :
+		the_post();
+		echo do_shortcode('[' . AAC_Member_Portal_Plugin::SHORTCODE . ']');
+	endwhile;
+	?>
+<?php elseif ($is_embedded_pmpro_page) : ?>
+	<section class="aac-managed-card aac-managed-card--embed">
+		<?php
+		while (have_posts()) :
+			the_post();
+			ob_start();
+			the_content();
+			$fullscreen_content = ob_get_clean();
+			// Some PMPro/page-builder combinations leave the checkout shortcode
+			// untouched when this minimal template bypasses the theme template.
+			// Run the shortcode pass explicitly inside the isolated embed.
+			$fullscreen_content = do_shortcode($fullscreen_content);
+			if (isset($portal_plugin) && $portal_plugin instanceof AAC_Member_Portal_Plugin) {
+				$fullscreen_content = $portal_plugin->normalize_pmpro_checkout_publication_markup($fullscreen_content);
+			}
+			echo $fullscreen_content; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		endwhile;
+		?>
+	</section>
+
 	<script>
 		(function () {
 			const messageType = 'aac-pmpro-checkout-height';
@@ -5017,6 +5018,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 		}).format(Number.isFinite(value) ? value : 0);
 		const checkoutProfileDefaults = <?php echo wp_json_encode($checkout_profile_defaults); ?>;
 <?php require __DIR__ . '/checkout-profile-prefill.php'; ?>
+<?php require __DIR__ . '/checkout-preferences.php'; ?>
 		const configuredTshirtSizeOptions = <?php echo wp_json_encode($checkout_tshirt_size_options); ?>;
 		const fallbackTshirtSizeOptions = [
 			{ value: 'No T-shirt', label: 'No T-shirt' },
@@ -7729,7 +7731,8 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				}
 				if (showStudentUniversity) {
 					studentUniversityField?.querySelectorAll('input[name^="university_or_school"], input[name="student_university"], input[name="school_university"], input[name="school_or_university"], input[name="university_school"]').forEach((input) => {
-						input.required = true;
+						input.required = false;
+                        input.removeAttribute('aria-required');
 					});
 				}
 
@@ -8343,6 +8346,7 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				});
 				countryField.dataset.aacStateDropdownBound = 'true';
 			}
+            fillUpgradeProfileDefaults();
 		};
 
 		const getPmproDonationFieldset = () => {
@@ -9845,6 +9849,9 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 				bindManagedAutoRenewToggle();
 				removePmproMemberLinksSection();
 				bindPmproMessageDedupe();
+				bindCheckoutPreferences();
+				bindCheckoutRequiredMarkers();
+				window.requestAnimationFrame(fillUpgradeProfileDefaults);
 				removeCancelPageCheckoutSummary();
 			});
 		} else {
@@ -9874,6 +9881,9 @@ $checkout_tshirt_size_options = $portal_plugin instanceof AAC_Member_Portal_Plug
 			bindManagedAutoRenewToggle();
 			removePmproMemberLinksSection();
 			bindPmproMessageDedupe();
+			bindCheckoutPreferences();
+			bindCheckoutRequiredMarkers();
+			window.requestAnimationFrame(fillUpgradeProfileDefaults);
 			removeCancelPageCheckoutSummary();
 		}
 
